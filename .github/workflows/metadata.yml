@@ -1,0 +1,28 @@
+name: Repository metadata
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    name: Check bootstrap metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify license and community documents
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for filename in ['README.md', 'LICENSE', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'SECURITY.md']:
+              assert Path(filename).is_file() and Path(filename).stat().st_size > 0, filename
+          assert 'Copyright (c) 2026 Jose Corral' in Path('LICENSE').read_text()
+          ignored = Path('.gitignore').read_text().splitlines()
+          assert '.fluzo' in ignored and '.fluzodrive/' in ignored
+          print('Bootstrap metadata checked; Rust build and runtime tests are not implemented yet.')
+          PY

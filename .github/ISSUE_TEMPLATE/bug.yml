@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible implementation or tooling problem.
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: input
+    id: revision
+    attributes:
+      label: Revision and environment
+      description: Include the commit/release, OS and terminal when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic data. Do not paste credentials or private histories.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true

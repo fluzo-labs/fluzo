@@ -1,0 +1,21 @@
+name: Feature or design proposal
+description: Propose a scoped change linked to the product requirements.
+title: "[Proposal] "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Goal and user outcome
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope, acceptance and relevant PRD or architecture decisions
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Dependencies, alternatives and security or performance risks

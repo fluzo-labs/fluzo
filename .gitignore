@@ -1,0 +1,10 @@
+/target/
+.fluzo
+.fluzodrive/
+.env
+.env.*
+!.env.example
+*.gguf
+*.safetensors
+__pycache__/
+*.pyc

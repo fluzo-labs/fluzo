@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation and specification issues
+    url: https://github.com/fluzo-labs/fluzo-docs/issues
+    about: Documentation-only work belongs in fluzo-docs.
+  - name: Private security report
+    url: https://github.com/fluzo-labs/fluzo/security/advisories/new
+    about: Do not post vulnerability details or credentials publicly.
