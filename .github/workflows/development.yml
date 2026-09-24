@@ -1,0 +1,33 @@
+name: Development foundation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Prepare pinned Rust tools
+        run: rustup show active-toolchain
+      - name: Check format
+        run: cargo fmt --all -- --check
+      - name: Check and lint offline
+        run: |
+          cargo check --workspace --all-targets --locked --offline
+          cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      - name: Test bootstrap and tooling contracts
+        run: |
+          cargo test --workspace --locked --offline
+          python3 scripts/check_dev_setup.py
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Check Rust language server in a disposable workspace
+        run: python3 scripts/check_lsp.py
+      - name: Build offline
+        run: cargo build --workspace --locked --offline

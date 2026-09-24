@@ -1,8 +1,9 @@
 # Contributing
 
-The implementation has not started. Choose an existing
-[issue](https://github.com/fluzo-labs/fluzo/issues) and review its acceptance
-criteria, dependencies and referenced specification before coding.
+The development bootstrap exists; agent execution is not implemented. Choose an
+existing [issue](https://github.com/fluzo-labs/fluzo/issues) and review its
+acceptance criteria, dependencies and referenced specification before coding.
+Use the verified foundation commands in [AGENTS.md](AGENTS.md).
 
 Use English for issues, PRs and project documentation. Keep each change focused
 and link the owning issue. The four crates belong in one Cargo workspace;
