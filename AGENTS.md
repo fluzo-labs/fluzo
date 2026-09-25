@@ -4,7 +4,8 @@
 
 Fluzo is a local-first coding-agent runtime in Rust at the development-bootstrap
 stage. The four-crate workspace, bootstrap help/version binary, pinned toolchain,
-local skills and development checks exist. Agent execution, the application port,
+local skills, development checks and the FND-02 typed configuration library exist.
+See [CONFIGURATION.md](CONFIGURATION.md) for APIs and limits. Agent execution, the application port,
 TUI, providers, persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
@@ -237,8 +238,11 @@ gh issue list --repo fluzo-labs/fluzo --state open --limit 100
 Rust 1.98.0 is pinned in rust-toolchain.toml with rust-src, rust-analyzer,
 Clippy and rustfmt. The conservative initial MSRV is 1.98, matching the tested
 toolchain rather than claiming compatibility with untested older releases.
-Edition 2024 and resolver 3 are selected. There are no external Cargo dependencies
-or feature combinations yet; unsafe code is forbidden by workspace lint.
+Edition 2024 and resolver 3 are selected; unsafe code is forbidden by workspace
+lint. FND-02 introduces pinned Serde and toml_edit with explicit features and a
+reviewed transitive graph. Workspace feature declarations remain unsupported.
+Fresh machines prepare build dependencies with `cargo fetch --locked` before the
+offline checks; this is separate from inference and requires registry access.
 
 Verified foundation commands, mirrored in `.github/workflows/development.yml`:
 
@@ -256,8 +260,11 @@ cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
 
 The binary only supports bootstrap help/version; execution returns failure and
 explicitly says the runtime is not implemented. Python 3.11+ is needed for tooling
-checks. The graph checker deliberately rejects external production dependencies
-and features until their policy is reviewed with their first implementation.
+checks. The graph checker permits only the reviewed Serde/TOML dependency graph,
+versions, registry source and feature ceilings. Core/TUI cannot import TOML;
+forbidden Fluzo paths remain checked transitively through normal/build edges.
+The LSP fixture vendors only locked cached dependencies into its disposable root,
+keeping an empty HOME/CARGO_HOME and no inherited user configuration.
 Metadata CI checks community files; development CI checks foundation only. Runtime
 E2E, benchmarks and packaging are still unimplemented. CI commands passed locally;
 a remote workflow run is not implied.

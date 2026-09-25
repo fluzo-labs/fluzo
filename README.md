@@ -3,7 +3,7 @@
 > A lightweight, local-first agentic development runtime written in Rust.
 
 **Status: development bootstrap.** The four-crate Cargo workspace, bootstrap
-help/version binary and developer tooling are available. Agent execution, the
+help/version binary, typed configuration library and developer tooling are available. Agent execution, the
 TUI, providers and persistence are not implemented. There are no releases or
 measured runtime performance results yet.
 
@@ -25,11 +25,12 @@ measured runtime performance results yet.
 ## Development
 
 Rust 1.98.0 is pinned with rust-analyzer, rust-src, Clippy and rustfmt. Initial
-rustup preparation requires network access; the dependency-free bootstrap checks
-then run offline. Python 3.11+ is required for development checks.
+rustup and locked dependency preparation require network access on a fresh machine;
+validation then runs offline without inference. Python 3.11+ is required for tooling.
 
 ```sh
 rustup show active-toolchain
+cargo fetch --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo test --workspace --locked --offline
@@ -42,7 +43,10 @@ cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
 The binary does not execute tasks. Foundation checks cannot establish runtime
 acceptance. See [AGENTS.md](AGENTS.md) for boundaries and verified commands and
 [SKILLS.md](SKILLS.md) for installed skills, LSP setup and deferred adoption.
-Runtime tests, benchmarks and release packaging will be documented when implemented.
+See [CONFIGURATION.md](CONFIGURATION.md) for the FND-02 library APIs, shared defaults,
+validation, dependency policy and scope. Configuration file saving, the wizard and
+active runtime application are not implemented. Runtime tests, benchmarks and
+release packaging will be documented when implemented.
 
 ## Contributing
 

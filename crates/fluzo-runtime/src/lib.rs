@@ -1,3 +1,5 @@
+pub mod config;
+
 use fluzo_core::RuntimeAvailability;
 
 pub fn availability() -> RuntimeAvailability {

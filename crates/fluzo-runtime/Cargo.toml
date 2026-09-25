@@ -12,3 +12,4 @@ workspace = true
 
 [dependencies]
 fluzo-core.workspace = true
+toml_edit.workspace = true

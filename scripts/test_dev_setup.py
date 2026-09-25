@@ -50,6 +50,37 @@ class BoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "feature combinations"):
             validate_graph(metadata)
 
+    def test_toml_stays_outside_core_and_tui(self):
+        for source in ["fluzo-core", "fluzo-tui"]:
+            metadata = copy.deepcopy(self.metadata)
+            identities = {package["name"]: package["id"] for package in metadata["packages"]}
+            node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == identities[source])
+            node["deps"].append({"pkg": identities["toml_edit"], "dep_kinds": [{"kind": None, "target": "cfg(unix)"}]})
+            with self.assertRaisesRegex(ValueError, "Forbidden production path"):
+                validate_graph(metadata)
+
+    def test_transitive_fluzo_coupling_through_external_package_is_rejected(self):
+        metadata = copy.deepcopy(self.metadata)
+        identities = {package["name"]: package["id"] for package in metadata["packages"]}
+        node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == identities["serde"])
+        node["deps"].append({"pkg": identities["fluzo-runtime"], "dep_kinds": [{"kind": "build"}]})
+        with self.assertRaisesRegex(ValueError, "Forbidden production path: fluzo-core -> serde -> fluzo-runtime"):
+            validate_graph(metadata)
+
+    def test_dependency_source_version_and_features_are_reviewed(self):
+        for field, value in [("version", "999.0.0"), ("source", "git+https://example.invalid/unreviewed")]:
+            metadata = copy.deepcopy(self.metadata)
+            package = next(package for package in metadata["packages"] if package["name"] == "serde")
+            package[field] = value
+            with self.assertRaisesRegex(ValueError, "Unreviewed package source/version"):
+                validate_graph(metadata)
+        metadata = copy.deepcopy(self.metadata)
+        identity = next(package["id"] for package in metadata["packages"] if package["name"] == "toml_edit")
+        node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == identity)
+        node["features"].append("unbounded")
+        with self.assertRaisesRegex(ValueError, "feature combinations"):
+            validate_graph(metadata)
+
     def test_inactive_cargo_features_are_detected(self):
         declarations = [
             '\n[features]\nunreviewed = []\n',
@@ -72,7 +103,8 @@ class BoundaryTests(unittest.TestCase):
                         ["cargo", "metadata", "--format-version", "1", "--locked", "--offline"],
                         cwd=root, text=True, timeout=30,
                     ))
-                    self.assertTrue(all(not node["features"] for node in metadata["resolve"]["nodes"]))
+                    self.assertTrue(all(not node["features"] for node in metadata["resolve"]["nodes"]
+                                        if node["id"] in metadata["workspace_members"]))
                     with self.assertRaisesRegex(ValueError, "feature declarations"):
                         validate_graph(metadata)
 
