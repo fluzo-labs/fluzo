@@ -1,11 +1,13 @@
 import io
+from pathlib import Path
 import queue
 import subprocess
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from check_lsp import Client, test_workspace
+from check_lsp import Client, prepare_dependencies, test_workspace
 
 
 class RequestTests(unittest.TestCase):
@@ -66,6 +68,26 @@ class RequestTests(unittest.TestCase):
 
 
 class WorkspaceTests(unittest.TestCase):
+    def test_dependencies_are_prepared_offline_without_copying_user_config(self):
+        with tempfile.TemporaryDirectory(prefix="fluzo-lsp-dependencies-") as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            configuration = '[source.crates-io]\nreplace-with = "vendored-sources"\n'
+            with patch("check_lsp.subprocess.run", return_value=SimpleNamespace(stdout=configuration)) as run:
+                prepare_dependencies(workspace, root)
+            self.assertEqual((workspace / ".cargo/config.toml").read_text(), configuration)
+            self.assertEqual(run.call_args.args[0], ["cargo", "vendor", "--locked", "--offline", str(root / "vendor")])
+            self.assertEqual(run.call_args.kwargs["timeout"], 120)
+            self.assertTrue(run.call_args.kwargs["check"])
+            self.assertEqual(sorted(path.name for path in (workspace / ".cargo").iterdir()), ["config.toml"])
+
+    def test_dependency_preparation_failure_does_not_fall_back_to_network(self):
+        with patch("check_lsp.subprocess.run", side_effect=subprocess.CalledProcessError(1, "cargo")) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                prepare_dependencies(Path("fixture"), Path("root"))
+            run.assert_called_once()
+
     def test_cargo_is_bounded_and_failures_are_not_hidden(self):
         failures = [
             subprocess.TimeoutExpired("cargo", 120, output=b"partial output"),

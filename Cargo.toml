@@ -14,6 +14,8 @@ publish = false
 fluzo-core = { path = "crates/fluzo-core" }
 fluzo-runtime = { path = "crates/fluzo-runtime" }
 fluzo-tui = { path = "crates/fluzo-tui" }
+serde = { version = "=1.0.229", default-features = false, features = ["std", "derive"] }
+toml_edit = { version = "=0.25.15", default-features = false, features = ["parse", "display", "serde"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -96,6 +96,17 @@ def test_workspace(workspace, environment):
                    cwd=workspace, env=environment, check=True, capture_output=True, timeout=120)
 
 
+def prepare_dependencies(workspace, root):
+    vendor = root / "vendor"
+    result = subprocess.run(
+        ["cargo", "vendor", "--locked", "--offline", str(vendor)],
+        cwd=ROOT, check=True, capture_output=True, text=True, timeout=120,
+    )
+    configuration = workspace / ".cargo"
+    configuration.mkdir()
+    (configuration / "config.toml").write_text(result.stdout)
+
+
 def main():
     rustup_home = subprocess.check_output(["rustup", "show", "home"], text=True, timeout=30).strip()
     with tempfile.TemporaryDirectory(prefix="fluzo-lsp-") as temporary:
@@ -105,6 +116,7 @@ def main():
         for name in ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"]:
             shutil.copy2(ROOT / name, workspace / name)
         shutil.copytree(ROOT / "crates", workspace / "crates")
+        prepare_dependencies(workspace, root)
         home = root / "home"
         home.mkdir()
         environment = {
