@@ -1,3 +1,5 @@
+pub mod inspection;
+
 use fluzo_core::RuntimeAvailability;
 
 pub fn availability_text(availability: RuntimeAvailability) -> &'static str {

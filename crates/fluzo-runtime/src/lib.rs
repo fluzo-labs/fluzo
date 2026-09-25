@@ -1,4 +1,8 @@
 pub mod config;
+pub mod scenario;
+
+#[cfg(test)]
+mod scenario_tests;
 
 use fluzo_core::RuntimeAvailability;
 
