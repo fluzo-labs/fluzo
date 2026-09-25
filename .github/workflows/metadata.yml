@@ -24,5 +24,5 @@ jobs:
           assert 'Copyright (c) 2026 Jose Corral' in Path('LICENSE').read_text()
           ignored = Path('.gitignore').read_text().splitlines()
           assert '.fluzo' in ignored and '.fluzodrive/' in ignored
-          print('Bootstrap metadata checked; Rust build and runtime tests are not implemented yet.')
+          print('Metadata checked; development CI validates the bootstrap, not runtime acceptance.')
           PY
