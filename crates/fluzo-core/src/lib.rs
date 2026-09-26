@@ -1,3 +1,4 @@
+pub mod application;
 pub mod settings;
 mod settings_validation;
 

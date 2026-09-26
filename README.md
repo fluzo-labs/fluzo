@@ -3,8 +3,9 @@
 > A lightweight, local-first agentic development runtime written in Rust.
 
 **Status: development bootstrap.** The four-crate Cargo workspace, bootstrap
-help/version binary, typed configuration library and developer tooling are available. Agent execution, the
-TUI, providers and persistence are not implemented. There are no releases or
+help/version binary, typed configuration, application protocol and deterministic
+scenario driver are available. Agent execution, the TUI, providers and persistence
+are not implemented. There are no releases or
 measured runtime performance results yet.
 
 - [Documentation site](https://fluzo-labs.github.io/fluzo-docs/)
@@ -38,6 +39,7 @@ python3 scripts/check_dev_setup.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 python3 scripts/check_lsp.py
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
+cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo
 ```
 
 The binary does not execute tasks. Foundation checks cannot establish runtime
@@ -46,7 +48,9 @@ acceptance. See [AGENTS.md](AGENTS.md) for boundaries and verified commands and
 See [CONFIGURATION.md](CONFIGURATION.md) for the FND-02 library APIs, shared defaults,
 validation, dependency policy and scope. Configuration file saving, the wizard and
 active runtime application are not implemented. Runtime tests, benchmarks and
-release packaging will be documented when implemented.
+release packaging will be documented when implemented. [APPLICATION.md](APPLICATION.md)
+describes the FND-03 port, snapshot/cursor contracts and effect-free protocol demo;
+it is not an interactive TUI or a production transport.
 
 ## Contributing
 

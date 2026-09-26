@@ -5,7 +5,9 @@
 Fluzo is a local-first coding-agent runtime in Rust at the development-bootstrap
 stage. The four-crate workspace, bootstrap help/version binary, pinned toolchain,
 local skills, development checks and the FND-02 typed configuration library exist.
-See [CONFIGURATION.md](CONFIGURATION.md) for APIs and limits. Agent execution, the application port,
+See [CONFIGURATION.md](CONFIGURATION.md) for settings APIs and limits. FND-03 adds
+an owned application protocol and an in-memory scenario driver; see
+[APPLICATION.md](APPLICATION.md). Agent execution, production async transport,
 TUI, providers, persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
@@ -256,10 +258,13 @@ python3 scripts/check_dev_setup.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 python3 scripts/check_lsp.py
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
+cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo
 ```
 
-The binary only supports bootstrap help/version; execution returns failure and
-explicitly says the runtime is not implemented. Python 3.11+ is needed for tooling
+The binary supports bootstrap help/version and an explicit static protocol demo.
+Execution returns failure and explicitly says the runtime is not implemented.
+The demo does not read configuration or execute tools; scenario advancement is
+host-controlled, never a side effect of inspection, polling or reconnecting. Python 3.11+ is needed for tooling
 checks. The graph checker permits only the reviewed Serde/TOML dependency graph,
 versions, registry source and feature ceilings. Core/TUI cannot import TOML;
 forbidden Fluzo paths remain checked transitively through normal/build edges.
