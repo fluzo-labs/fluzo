@@ -29,6 +29,8 @@ jobs:
           cargo test --workspace --locked --offline
           python3 scripts/check_dev_setup.py
           python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Test HTTP scenarios in a private network namespace
+        run: python3 scripts/test_http_simulator.py
       - name: Check Rust language server in a disposable workspace
         run: python3 scripts/check_lsp.py
       - name: Build offline

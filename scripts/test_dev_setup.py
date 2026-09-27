@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -34,6 +35,33 @@ class BoundaryTests(unittest.TestCase):
                 node["deps"].append({"pkg": identities[target], "dep_kinds": [{"kind": None}]})
                 with self.assertRaisesRegex(ValueError, "Forbidden production path"):
                     validate_graph(metadata)
+
+    def test_simulator_dependencies_cannot_become_production_or_tui_edges(self):
+        for source, target, kind in [
+            ("fluzo-runtime", "hyper", None),
+            ("fluzo-runtime", "tokio", "build"),
+            ("fluzo-tui", "hyper", "dev"),
+            ("fluzo-core", "serde_json", "dev"),
+        ]:
+            with self.subTest(source=source, target=target, kind=kind):
+                metadata = copy.deepcopy(self.metadata)
+                identities = {package["name"]: package["id"] for package in metadata["packages"]}
+                node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == identities[source])
+                node["deps"].append({"pkg": identities[target], "dep_kinds": [{"kind": kind, "target": "cfg(unix)"}]})
+                with self.assertRaisesRegex(ValueError, "Forbidden production path|Unreviewed test dependency"):
+                    validate_graph(metadata)
+
+    def test_unreviewed_http_features_and_versions_fail(self):
+        for mutation in ["http2", "version"]:
+            metadata = copy.deepcopy(self.metadata)
+            package = next(package for package in metadata["packages"] if package["name"] == "hyper")
+            if mutation == "version":
+                package["version"] = "999.0.0"
+            else:
+                node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == package["id"])
+                node["features"].append("http2")
+            with self.assertRaisesRegex(ValueError, "feature combinations|Unreviewed package source/version"):
+                validate_graph(metadata)
 
     def test_external_transitive_dependency_is_detected(self):
         metadata = copy.deepcopy(self.metadata)
@@ -110,6 +138,67 @@ class BoundaryTests(unittest.TestCase):
 
 
 class SkillTests(unittest.TestCase):
+    def test_common_skill_changes_are_detected(self):
+        mutations = ["content", "missing-reference", "extra-file", "revision", "license", "symlink"]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                with tempfile.TemporaryDirectory(prefix="fluzo-common-skills-") as temporary:
+                    root = Path(temporary)
+                    shutil.copytree(ROOT / ".agents", root / ".agents")
+                    folder = root / ".agents/skills/plan-create"
+                    if mutation == "content":
+                        path = folder / "SKILL.md"
+                        path.write_text(path.read_text() + "\nUnreviewed change.\n")
+                    elif mutation == "missing-reference":
+                        (folder / "references/plan-template.md").unlink()
+                    elif mutation == "extra-file":
+                        (folder / "unexpected.md").write_text("Unexpected resource\n")
+                    elif mutation == "revision":
+                        path = root / ".agents/common-skills.toml"
+                        path.write_text(path.read_text().replace(
+                            "7c366791aa23715e7bb772e5d9d2dc4acebecc04", "0" * 40))
+                    elif mutation == "license":
+                        (folder / "LICENSE").unlink()
+                    else:
+                        path = folder / "references/plan-template.md"
+                        original = path.read_bytes()
+                        path.unlink()
+                        target = root / "outside.md"
+                        target.write_bytes(original)
+                        path.symlink_to(target)
+                    with self.assertRaises(ValueError):
+                        validate_skills(root)
+
+    def test_fluzo_skill_changes_are_detected(self):
+        for name in ["fluzo-deterministic-testing", "fluzo-rust-boundaries", "tui-design", "rust-practices", "rust-review"]:
+            for mutation in ["content", "missing-reference", "license", "extra-file", "revision", "symlink"]:
+                with self.subTest(skill=name, mutation=mutation):
+                    with tempfile.TemporaryDirectory(prefix="fluzo-collection-") as temporary:
+                        root = Path(temporary)
+                        shutil.copytree(ROOT / ".agents", root / ".agents")
+                        folder = root / ".agents/skills" / name
+                        reference = next((folder / "references").glob("*.md"))
+                        if mutation == "content":
+                            path = folder / "SKILL.md"
+                            path.write_text(path.read_text() + "\nSuperseded local instructions.\n")
+                        elif mutation == "missing-reference":
+                            reference.unlink()
+                        elif mutation == "license":
+                            (folder / "LICENSE").unlink()
+                        elif mutation == "extra-file":
+                            (folder / "stale.md").write_text("Old resource\n")
+                        elif mutation == "revision":
+                            path = root / ".agents/fluzo-skills.toml"
+                            path.write_text(path.read_text().replace(
+                                "48a1ac36fc229ccbcb1fe671d5dbd9774a567d56", "0" * 40))
+                        else:
+                            target = root / "outside.md"
+                            target.write_bytes(reference.read_bytes())
+                            reference.unlink()
+                            reference.symlink_to(target)
+                        with self.assertRaises(ValueError):
+                            validate_skills(root)
+
     def test_installed_skills_are_valid(self):
         validate_skills()
 
@@ -118,7 +207,11 @@ class SkillTests(unittest.TestCase):
             root = Path(temporary)
             shutil.copytree(ROOT / ".agents", root / ".agents")
             skill = root / ".agents/skills/rust-review/SKILL.md"
+            old_digest = hashlib.sha256(skill.read_bytes()).hexdigest()
             skill.write_text(skill.read_text() + "\n[missing](missing.md)\n")
+            manifest = root / ".agents/fluzo-skills.toml"
+            manifest.write_text(manifest.read_text().replace(
+                old_digest, hashlib.sha256(skill.read_bytes()).hexdigest()))
             with self.assertRaisesRegex(ValueError, "Broken skill reference"):
                 validate_skills(root)
 

@@ -7,7 +7,9 @@ stage. The four-crate workspace, bootstrap help/version binary, pinned toolchain
 local skills, development checks and the FND-02 typed configuration library exist.
 See [CONFIGURATION.md](CONFIGURATION.md) for settings APIs and limits. FND-03 adds
 an owned application protocol and an in-memory scenario driver; see
-[APPLICATION.md](APPLICATION.md). Agent execution, production async transport,
+[APPLICATION.md](APPLICATION.md). SIM-01 adds test-only strict HTTP/SSE fixtures
+and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
+Agent execution, production async transport,
 TUI, providers, persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
@@ -256,6 +258,7 @@ cargo test --workspace --locked --offline
 cargo build --workspace --locked --offline
 python3 scripts/check_dev_setup.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 scripts/test_http_simulator.py
 python3 scripts/check_lsp.py
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo
@@ -266,12 +269,19 @@ Execution returns failure and explicitly says the runtime is not implemented.
 The demo does not read configuration or execute tools; scenario advancement is
 host-controlled, never a side effect of inspection, polling or reconnecting. Python 3.11+ is needed for tooling
 checks. The graph checker permits only the reviewed Serde/TOML dependency graph,
-versions, registry source and feature ceilings. Core/TUI cannot import TOML;
+versions, registry source and feature ceilings. SIM-01 adds pinned dev-only
+Hyper/Tokio/JSON dependencies and their reviewed transitive graph, with no new
+production paths. Core/TUI cannot import TOML;
 forbidden Fluzo paths remain checked transitively through normal/build edges.
 The LSP fixture vendors only locked cached dependencies into its disposable root,
 keeping an empty HOME/CARGO_HOME and no inherited user configuration.
-Metadata CI checks community files; development CI checks foundation only. Runtime
-E2E, benchmarks and packaging are still unimplemented. CI commands passed locally;
+Metadata CI checks community files; development CI checks foundation and HTTP
+simulation, including a private user/network namespace with loopback only.
+`python3 scripts/test_http_simulator.py` requires Linux namespace support and
+util-linux `unshare`, fails closed if unavailable, and reports live inference as
+`not_run`. Focused protocol checks use
+`cargo test -p fluzo-runtime --test http_simulator --locked --offline`.
+Runtime E2E, benchmarks and packaging are still unimplemented. CI commands passed locally;
 a remote workflow run is not implied.
 
 Run the narrowest relevant tests after a change, then the applicable workspace
@@ -284,14 +294,34 @@ this list when subsequent milestones introduce commands or dependencies.
 ## Skills and contribution completion
 
 See [SKILLS.md](SKILLS.md) for researched candidates, revision/license notes,
-known conflicts and adoption status. Four project skills live in `.agents/skills`:
-`rust-practices`, `rust-review`, `fluzo-rust-boundaries` and
-`fluzo-deterministic-testing`. The first two are pinned, licensed adaptations;
-the latter two are original procedures. Load only relevant references.
+known conflicts and adoption status. Twelve skills live in `.agents/skills`.
+Five come from `fluzo-labs/fluzo-skills`: `rust-practices`, `rust-review`,
+`fluzo-deterministic-testing`, `fluzo-rust-boundaries` and `tui-design`, pinned in
+`.agents/fluzo-skills.toml`. All same-name local versions were explicitly replaced
+by the Fluzo collection versions; do not restore them or install duplicate copies
+elsewhere. The Rust adaptations retain their historical leonardomso/Apollo origins
+and licenses; their direct installation source is Fluzo. Complete references and
+upstream provenance are retained; rust-review remains Apache-2.0, not MIT.
+
+Seven additional workflow skills come from `fluzo-labs/common-skills`:
+`issue-refine-github`, `plan-create`, `plan-execute`, `delivery-review-github`,
+`convention-document`, `git-conventional-commit` and `release-prepare-github`.
+Their complete folders, references and MIT licenses are copied locally from
+release v1.1.0; the pinned revision and SHA-256 inventory live in
+`.agents/common-skills.toml`. The update includes explicit delivery handoffs and
+read-only post-merge next-issue recommendations, not automatic execution.
+Crush discovers this directory by default, without another skill-path setting.
+Load only the matching entry point and required references. Project rules and
+higher-priority instructions prevail over generic workflow advice, including
+language, attribution and publication requirements. Installation grants no
+permission to commit, push, modify GitHub or release. GitHub remains the backlog
+authority; a local plan must not become a second status board.
 
 Project `crushrc` registers rust-analyzer through the pinned rustup toolchain,
 without changing permissions or providers. After reopening the project, Crush
-recognized the project configuration and all four skills. Its Rust LSP became
+recognized the project configuration and the initial four skills. The seven
+common skills and the Fluzo collection migration were installed afterwards and
+may require another project reload. Its Rust LSP became
 ready on source access; references across core/runtime/TUI and document symbols
 worked, with no reported diagnostics. The definition tool found the symbol but
 omitted its path, so use references/symbols to confirm navigation locations.
