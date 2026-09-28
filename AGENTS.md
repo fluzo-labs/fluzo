@@ -276,10 +276,14 @@ forbidden Fluzo paths remain checked transitively through normal/build edges.
 The LSP fixture vendors only locked cached dependencies into its disposable root,
 keeping an empty HOME/CARGO_HOME and no inherited user configuration.
 Metadata CI checks community files; development CI checks foundation and HTTP
-simulation, including a private user/network namespace with loopback only.
-`python3 scripts/test_http_simulator.py` requires Linux namespace support and
-util-linux `unshare`, fails closed if unavailable, and reports live inference as
-`not_run`. Focused protocol checks use
+simulation, including a private network namespace with loopback only.
+`python3 scripts/test_http_simulator.py` uses an unprivileged user/network namespace
+locally. CI explicitly uses `--ci`, with noninteractive sudo for network namespace
+setup and `setpriv` to drop identity/groups/capabilities before tests, avoiding
+restricted user-ID mapping on Ubuntu 24.04. Both modes fail closed, never fall back
+to host networking, and report live inference as `not_run`. CI mode requires
+`sudo`, `unshare` and `setpriv`; see HTTP_SIMULATOR.md for verification limits.
+Focused protocol checks use
 `cargo test -p fluzo-runtime --test http_simulator --locked --offline`.
 Runtime E2E, benchmarks and packaging are still unimplemented. CI commands passed locally;
 a remote workflow run is not implied.

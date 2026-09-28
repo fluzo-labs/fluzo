@@ -84,18 +84,36 @@ python3 scripts/check_dev_setup.py
 The first command tests protocol mechanics with fixture-restricted connectors.
 Cargo offline mode does not isolate application sockets. The Python profile
 builds the exact test executable offline, then runs it with a minimal environment
-inside a new Linux user/network namespace using util-linux `unshare`. Only that
+inside a new Linux user/network namespace using util-linux `unshare` locally.
+CI explicitly selects `python3 scripts/test_http_simulator.py --ci`: it builds as
+the runner user, then uses noninteractive `sudo unshare --net` without user-ID
+mapping. After enabling loopback, `setpriv` restores the original nonzero UID/GID,
+clears supplementary groups and all capability sets, and enables no-new-privileges
+before executing the tests. Privilege is used only for namespace setup, not Cargo
+or the test binary. No host-wide AppArmor or user-namespace policy is changed.
+Only that
 namespace's loopback interface is enabled, using Python's Linux socket ioctl;
 there is no host interface, firewall or privilege configuration change. The test
 process cannot reach developer loopback services or external inference. Existing
 host configuration, proxies and provider credentials are not passed to it.
 
-Linux user/network namespaces, Python 3.11+ and `unshare` must be available. A
-kernel/container/AppArmor restriction is a failing prerequisite, not permission
-to fall back to host networking. The profile has 120-second compilation,
+Local execution requires Linux user/network namespaces, Python 3.11+ and
+`unshare`. The explicit CI mode instead requires noninteractive sudo, network
+namespace creation and util-linux `setpriv`, as supplied by the hosted Ubuntu
+runner. Neither mode retries with another profile or falls back to host networking
+on permission, setup or test failure. The profile has 120-second compilation,
 60-second namespace and 45-second executable safety limits. Development CI runs
-this profile after dependency preparation. Remote runner compatibility remains
-unverified until that workflow actually runs.
+the CI mode after dependency preparation.
+
+The initial PR #32 run on Ubuntu 24.04 failed while writing `/proc/self/uid_map`
+with `Operation not permitted`; format, check, Clippy and the preceding suites
+passed, while LSP and final build were skipped. This correction avoids that user
+mapping operation without relaxing network isolation. Local regression tests cover
+explicit CI selection, cleared environment, privilege removal, forbidden root
+identity and fail-closed errors. The ordinary isolated HTTP profile still passes.
+The privileged hosted-runner path remains unverified until remote CI runs again:
+local unprivileged namespace emulation could not perform loopback setup or clear
+supplementary groups and does not establish hosted sudo behavior.
 
 ## Evidence and exclusions
 
