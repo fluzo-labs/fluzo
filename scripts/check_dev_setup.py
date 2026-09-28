@@ -144,7 +144,7 @@ COMMON_SKILLS = {
     "convention-document", "delivery-review-github", "git-conventional-commit",
     "issue-refine-github", "plan-create", "plan-execute", "release-prepare-github",
 }
-COMMON_REVISION = "7c366791aa23715e7bb772e5d9d2dc4acebecc04"
+COMMON_REVISION = "b73053c28ba6e3fc1e4993d47fce933a5d861e85"
 FLUZO_SKILLS = {"fluzo-deterministic-testing", "fluzo-rust-boundaries", "tui-design", "rust-practices", "rust-review"}
 FLUZO_REVISION = "48a1ac36fc229ccbcb1fe671d5dbd9774a567d56"
 SKILLS = FLUZO_SKILLS | COMMON_SKILLS

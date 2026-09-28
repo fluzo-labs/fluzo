@@ -65,6 +65,8 @@ Unrelated errors, environment limitations, migrations, unavailable tests, pendin
 
 ### Review and stop
 
+For autonomous runs, read the local [autonomous contract](autonomous.md). Its verified operation grants and content delegation replace only the guided request to choose a message or confirm a covered handoff below. Return its structured step result with actual evidence and shared counters. A required human acceptance gate still stops the loop; otherwise a covered commit/delivery transition may proceed without another prompt. One invocation never implements multiple phases.
+
 State whether the phase criteria are satisfied or what prevents that. Show local tracking changes, keeping implementation, verification, and human review distinct. This does not declare the issue accepted, merged, or Done. Present three numbered commit messages under the installed `git-conventional-commit` rules, with the no-change/missing-skill exceptions in [guided progress](progress.md). Request review and offer a concrete reply such as "commit with option 2", "prepare PR", or "stop". Stop before the next phase; handoffs revalidate evidence and permissions.
 
 ## Validation matrix

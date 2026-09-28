@@ -157,7 +157,7 @@ class BoundaryTests(unittest.TestCase):
 
 class SkillTests(unittest.TestCase):
     def test_common_skill_changes_are_detected(self):
-        mutations = ["content", "missing-reference", "extra-file", "revision", "license", "symlink"]
+        mutations = ["content", "missing-reference", "missing-autonomous", "extra-file", "revision", "license", "symlink"]
         for mutation in mutations:
             with self.subTest(mutation=mutation):
                 with tempfile.TemporaryDirectory(prefix="fluzo-common-skills-") as temporary:
@@ -169,12 +169,14 @@ class SkillTests(unittest.TestCase):
                         path.write_text(path.read_text() + "\nUnreviewed change.\n")
                     elif mutation == "missing-reference":
                         (folder / "references/plan-template.md").unlink()
+                    elif mutation == "missing-autonomous":
+                        (folder / "references/autonomous.md").unlink()
                     elif mutation == "extra-file":
                         (folder / "unexpected.md").write_text("Unexpected resource\n")
                     elif mutation == "revision":
                         path = root / ".agents/common-skills.toml"
                         path.write_text(path.read_text().replace(
-                            "7c366791aa23715e7bb772e5d9d2dc4acebecc04", "0" * 40))
+                            "b73053c28ba6e3fc1e4993d47fce933a5d861e85", "0" * 40))
                     elif mutation == "license":
                         (folder / "LICENSE").unlink()
                     else:
@@ -186,6 +188,18 @@ class SkillTests(unittest.TestCase):
                         path.symlink_to(target)
                     with self.assertRaises(ValueError):
                         validate_skills(root)
+
+    def test_common_autonomous_contracts_are_identical_and_self_contained(self):
+        names = ["convention-document", "delivery-review-github", "git-conventional-commit",
+                 "issue-refine-github", "plan-create", "plan-execute", "release-prepare-github"]
+        contracts = []
+        for name in names:
+            folder = ROOT / ".agents/skills" / name
+            contracts.append((folder / "references/autonomous.md").read_bytes())
+            self.assertIn("(references/autonomous.md)", (folder / "SKILL.md").read_text())
+        self.assertEqual(len(set(contracts)), 1)
+        self.assertIn(b"Guided mode remains the default.", contracts[0])
+        self.assertIn(b"waiting_review", contracts[0])
 
     def test_fluzo_skill_changes_are_detected(self):
         for name in ["fluzo-deterministic-testing", "fluzo-rust-boundaries", "tui-design", "rust-practices", "rust-review"]:

@@ -1,6 +1,6 @@
 ---
 name: git-conventional-commit
-description: Prepare and create a single Conventional Commit when the user explicitly asks to record changes in Git. Modifying files alone does not authorize commits; a proposal or review request only allows drafting the message.
+description: Prepare and create a single Conventional Commit on an explicit commit request, including a verified autonomous grant covering this scoped commit. Modifying files alone does not authorize commits; a proposal or review request only allows drafting the message.
 user-invocable: true
 ---
 
@@ -11,6 +11,12 @@ user-invocable: true
 Record only authorized changes in a local commit, with a message explaining their outcome. You need Git, an accessible consumer repository, and explicit authorization to create the commit. No network connection, installation, or scripts from this collection are required.
 
 Follow higher-priority instructions, consumer project rules, and permissions. Invoking this skill grants no additional permissions. If the user only asks to draft a message, research, or plan, do not modify the index or create commits.
+
+## Execution mode
+
+Guided mode is the default. For an autonomous handoff, read the local [autonomous contract](references/autonomous.md) before touching the index. A verified grant must explicitly authorize `commit` for the current reviewed changes; implementation, YOLO and a generated checkpoint do not. With delegated message selection, use the first valid of the three reviewed alternatives supplied by the caller, or generate them under the message rules and record that selection. Without delegation, use the exact approved message or return `needs_approval`.
+
+Create only one local commit after applicable checks pass. Preserve unrelated and partially staged changes and all hook/signing gates. Return the verified SHA, actual scope and step result; only the initiating loop may continue to an installed delivery skill under separate `continue`, push and PR grants. This skill never pushes or queries GitHub. The guided closing menus and automatic-handoff prohibition below apply to guided mode; all local Git safety constraints apply in both modes. Respect empty-response rules by letting the caller verify state rather than requiring extra output.
 
 ## Trust boundary
 
@@ -123,7 +129,7 @@ End with the actual result and one recommended next step, its reason, and a shor
 
 After a successful commit for a GitHub delivery, recommend publishing the reviewed branch and preparing its PR, or updating the existing PR when the handoff context identifies one. This is a recommendation, not a push. Use locally verified branch/remotes and received issue/PR context without querying GitHub from this skill; mark remote status as unverified. If the destination is unknown, recommend checking it before publication. Offer a concrete reply such as "prepare push and PR for this branch". Pass the commit SHA, branch, known destination, issue/phase, evidence, and exact approvals to the installed `delivery-review-github` skill by name on the requested continuation. That skill must verify remote state and existing PRs, show the exact push destination and PR proposal, and obtain missing publication approval. Only if exact operations and content were already approved should the continuation recommend carrying out that approved publication instead of proposing it again.
 
-Without the delivery skill, provide the same context and identify the missing integration; do not download it or silently publish through another workflow. For local-only work, recommend the required local review or next eligible phase review, or finish if no work remains; do not require GitHub. Do not skip pending delivery/review to start another issue. Never push, publish, or advance automatically.
+Without the delivery skill, provide the same context and identify the missing integration; do not download it or silently publish through another workflow. For local-only work, recommend the required local review or next eligible phase review, or finish if no work remains; do not require GitHub. Do not skip pending delivery/review to start another issue. Never push or publish in this skill. In guided mode, never advance automatically; a verified autonomous handoff can return to the initiating loop under the local contract.
 
 Where higher-priority response rules allow, use `Prepared with Fluzo skills` as a discreet response footer. Do not add a Fluzo trailer to commit messages or claim Fluzo is the runtime/model; attribution still follows the consumer and higher-priority instructions. If those instructions require an empty response, omit the footer and recommendation.
 
