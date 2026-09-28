@@ -23,6 +23,8 @@ Review trust in Git configuration before operating. Do not use `--ext-diff`, tex
 
 ## Proposals and approval
 
+Guided mode requires the exact approvals described below. In an autonomous run, first read the local [autonomous contract](autonomous.md): a verified grant may explicitly delegate generation of PR/comment text and authorize the exact push/PR destinations. Evaluate and record the generated payload and outgoing SHA against that grant before mutation rather than asking for the same permission again. Expected output of scoped implementation is not drift; unrelated changes, requirements, destinations, or closure changes are. `push_branch`, `create_pr`, `edit_pr` and `comment_issue` remain separate permissions. No grant permits merge, review approval, Project writes or a protected/default-branch push in autonomous version 1. All verification, reconciliation and no-duplicate rules below still apply.
+
 Prepare the PR title/body and, when an issue update is in scope, its comment separately according to the content reference. Present destination, base/head, the diff for each existing resource, closure semantics, draft or ready-for-review status, and any proposed Project changes. Obtain explicit approval before each class of mutation; joint approval of the exact list can cover them without repeated questions.
 
 Saving drafts to disk also requires an authorized destination; use private temporary files outside versioned paths when appropriate. Do not put secrets in arguments, captures, or public bodies. Do not include private data in a draft PR: draft status does not change visibility.

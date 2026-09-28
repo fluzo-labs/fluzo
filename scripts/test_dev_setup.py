@@ -63,6 +63,24 @@ class BoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "feature combinations|Unreviewed package source/version"):
                 validate_graph(metadata)
 
+    def test_terminal_libraries_remain_outside_core_and_runtime(self):
+        for source in ["fluzo-core", "fluzo-runtime"]:
+            metadata = copy.deepcopy(self.metadata)
+            identities = {package["name"]: package["id"] for package in metadata["packages"]}
+            node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == identities[source])
+            node["deps"].append({"pkg": identities["ratatui"], "dep_kinds": [{"kind": "build", "target": "cfg(unix)"}]})
+            with self.assertRaisesRegex(ValueError, "Forbidden production path"):
+                validate_graph(metadata)
+
+    def test_terminal_duplicate_versions_are_checked_independently(self):
+        for name in ["syn", "unicode-width", "windows-sys", "hashbrown"]:
+            for original in [item for item in self.metadata["packages"] if item["name"] == name]:
+                metadata = copy.deepcopy(self.metadata)
+                package = next(item for item in metadata["packages"] if item["id"] == original["id"])
+                package["version"] = "999.0.0"
+                with self.assertRaisesRegex(ValueError, "Unreviewed package source/version"):
+                    validate_graph(metadata)
+
     def test_external_transitive_dependency_is_detected(self):
         metadata = copy.deepcopy(self.metadata)
         metadata["packages"].append({"id": "external", "name": "external-io"})
@@ -139,7 +157,7 @@ class BoundaryTests(unittest.TestCase):
 
 class SkillTests(unittest.TestCase):
     def test_common_skill_changes_are_detected(self):
-        mutations = ["content", "missing-reference", "extra-file", "revision", "license", "symlink"]
+        mutations = ["content", "missing-reference", "missing-autonomous", "extra-file", "revision", "license", "symlink"]
         for mutation in mutations:
             with self.subTest(mutation=mutation):
                 with tempfile.TemporaryDirectory(prefix="fluzo-common-skills-") as temporary:
@@ -151,12 +169,14 @@ class SkillTests(unittest.TestCase):
                         path.write_text(path.read_text() + "\nUnreviewed change.\n")
                     elif mutation == "missing-reference":
                         (folder / "references/plan-template.md").unlink()
+                    elif mutation == "missing-autonomous":
+                        (folder / "references/autonomous.md").unlink()
                     elif mutation == "extra-file":
                         (folder / "unexpected.md").write_text("Unexpected resource\n")
                     elif mutation == "revision":
                         path = root / ".agents/common-skills.toml"
                         path.write_text(path.read_text().replace(
-                            "7c366791aa23715e7bb772e5d9d2dc4acebecc04", "0" * 40))
+                            "b73053c28ba6e3fc1e4993d47fce933a5d861e85", "0" * 40))
                     elif mutation == "license":
                         (folder / "LICENSE").unlink()
                     else:
@@ -168,6 +188,18 @@ class SkillTests(unittest.TestCase):
                         path.symlink_to(target)
                     with self.assertRaises(ValueError):
                         validate_skills(root)
+
+    def test_common_autonomous_contracts_are_identical_and_self_contained(self):
+        names = ["convention-document", "delivery-review-github", "git-conventional-commit",
+                 "issue-refine-github", "plan-create", "plan-execute", "release-prepare-github"]
+        contracts = []
+        for name in names:
+            folder = ROOT / ".agents/skills" / name
+            contracts.append((folder / "references/autonomous.md").read_bytes())
+            self.assertIn("(references/autonomous.md)", (folder / "SKILL.md").read_text())
+        self.assertEqual(len(set(contracts)), 1)
+        self.assertIn(b"Guided mode remains the default.", contracts[0])
+        self.assertIn(b"waiting_review", contracts[0])
 
     def test_fluzo_skill_changes_are_detected(self):
         for name in ["fluzo-deterministic-testing", "fluzo-rust-boundaries", "tui-design", "rust-practices", "rust-review"]:

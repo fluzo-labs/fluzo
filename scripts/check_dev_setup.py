@@ -15,9 +15,9 @@ ALLOWED = {
 SERDE_PACKAGES = {"serde", "serde_core", "serde_derive", "syn", "proc-macro2", "quote", "unicode-ident"}
 TOML_PACKAGES = {"toml_edit", "toml_parser", "toml_writer", "toml_datetime", "serde_spanned", "indexmap", "hashbrown", "equivalent", "winnow", "memchr"}
 EXTERNAL = {
-    "fluzo-core": SERDE_PACKAGES,
+    "fluzo-core": set(SERDE_PACKAGES),
     "fluzo-runtime": SERDE_PACKAGES | TOML_PACKAGES,
-    "fluzo-tui": SERDE_PACKAGES,
+    "fluzo-tui": set(SERDE_PACKAGES),
     "fluzo-cli": SERDE_PACKAGES | TOML_PACKAGES,
 }
 DIRECT_EXTERNAL = {"fluzo-core": {"serde"}, "fluzo-runtime": {"toml_edit"}, "fluzo-tui": set(), "fluzo-cli": set()}
@@ -75,11 +75,76 @@ SIMULATOR_PACKAGES = {
 }
 REVIEWED_PACKAGES.update(SIMULATOR_PACKAGES)
 SIMULATOR_DIRECT = {"serde", "serde_json", "hyper", "hyper-util", "http-body-util", "tokio"}
+TUI_PACKAGES = {
+    ("allocator-api2", "0.2.21"): {"alloc"},
+    ("bitflags", "2.13.2"): {"std"},
+    ("cassowary", "0.3.0"): set(),
+    ("castaway", "0.2.4"): {"alloc"},
+    ("cfg-if", "1.0.5"): set(),
+    ("compact_str", "0.8.2"): {"default", "std"},
+    ("crossterm", "0.28.1"): {"bracketed-paste", "default", "events", "windows"},
+    ("crossterm_winapi", "0.9.1"): set(),
+    ("darling", "0.24.1"): {"default", "suggestions"},
+    ("darling_core", "0.24.1"): {"strsim", "suggestions"},
+    ("darling_macro", "0.24.1"): set(),
+    ("either", "1.18.0"): {"std", "use_std"},
+    ("errno", "0.3.14"): {"default", "std"},
+    ("foldhash", "0.1.5"): set(),
+    ("hashbrown", "0.15.5"): {"allocator-api2", "default", "default-hasher", "equivalent", "inline-more", "raw-entry"},
+    ("heck", "0.5.0"): set(),
+    ("ident_case", "1.0.1"): set(),
+    ("indoc", "2.0.7"): set(),
+    ("instability", "0.3.14"): set(),
+    ("itertools", "0.13.0"): {"default", "use_alloc", "use_std"},
+    ("linux-raw-sys", "0.4.15"): {"elf", "errno", "general", "ioctl", "no_std"},
+    ("lock_api", "0.4.14"): {"atomic_usize", "default"},
+    ("log", "0.4.34"): set(),
+    ("lru", "0.12.5"): {"default", "hashbrown"},
+    ("parking_lot", "0.12.5"): {"default"},
+    ("parking_lot_core", "0.9.12"): set(),
+    ("paste", "1.0.15"): set(),
+    ("ratatui", "0.29.0"): {"crossterm"},
+    ("redox_syscall", "0.5.18"): {"default", "userspace"},
+    ("rustix", "0.38.44"): {"alloc", "libc-extra-traits", "std", "stdio", "termios"},
+    ("rustversion", "1.0.23"): set(),
+    ("ryu", "1.0.23"): set(),
+    ("scopeguard", "1.2.0"): set(),
+    ("signal-hook", "0.3.18"): {"channel", "default", "iterator"},
+    ("signal-hook-mio", "0.2.5"): {"mio-1_0", "support-v1_0"},
+    ("signal-hook-registry", "1.4.8"): set(),
+    ("static_assertions", "1.1.0"): set(),
+    ("strsim", "0.11.1"): set(),
+    ("strum", "0.26.3"): {"default", "derive", "std", "strum_macros"},
+    ("strum_macros", "0.26.4"): set(),
+    ("syn", "2.0.119"): {"clone-impls", "default", "derive", "extra-traits", "parsing", "printing", "proc-macro"},
+    ("unicode-segmentation", "1.13.3"): set(),
+    ("unicode-truncate", "1.1.0"): {"default", "std"},
+    ("unicode-width", "0.1.14"): {"cjk", "default"},
+    ("unicode-width", "0.2.0"): {"cjk", "default"},
+    ("winapi", "0.3.9"): {"consoleapi", "handleapi", "impl-default", "processenv", "synchapi", "winbase", "winerror", "winuser"},
+    ("winapi-i686-pc-windows-gnu", "0.4.0"): set(),
+    ("winapi-x86_64-pc-windows-gnu", "0.4.0"): set(),
+    ("windows-sys", "0.59.0"): {"Win32", "Win32_Foundation", "Win32_NetworkManagement", "Win32_NetworkManagement_IpHelper", "Win32_Networking", "Win32_Networking_WinSock", "Win32_System", "Win32_System_Threading", "default"},
+    ("windows-targets", "0.52.6"): set(),
+    **{(name, "0.52.6"): set() for name in (
+        "windows_aarch64_gnullvm", "windows_aarch64_msvc", "windows_i686_gnu",
+        "windows_i686_gnullvm", "windows_i686_msvc", "windows_x86_64_gnu",
+        "windows_x86_64_gnullvm", "windows_x86_64_msvc",
+    )},
+}
+REVIEWED_PACKAGES["syn"][1].add("extra-traits")
+REVIEWED_PACKAGES["libc"][1].add("extra_traits")
+REVIEWED_PACKAGES["mio"][1].update({"default", "log"})
+REVIEWED_PACKAGES["windows-sys"][1].update({"Win32_System_Diagnostics", "Win32_System_Diagnostics_Debug"})
+TUI_EXTERNAL = {name for name, _ in TUI_PACKAGES} | {"itoa", "libc", "mio", "smallvec", "wasi", "windows-link", "equivalent"}
+EXTERNAL["fluzo-tui"] |= TUI_EXTERNAL
+EXTERNAL["fluzo-cli"] |= TUI_EXTERNAL
+DIRECT_EXTERNAL["fluzo-tui"] = {"ratatui", "crossterm", "unicode-segmentation", "unicode-width", "signal-hook"}
 COMMON_SKILLS = {
     "convention-document", "delivery-review-github", "git-conventional-commit",
     "issue-refine-github", "plan-create", "plan-execute", "release-prepare-github",
 }
-COMMON_REVISION = "7c366791aa23715e7bb772e5d9d2dc4acebecc04"
+COMMON_REVISION = "b73053c28ba6e3fc1e4993d47fce933a5d861e85"
 FLUZO_SKILLS = {"fluzo-deterministic-testing", "fluzo-rust-boundaries", "tui-design", "rust-practices", "rust-review"}
 FLUZO_REVISION = "48a1ac36fc229ccbcb1fe671d5dbd9774a567d56"
 SKILLS = FLUZO_SKILLS | COMMON_SKILLS
@@ -125,10 +190,16 @@ def validate_graph(metadata):
         if name in ALLOWED:
             allowed_features = set()
         else:
-            if name not in REVIEWED_PACKAGES:
-                raise ValueError(f"Unreviewed package: {name}")
-            version, allowed_features = REVIEWED_PACKAGES[name]
-            if package["version"] != version or package["source"] != "registry+https://github.com/rust-lang/crates.io-index":
+            identity = (name, package["version"])
+            if identity in TUI_PACKAGES:
+                allowed_features = TUI_PACKAGES[identity]
+            elif name in REVIEWED_PACKAGES:
+                version, allowed_features = REVIEWED_PACKAGES[name]
+                if package["version"] != version:
+                    raise ValueError(f"Unreviewed package source/version: {name}")
+            else:
+                raise ValueError(f"Unreviewed package source/version: {name}")
+            if package["source"] != "registry+https://github.com/rust-lang/crates.io-index":
                 raise ValueError(f"Unreviewed package source/version: {name}")
         if not set(node["features"]) <= allowed_features:
             raise ValueError("New feature combinations require an explicit graph policy review")
