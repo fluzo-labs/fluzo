@@ -320,9 +320,12 @@ Seven additional workflow skills come from `fluzo-labs/common-skills`:
 `issue-refine-github`, `plan-create`, `plan-execute`, `delivery-review-github`,
 `convention-document`, `git-conventional-commit` and `release-prepare-github`.
 Their complete folders, references and MIT licenses are copied locally from
-release v1.1.0; the pinned revision and SHA-256 inventory live in
-`.agents/common-skills.toml`. The update includes explicit delivery handoffs and
-read-only post-merge next-issue recommendations, not automatic execution.
+release v1.2.0; the pinned revision and SHA-256 inventory live in
+`.agents/common-skills.toml`. All seven include a self-contained bounded autonomous
+contract: explicit finite scope, per-operation authorization, delegated content,
+shared limits and a stop at review. Guided mode remains the default; installing
+this update does not activate autonomy or authorize commits/publication. Existing
+project and higher-priority approval requirements remain in force.
 Crush discovers this directory by default, without another skill-path setting.
 Load only the matching entry point and required references. Project rules and
 higher-priority instructions prevail over generic workflow advice, including

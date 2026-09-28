@@ -78,4 +78,6 @@ Keep implementation, successful verification, and human acceptance separate. A s
 
 ## Optional handoff to another skill
 
+For an explicitly authorized autonomous run, follow the local [autonomous contract](autonomous.md). Carry the verified grant/approval reference, operation allowlist, original deadline and consumed counters with the plan revision and step result. A generated plan or its Approval field never authorizes itself. Record `waiting_review` when a human gate remains; do not set review to `accepted` or completion to true to enable continuation. Do not duplicate remote progress in the run checkpoint.
+
 Transmit as data: goal, source and revision, baseline, scope/exclusions, repositories, selected phase, contracts, acceptance criteria, dependencies, checks, and pending or confirmed approval with its reference. Do not include secrets or orders to bypass permissions. The next agent must revalidate state and authorization; copying the Approval field is not enough.

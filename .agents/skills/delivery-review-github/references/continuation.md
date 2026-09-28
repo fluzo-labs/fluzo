@@ -2,6 +2,10 @@
 
 Read this reference when the user requests a PR status check or asks what to work on after a merge. Run any commands from the consumer repository root. Resolve the actual host, repository, and PR from trusted task context and validate them before querying. This procedure reads state and recommends work; it never merges, assigns issues, edits Projects, creates branches, or starts implementation.
 
+## Autonomous resumption
+
+For a resumed autonomous run, first read the local [autonomous contract](autonomous.md). This reference still performs read-only verification and selection, not implementation or merge. Limit executable candidates to the original finite `work_items`; a newly discovered backlog item is a recommendation requiring a new grant. Return the verified result to the initiating loop. It may invoke an installed execution skill only with current `continue` and `implement_phase` authorization, satisfied human/integration gates, and unexpired shared limits. A user saying "merged" does not restart a stopped run; require an explicit resume and verify approval evidence rather than treating the checkpoint as authority. No background polling is introduced.
+
 ## Verify the outcome first
 
 Use the installed CLI's help to confirm available fields. For validated `repo` in `[HOST/]OWNER/REPO` format and `pr_number`:

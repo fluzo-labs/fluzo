@@ -211,9 +211,9 @@ in model behavior; model-driven activation/calibration remains unverified.
 ## Shared Fluzo workflow skills
 
 Installed from [fluzo-labs/common-skills](https://github.com/fluzo-labs/common-skills),
-release `v1.1.0`, pinned to `7c366791aa23715e7bb772e5d9d2dc4acebecc04`.
-All seven entry points and fourteen references are installed byte-for-byte;
-the update from v1.0.0 was reviewed before replacing the verified local copies.
+release `v1.2.0`, pinned to `b73053c28ba6e3fc1e4993d47fce933a5d861e85`.
+All seven entry points and twenty-one references are installed byte-for-byte;
+the update from v1.1.0 was reviewed before replacing the verified local copies.
 Each folder additionally contains the upstream MIT LICENSE and a local ORIGIN.md.
 
 | Skill | When to use |
@@ -251,15 +251,22 @@ higher-priority tool instructions when generic advice differs. Skill selection o
 installation is not approval to commit, publish, merge, change Project state or
 release. These procedures are development guidance, not new runtime features.
 
-The v1.1.0 update adds contextual next-step recommendations, explicit push/PR
-handoffs and a post-merge continuation reference that verifies acceptance before
-recommending the next issue. Recommendations do not authorize automatic execution.
-The annotated upstream tag is unsigned; pinned hashes verify content integrity,
-not a cryptographic publisher signature. No permissions or configuration changed.
+The v1.2.0 update adds bounded sequential autonomous mode to all seven skills,
+with identical self-contained `references/autonomous.md` contracts. Guided mode
+remains the default. Explicit scope, per-operation authorization and delegated
+content generation can cover continuation without repeated prompts. The default
+bounds are one phase, twelve skill invocations, two correction rounds and thirty
+minutes, with one writer and shared counters across handoffs. Publication stops
+at `waiting_review`; merge, releases and permission changes are not autonomous
+operations. Installation does not activate that mode or grant any operation.
+Project and higher-priority instructions still prevail. Pinned hashes establish
+content integrity, not a cryptographic publisher signature or behavioral guarantee.
+No permissions, hooks, runtime configuration or Fluzo-collection files changed.
 
 Reopen Crush to refresh changed descriptions and cached instructions. The update
-passed `python3 scripts/check_dev_setup.py` and all 24 Python tests, including
-revision, content, missing-resource and symlink rejection. The installation also
+passed `python3 scripts/check_dev_setup.py` and focused skill/tooling tests,
+including revision, content, missing-resource and symlink rejection plus identical
+autonomous contracts and their entry-point links. The installation also
 verifies upstream byte equality and self-contained links; no live backlog
 mutations, releases, commit tests or behavioral model evaluations were performed
 as installation tests.

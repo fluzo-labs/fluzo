@@ -2,9 +2,9 @@
 
 Source: https://github.com/fluzo-labs/common-skills
 
-Release: `v1.1.0`
+Release: `v1.2.0`
 
-Revision: `7c366791aa23715e7bb772e5d9d2dc4acebecc04`
+Revision: `b73053c28ba6e3fc1e4993d47fce933a5d861e85`
 
 Upstream folder: `skills/convention-document`. Skill and reference files are unmodified.
 The upstream MIT [license](LICENSE) is retained in this folder.
