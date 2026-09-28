@@ -51,6 +51,10 @@ active runtime application are not implemented. Runtime tests, benchmarks and
 release packaging will be documented when implemented. [APPLICATION.md](APPLICATION.md)
 describes the FND-03 port, snapshot/cursor contracts and effect-free protocol demo;
 it is not an interactive TUI or a production transport.
+[HTTP_SIMULATOR.md](HTTP_SIMULATOR.md) describes SIM-01's strict HTTP/SSE fixtures,
+test-only dependencies and Linux private-network profile:
+`python3 scripts/test_http_simulator.py`. This exercises protocol simulation,
+not a native agent repair or live inference.
 
 ## Contributing
 

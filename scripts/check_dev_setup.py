@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -24,9 +25,9 @@ REVIEWED_PACKAGES = {
     "serde": ("1.0.229", {"derive", "serde_derive", "std"}),
     "serde_core": ("1.0.229", {"alloc", "default", "result", "std"}),
     "serde_derive": ("1.0.229", {"default"}),
-    "syn": ("3.0.5", {"clone-impls", "derive", "parsing", "printing", "proc-macro"}),
-    "proc-macro2": ("1.0.107", {"proc-macro"}),
-    "quote": ("1.0.47", {"proc-macro"}),
+    "syn": ("3.0.5", {"clone-impls", "default", "derive", "full", "parsing", "printing", "proc-macro"}),
+    "proc-macro2": ("1.0.107", {"default", "proc-macro"}),
+    "quote": ("1.0.47", {"default", "proc-macro"}),
     "unicode-ident": ("1.0.24", set()),
     "toml_edit": ("0.25.15+spec-1.1.0", {"display", "parse", "serde"}),
     "toml_parser": ("1.1.3+spec-1.1.0", {"alloc", "default", "std"}),
@@ -39,7 +40,49 @@ REVIEWED_PACKAGES = {
     "winnow": ("1.0.4", {"alloc", "ascii", "binary", "default", "parser", "std"}),
     "memchr": ("2.8.3", {"alloc", "std"}),
 }
-SKILLS = {"rust-practices", "rust-review", "fluzo-rust-boundaries", "fluzo-deterministic-testing"}
+SIMULATOR_PACKAGES = {
+    "atomic-waker": ("1.1.2", set()),
+    "bytes": ("1.12.1", {"default", "std"}),
+    "futures-channel": ("0.3.34", {"alloc", "default", "std"}),
+    "futures-core": ("0.3.34", {"alloc", "default", "std"}),
+    "http": ("1.5.0", {"default", "std"}),
+    "http-body": ("1.1.0", set()),
+    "http-body-util": ("0.1.5", set()),
+    "httparse": ("1.10.1", {"default", "std"}),
+    "httpdate": ("1.0.3", set()),
+    "hyper": ("1.11.1", {"client", "default", "http1", "server"}),
+    "hyper-util": ("0.1.20", {"tokio"}),
+    "itoa": ("1.0.18", set()),
+    "libc": ("0.2.189", {"default", "std"}),
+    "mio": ("1.2.3", {"net", "os-ext", "os-poll"}),
+    "pin-project-lite": ("0.2.17", set()),
+    "serde_json": ("1.0.151", {"std"}),
+    "smallvec": ("1.16.1", {"const_generics", "const_new"}),
+    "socket2": ("0.6.5", {"all"}),
+    "tokio": ("1.53.1", {"bytes", "default", "io-util", "libc", "macros", "mio", "net", "rt", "socket2", "sync", "time", "tokio-macros", "windows-sys"}),
+    "tokio-macros": ("2.7.2", set()),
+    "try-lock": ("0.2.5", set()),
+    "want": ("0.3.1", set()),
+    "wasi": ("0.11.1+wasi-snapshot-preview1", {"default", "std"}),
+    "windows-link": ("0.2.1", set()),
+    "windows-sys": ("0.61.2", {
+        "Wdk", "Wdk_Foundation", "Wdk_Storage", "Wdk_Storage_FileSystem", "Wdk_System", "Wdk_System_IO",
+        "Win32", "Win32_Foundation", "Win32_Networking", "Win32_Networking_WinSock", "Win32_Security",
+        "Win32_Storage", "Win32_Storage_FileSystem", "Win32_System", "Win32_System_IO", "Win32_System_Pipes",
+        "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_WindowsProgramming", "default",
+    }),
+    "zmij": ("1.0.23", set()),
+}
+REVIEWED_PACKAGES.update(SIMULATOR_PACKAGES)
+SIMULATOR_DIRECT = {"serde", "serde_json", "hyper", "hyper-util", "http-body-util", "tokio"}
+COMMON_SKILLS = {
+    "convention-document", "delivery-review-github", "git-conventional-commit",
+    "issue-refine-github", "plan-create", "plan-execute", "release-prepare-github",
+}
+COMMON_REVISION = "7c366791aa23715e7bb772e5d9d2dc4acebecc04"
+FLUZO_SKILLS = {"fluzo-deterministic-testing", "fluzo-rust-boundaries", "tui-design", "rust-practices", "rust-review"}
+FLUZO_REVISION = "48a1ac36fc229ccbcb1fe671d5dbd9774a567d56"
+SKILLS = FLUZO_SKILLS | COMMON_SKILLS
 
 
 def validate_graph(metadata):
@@ -54,6 +97,11 @@ def validate_graph(metadata):
             raise ValueError(f"Unexpected license/MSRV: {package['name']}")
         if package["features"] or any(dependency["optional"] for dependency in package["dependencies"]):
             raise ValueError(f"New feature declarations require an explicit graph policy review: {package['name']}")
+        for dependency in nodes[identity]["deps"]:
+            if any(kind["kind"] == "dev" for kind in dependency["dep_kinds"]):
+                name = packages[dependency["pkg"]]["name"]
+                if package["name"] != "fluzo-runtime" or name not in SIMULATOR_DIRECT:
+                    raise ValueError(f"Unreviewed test dependency: {package['name']} -> {name}")
         pending = [(identity, [package["name"]])]
         visited = set()
         while pending:
@@ -86,11 +134,37 @@ def validate_graph(metadata):
             raise ValueError("New feature combinations require an explicit graph policy review")
 
 
+def validate_collection(root, collection, names, revision):
+    directory = root / ".agents/skills"
+    manifest = tomllib.loads((root / f".agents/{collection}.toml").read_text())
+    if manifest["source"] != f"https://github.com/fluzo-labs/{collection}" or manifest["revision"] != revision:
+        raise ValueError(f"Unexpected {collection} source/revision")
+    installed = set()
+    for name in names:
+        folder = directory / name
+        if folder.is_symlink():
+            raise ValueError(f"Linked collection skill: {name}")
+        for path in folder.rglob("*"):
+            if path.is_symlink():
+                raise ValueError(f"Linked collection skill resource: {path}")
+            if path.is_file():
+                installed.add(path.relative_to(directory).as_posix())
+        if not (folder / "LICENSE").is_file() or not (folder / "ORIGIN.md").is_file():
+            raise ValueError(f"Missing collection skill license/provenance: {name}")
+    if installed != set(manifest["files"]):
+        raise ValueError("Collection skill file inventory mismatch")
+    for name, digest in manifest["files"].items():
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != digest:
+            raise ValueError(f"Collection skill checksum mismatch: {name}")
+
+
 def validate_skills(root=ROOT):
     directory = root / ".agents/skills"
     entries = sorted(directory.glob("*/SKILL.md"))
     if {entry.parent.name for entry in entries} != SKILLS:
         raise ValueError("Unexpected skill inventory")
+    validate_collection(root, "common-skills", COMMON_SKILLS, COMMON_REVISION)
+    validate_collection(root, "fluzo-skills", FLUZO_SKILLS, FLUZO_REVISION)
     for entry in entries:
         text = entry.read_text()
         if not text.startswith("---\n") or "\n---\n" not in text[4:]:
@@ -130,7 +204,7 @@ def main():
     )
     validate_graph(json.loads(metadata))
     validate_skills()
-    print("Resolved foundation graph, toolchain, LSP config and four skills checked.")
+    print(f"Resolved foundation graph, toolchain, LSP config and {len(SKILLS)} skills checked.")
 
 
 if __name__ == "__main__":

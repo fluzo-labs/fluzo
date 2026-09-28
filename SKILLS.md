@@ -187,24 +187,118 @@ concrete use case and compatibility check.
 
 | Installed skill | Source and local changes |
 | --- | --- |
-| `rust-practices` | Four selected leonardomso rules, rewritten as compact self-contained procedures; no full router, remote reference chain, panic/default fallback or release-profile prescriptions |
-| `rust-review` | Apollo checklist adapted to real commands, Fluzo safety contracts and task-specific invocation; no alwaysApply/globs or forced dependencies |
-| `fluzo-rust-boundaries` | Original graph/protocol review procedure with negative calibration cases |
-| `fluzo-deterministic-testing` | Original fixture/isolation/evidence procedure; future native E2E is explicitly unimplemented |
+| `rust-practices` | Fluzo collection version; historical leonardomso attribution and MIT license retained |
+| `rust-review` | Fluzo collection version; historical Apollo attribution and Apache-2.0 license retained |
+| `fluzo-rust-boundaries` | Replaced by the pinned fluzo-labs/fluzo-skills version, including graph/protocol references |
+| `fluzo-deterministic-testing` | Replaced by the pinned fluzo-labs/fluzo-skills version, including isolation/simulation references |
+| `tui-design` | Added from fluzo-labs/fluzo-skills for terminal interaction, safety and verification |
 
 Each adapted skill contains ORIGIN.md with a full upstream revision and its
 retained LICENSE. Modified files identify the adaptation. No unlicensed
 Actionbook/Ratatui material was copied. Their adoption remains blocked on licensing
-review. TUI, execution/storage/observability specialists are deferred until their
-milestones; Google unsafe review is conditional on relevant code (currently unsafe
+review. The original Fluzo tui-design skill is now installed; execution/storage/
+observability specialists remain deferred until their milestones. Google unsafe
+review is conditional on relevant code (currently unsafe
 is forbidden). These are planned later phases, not failed installations.
 
 `python3 scripts/check_dev_setup.py` verifies entry-point metadata, reference links,
 licenses, pinned provenance, toolchain/config and the resolved Cargo graph.
-`python3 -m unittest discover -s scripts -p 'test_*.py'` checks seventeen positive and
+`python3 -m unittest discover -s scripts -p 'test_*.py'` checks nineteen positive and
 negative cases, including forbidden edges, inactive Cargo features, broken
 references, missing licenses, LSP deadlines/EOF and bounded Cargo verification. This is structural/regression evidence, not a measured improvement
 in model behavior; model-driven activation/calibration remains unverified.
+
+## Shared Fluzo workflow skills
+
+Installed from [fluzo-labs/common-skills](https://github.com/fluzo-labs/common-skills),
+release `v1.1.0`, pinned to `7c366791aa23715e7bb772e5d9d2dc4acebecc04`.
+All seven entry points and fourteen references are installed byte-for-byte;
+the update from v1.0.0 was reviewed before replacing the verified local copies.
+Each folder additionally contains the upstream MIT LICENSE and a local ORIGIN.md.
+
+| Skill | When to use |
+| --- | --- |
+| `issue-refine-github` | Assess unclear or oversized issues and propose refinement |
+| `plan-create` | Draft an explicit local plan without replacing the GitHub backlog |
+| `plan-execute` | Implement an authorized, reviewable phase |
+| `delivery-review-github` | Review evidence and prepare issue/PR delivery |
+| `convention-document` | Document a confirmed agreement or correction |
+| `git-conventional-commit` | Prepare or create an explicitly requested scoped commit |
+| `release-prepare-github` | Prepare changelog/release evidence, with publication separately authorized |
+
+The complete copies live alongside the Rust and Fluzo skills in `.agents/skills`.
+No npx installer, upstream script, hook, global configuration or extra permission
+was used. No update follows a moving branch. Existing Rust skills and LSP settings
+were preserved. Crush discovers the default directory; do not add a duplicate
+skill-path or another copy under `.crush/skills`.
+
+`.agents/common-skills.toml` records the source, release, reviewed commit and SHA-256 of each
+installed file, including local provenance and license copies. The existing CI
+checker now verifies all twelve skills and both collections' exact file sets
+and hashes. Regression cases reject edited content, missing references/licenses,
+extra resources, a changed revision and linked resources. These are integrity and
+portability checks, not a signature, sandbox or proof of agent behavior.
+
+For updates, inspect a specific new upstream commit and diff, preserve local
+changes, copy complete reviewed folders, update the manifest and revision guard,
+and rerun the documented Python checks. Do not regenerate checksums merely to
+hide an unexpected edit. The source can be retrieved with authenticated gh; tests
+and ordinary skill usage need no download. GitHub-oriented operations still need
+gh access, while git-cliff is optional and is not installed here.
+
+Follow AGENTS.md, the pinned design baseline, project English documentation and
+higher-priority tool instructions when generic advice differs. Skill selection or
+installation is not approval to commit, publish, merge, change Project state or
+release. These procedures are development guidance, not new runtime features.
+
+The v1.1.0 update adds contextual next-step recommendations, explicit push/PR
+handoffs and a post-merge continuation reference that verifies acceptance before
+recommending the next issue. Recommendations do not authorize automatic execution.
+The annotated upstream tag is unsigned; pinned hashes verify content integrity,
+not a cryptographic publisher signature. No permissions or configuration changed.
+
+Reopen Crush to refresh changed descriptions and cached instructions. The update
+passed `python3 scripts/check_dev_setup.py` and all 24 Python tests, including
+revision, content, missing-resource and symlink rejection. The installation also
+verifies upstream byte equality and self-contained links; no live backlog
+mutations, releases, commit tests or behavioral model evaluations were performed
+as installation tests.
+
+## Fluzo design and Rust collection
+
+Installed all five skills from [fluzo-labs/fluzo-skills](https://github.com/fluzo-labs/fluzo-skills),
+pinned to `48a1ac36fc229ccbcb1fe671d5dbd9774a567d56`. This supersedes the initial
+three-skill installation at `9d17e400d4a98996c59fd0a4129bc579a2d92f41`.
+The user explicitly chose Fluzo versions over all same-name installed skills:
+
+- Replaced local `rust-practices` and `rust-review` with the newly published Fluzo adaptations.
+- Refreshed `fluzo-deterministic-testing`, `fluzo-rust-boundaries` and `tui-design`;
+  their upstream instruction files are unchanged from the previous revision.
+- Preserved all seven common-skills folders and their manifest unchanged.
+
+All upstream files are copied byte-for-byte. The two new Rust folders preserve
+upstream ORIGIN.md, including historical leonardomso/Apollo revisions; their direct
+installation source is now Fluzo, recorded in the collection manifest. MIT applies
+except for rust-review, which retains Apache-2.0. The other three folders add only
+local ORIGIN.md provenance. No license or original attribution was removed.
+`.agents/fluzo-skills.toml` records the source, pinned revision and SHA-256 of every
+installed file. The existing integrity checker validates both collections offline.
+Regression mutations cover all five Fluzo skills: edited content, missing
+references/licenses, extra stale files, revision drift and symlink substitution.
+
+These portable procedures defer to the consumer's actual policy. In this project,
+AGENTS.md and the approved PRD remain authoritative: no automatic 429 recovery,
+no release of uncertain dispatched capacity, bootstrap feature restrictions and
+owned protocol boundaries still apply. TUI examples of editor/interactive-child
+handoff do not add that capability to the MVP; minimum layouts and acceptance
+remain those of the PRD. No repository-wide upstream crushrc, scripts, global
+settings, runtime features or permissions were adopted.
+
+Installation checks verify twelve unique skill names, exact upstream content,
+self-contained relative links and preservation of noncolliding skills. They do not
+constitute native E2E, visual acceptance or model behavior evaluation. Reopen Crush
+to refresh both changed descriptions and newly added skills; do not assume an
+already-running session replaces cached skill instructions automatically.
 
 ## Rust LSP installation
 
