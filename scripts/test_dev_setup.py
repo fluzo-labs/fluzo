@@ -63,6 +63,24 @@ class BoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "feature combinations|Unreviewed package source/version"):
                 validate_graph(metadata)
 
+    def test_terminal_libraries_remain_outside_core_and_runtime(self):
+        for source in ["fluzo-core", "fluzo-runtime"]:
+            metadata = copy.deepcopy(self.metadata)
+            identities = {package["name"]: package["id"] for package in metadata["packages"]}
+            node = next(node for node in metadata["resolve"]["nodes"] if node["id"] == identities[source])
+            node["deps"].append({"pkg": identities["ratatui"], "dep_kinds": [{"kind": "build", "target": "cfg(unix)"}]})
+            with self.assertRaisesRegex(ValueError, "Forbidden production path"):
+                validate_graph(metadata)
+
+    def test_terminal_duplicate_versions_are_checked_independently(self):
+        for name in ["syn", "unicode-width", "windows-sys", "hashbrown"]:
+            for original in [item for item in self.metadata["packages"] if item["name"] == name]:
+                metadata = copy.deepcopy(self.metadata)
+                package = next(item for item in metadata["packages"] if item["id"] == original["id"])
+                package["version"] = "999.0.0"
+                with self.assertRaisesRegex(ValueError, "Unreviewed package source/version"):
+                    validate_graph(metadata)
+
     def test_external_transitive_dependency_is_detected(self):
         metadata = copy.deepcopy(self.metadata)
         metadata["packages"].append({"id": "external", "name": "external-io"})

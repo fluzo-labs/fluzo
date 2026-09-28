@@ -4,8 +4,8 @@
 
 **Status: development bootstrap.** The four-crate Cargo workspace, bootstrap
 help/version binary, typed configuration, application protocol and deterministic
-scenario driver are available. Agent execution, the TUI, providers and persistence
-are not implemented. There are no releases or
+scenario driver and initial interactive demo shell are available. Agent execution,
+full TUI workflows, providers and persistence are not implemented. There are no releases or
 measured runtime performance results yet.
 
 - [Documentation site](https://fluzo-labs.github.io/fluzo-docs/)
@@ -55,6 +55,12 @@ it is not an interactive TUI or a production transport.
 test-only dependencies and Linux private-network profile:
 `python3 scripts/test_http_simulator.py`. This exercises protocol simulation,
 not a native agent repair or live inference.
+
+[UI-01's interactive shell](TUI.md) is available with
+`cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo --interactive`.
+It provides a multiline composer, searchable palette and synthetic streaming,
+without reading configuration or executing tasks. Ctrl+P opens actions;
+Ctrl+Q exits with confirmation for a nonempty draft.
 
 ## Contributing
 

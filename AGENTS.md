@@ -9,8 +9,9 @@ See [CONFIGURATION.md](CONFIGURATION.md) for settings APIs and limits. FND-03 ad
 an owned application protocol and an in-memory scenario driver; see
 [APPLICATION.md](APPLICATION.md). SIM-01 adds test-only strict HTTP/SSE fixtures
 and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
-Agent execution, production async transport,
-TUI, providers, persistence and runtime acceptance are not implemented. The
+UI-01 adds an explicit interactive demo shell, composer and palette; see
+[TUI.md](TUI.md). Agent execution, production async transport, full TUI workflows,
+providers, persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
 
@@ -264,7 +265,15 @@ cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo
 ```
 
-The binary supports bootstrap help/version and an explicit static protocol demo.
+The binary supports bootstrap help/version, a static protocol demo and
+`demo --interactive`, a synthetic TUI shell. The interactive shell queries the
+application port supplied by CLI; it never executes tasks or reads `.fluzo`.
+Focused checks are `cargo test -p fluzo-tui --locked --offline` and
+`python3 -m unittest discover -s scripts -p 'test_tui.py'` (Linux PTY).
+Ratatui 0.29.0/Crossterm 0.28.1 and Unicode/signal helpers are pinned; terminal
+libraries are permitted only in TUI/CLI production paths. The graph checker
+validates multiple reviewed versions separately. PTY tests join ordinary Python
+unittest discovery in CI. Visual review and reference performance are unverified.
 Execution returns failure and explicitly says the runtime is not implemented.
 The demo does not read configuration or execute tools; scenario advancement is
 host-controlled, never a side effect of inspection, polling or reconnecting. Python 3.11+ is needed for tooling

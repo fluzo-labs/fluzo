@@ -1,4 +1,6 @@
 pub mod inspection;
+pub mod shell;
+pub mod terminal;
 
 use fluzo_core::RuntimeAvailability;
 
