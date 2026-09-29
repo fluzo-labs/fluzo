@@ -417,6 +417,16 @@ impl Settings {
         for (name, pool) in &self.capacity_pools {
             entries.extend(pool.entries(&format!("capacity_pools.{name}")));
         }
+        for (descriptor, _) in &mut entries {
+            match descriptor.key.as_str() {
+                "tui.animation_fps" => descriptor.integer_maximum = Some(60),
+                "tui.theme" => {
+                    descriptor.kind =
+                        SettingKind::Choice(vec!["default".to_owned(), "high-contrast".to_owned()]);
+                }
+                _ => {}
+            }
+        }
         entries
     }
 
