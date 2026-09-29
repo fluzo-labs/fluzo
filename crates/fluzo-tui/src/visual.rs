@@ -364,6 +364,14 @@ pub fn logo(
         true,
         ascii,
     );
+    if color && settings.theme == "high-contrast" {
+        crate::identity::fire_colors(
+            &mut lines,
+            if moving { age } else { Duration::ZERO },
+            8.0,
+            true,
+        );
+    }
     crate::identity::state_colors(&mut lines, state, age, moving, color, true);
     lines
 }

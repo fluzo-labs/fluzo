@@ -16,6 +16,110 @@ This section supersedes conflicting behavior or completion claims in the
 chronological iteration notes below. Their test counts describe those older
 working states, not the current tree.
 
+### High-contrast fire palette
+
+The high-contrast identity now uses a red/orange/yellow gradient on black,
+including both wordmarks, the top activity bar, inline loading wave and label,
+and model metric bars. Truecolor terminals retain the relief shading instead
+of forcing the old basic-color artwork. Limited-color terminals use warm ANSI
+colors; NO_COLOR and reduced-motion behavior remain unchanged. Success, waiting,
+error and cancellation retain their semantic state tints and independent labels.
+The default cyan/blue/violet theme is unchanged. Buffer tests cover the fire
+palette, cached/full redraw equality and frozen motion in compact/wide layouts;
+actual contrast still requires human review.
+
+### Developer-menu review follow-up
+
+The maintainer confirmed wordmark legibility, sizing, developer-menu behavior,
+notification arrival and the fire palette during the Ghostty review. Full
+cross-terminal contrast and runtime acceptance remain separate pending checks.
+The developer menu now shows a selectable list with current values, plus the
+selected entry's metadata. Up/Down and Tab/Shift+Tab navigate, Home/End jump, Left/Right edit,
+Ctrl+U clears the search, and held arrow keys repeat. Typing still filters settings;
+clear the filter to navigate the full list. Ctrl+A applies session preferences,
+Ctrl+R previews defaults and Esc reverts. No persistence is added.
+
+A wide preview-status row previously painted over the middle of the wordmark.
+It is now confined to the conversation width; regression buffers cover all
+synthetic states at 120x40, 160x50 and 196x36, including the untouched relief rows.
+
+Select `Notification test message` and Enter, or press Ctrl+E, to edit a separate
+synthetic notification body. Arrow/Home/End/Delete/Backspace and sanitized paste
+edit it; Ctrl+U clears it, Esc returns without scheduling, and Enter schedules
+one test after three seconds. Ctrl+T schedules the currently entered text directly.
+The text is capped at 256 UTF-8 bytes, control sequences are removed and OSC
+separators are normalized. It is never copied from the composer or persisted.
+Use synthetic text only, never secrets: desktop notifications leave the app.
+
+Desktop delivery still requires `--desktop-notifications`, Ghostty, and an
+observed focus loss before the deadline. Unknown/focused windows suppress it;
+successful terminal writes do not prove a visible popup. The application does not
+add a native desktop backend or an in-app notification stack. Keyboard/buffer
+regressions cover navigation, editing, draft preservation and logo composition;
+the PTY test sends custom pasted text and verifies the exact sanitized OSC bytes.
+
+### Follow-up validation evidence
+
+The follow-up working tree based on `a7ff984` was validated before publication,
+with the same application content as this delivery. All commands in the
+stabilization verification section passed again: 126 Rust tests (68 TUI),
+47 Python tests including eight PTY cases, format/check/build/Clippy, development
+checks, isolated LSP and the private-loopback HTTP profile. Live inference was
+`not_run`. The tests do not require private credentials or model services.
+
+Additional local probes passed 32 PTY combinations at 120x40: 0/15/30/60 FPS,
+reduced motion on/off, reversible default/high-contrast preview and session
+application, high-contrast RGB, ANSI and NO_COLOR. They checked idle output
+silence, typing during synthetic playback, cancellation, retained drafts and
+paused history, unchanged temporary source/configuration, and terminal cleanup.
+
+Eighteen emulator-hosted relay scenarios passed in Ghostty 1.3.1-arch2.2 and
+Alacritty 0.17.0 (94e7c887), using X11 with temporary HOME/configuration: each
+terminal at 80x24, 120x40 and 160x50 with default RGB, high-contrast RGB and
+NO_COLOR. The probes captured 54 window-only images and 18 synthetic output
+recordings. Input was injected into an inner PTY, not through real emulator
+keyboard events. Ghostty initial dimensions required calibration of the owned
+window; some images include its temporary resize badge. These are limited
+presentation checks, not complete human acceptance or physical display metrics.
+
+A separate debug-build probe filled the 256-line retained-history limit using
+ten 32-line batches of approximately 223 bytes per line, then exercised normal
+700-ms synthetic playback, input, resize and cancellation. The host used Rust
+1.98.0, Python 3.14.7 and CachyOS kernel 7.2.6-1-cachyos. Each mode measured 50
+single-character samples from PTY injection to the exact composer cell appearing
+in captured output, including Python observer overhead. p95 uses nearest rank
+(sorted index 47); this is not a release-reference profile.
+
+| FPS | Reduced motion | Median ms | p95 ms | Maximum ms | Cancel ms |
+| --- | --- | --- | --- | --- | --- |
+| 0 | off | 29.524 | 35.941 | 36.369 | 26.304 |
+| 15 | off | 30.409 | 40.660 | 61.856 | 27.263 |
+| 30 | off | 33.476 | 52.648 | 63.345 | 29.555 |
+| 60 | off | 33.255 | 40.338 | 65.864 | 27.508 |
+| 60 | on | 29.510 | 35.086 | 35.380 | 28.967 |
+
+Eight-character bursts separately reached p95 292-302 ms. All final probes
+completed with restoration, but input/render serialization needs profiling.
+One exploratory single-key p95 exceeded 50 ms. PRD 49 acceptance remains
+unverified: the required release build, approved hardware/profile, 1000 samples,
+60-second high-rate event workload, CPU/render distributions and persisted
+large-history fixture were not supplied by this demo probe. Lower-rate results
+must not substitute for the default-60 reference gate.
+
+Review also flagged subdued secondary model/footer text in the default-theme
+Alacritty capture. Full semantic-state/diff contrast review remains pending.
+The maintainer confirmed Ghostty desktop delivery after testing; Alacritty has
+no notification adapter and is not counted as notification support.
+
+Failed harness attempts were not counted as passes: stale screen markers,
+incorrect assumed editor row, initial Ghostty cell sizes, blocking PTY writes,
+a 4 MiB capture cap and a broad single-character marker. The final probe used
+nonblocking writes with bounded draining, rolling capture, exact-cell matching
+and an external 45-second case deadline. No application code was changed during
+those validation probes. The local synthetic artifacts and harnesses remain in
+`/tmp/fluzo-ui-validation.M9qe4F/`; they are not committed or publicly hosted,
+so this summary is not a claim of durable screenshot/recording evidence.
+
 ### Stabilized behavior
 
 - The original FLUZO wordmark and its 30x3 relief geometry remain intact. Pending
@@ -64,8 +168,9 @@ UI-02 still needs reviewed contracts for additional logo speed/intensity and
 variant controls, accent/theme presets, layout/tool variants, the full
 notification preferences/preview surface, pending-restart/source presentation
 and applicable consent-aware Laya controls. Only the four existing typed visual
-preferences are editable; preview/apply/reset/cancel remain session-only and
-cannot grant runtime authority. Failure/cancel transition fades are not supplied.
+preferences are editable (the separate notification test text is not a setting);
+preview/apply/reset/cancel remain session-only and cannot grant runtime authority.
+Failure/cancel transition fades are not supplied.
 
 Setup, config discovery, atomic save/reload/conflict handling and persistent
 preference integration belong to the UI-03 boundary; they are not implemented

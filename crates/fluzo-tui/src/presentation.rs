@@ -95,6 +95,13 @@ fn model_meter(width: u16, percent: u16, value: &str, theme: Theme, ascii: bool)
                 1.0,
                 true,
             ))
+        } else if theme.base.bg == Some(Color::Black) {
+            theme.base.fg(crate::identity::fire_gradient(
+                column as f64 / filled.saturating_sub(1).max(1) as f64,
+                0.0,
+                1.0,
+                true,
+            ))
         } else {
             theme.success.remove_modifier(Modifier::BOLD)
         };
