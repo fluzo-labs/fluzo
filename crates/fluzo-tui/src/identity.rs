@@ -43,6 +43,55 @@ pub(crate) fn gradient(position: f64, seconds: f64, period: f64, rgb: bool) -> C
     Color::Rgb(channels[0], channels[1], channels[2])
 }
 
+pub(crate) fn fire_gradient(position: f64, seconds: f64, period: f64, rgb: bool) -> Color {
+    let fraction = (1.0 - (std::f64::consts::PI * (position - seconds / period)).cos()) / 2.0;
+    if !rgb {
+        return if fraction < 0.33 {
+            Color::LightRed
+        } else if fraction < 0.66 {
+            Color::Yellow
+        } else {
+            Color::LightYellow
+        };
+    }
+    Color::Rgb(
+        255,
+        (80.0 + 175.0 * fraction).round() as u8,
+        (48.0 * (1.0 - fraction)).round() as u8,
+    )
+}
+
+pub(crate) fn fire_colors(lines: &mut [Line<'static>], age: Duration, period: f64, rgb: bool) {
+    for line in lines {
+        let width = line.width().saturating_sub(1).max(1);
+        let mut column = 0;
+        for span in &mut line.spans {
+            let tint = fire_gradient(column as f64 / width as f64, age.as_secs_f64(), period, rgb);
+            column += span.width();
+            if span.content.trim().is_empty() {
+                continue;
+            }
+            let recolor = |original: Color| {
+                let shadow = matches!(original, Color::Rgb(red, green, blue) if red.max(green).max(blue) < 100)
+                    || original == Color::DarkGray;
+                match tint {
+                    Color::Rgb(red, green, blue) if shadow => Color::Rgb(
+                        (f64::from(red) * 0.32).round() as u8,
+                        (f64::from(green) * 0.32).round() as u8,
+                        (f64::from(blue) * 0.32).round() as u8,
+                    ),
+                    _ if shadow => Color::Red,
+                    _ => tint,
+                }
+            };
+            span.style.fg = Some(recolor(span.style.fg.unwrap_or(Color::White)));
+            if let Some(background) = span.style.bg {
+                span.style.bg = Some(recolor(background));
+            }
+        }
+    }
+}
+
 fn pixel(column: i32, row: i32, elapsed: Duration, rgb: bool) -> Option<Color> {
     let color = gradient(f64::from(column) / 29.0, elapsed.as_secs_f64(), 8.0, rgb);
     if ink(column, row) {

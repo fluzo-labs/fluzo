@@ -298,9 +298,14 @@ class TerminalTests(unittest.TestCase):
                         receive(b"Notification test in 3 seconds")
                         receive(b"suppressed")
                         self.assertNotIn(b"]777;notify;", output)
+                        os.write(master, b"\x05")
+                        receive(b"Notification test text")
+                        os.write(master, b"\x15\x1b[200~Custom test; safe\x1b]52;c;hidden\x07\x1b[201~")
+                        receive(b"Custom test  safe")
+                        self.assertNotIn(b"]777;notify;", output)
                         start = len(output)
-                        os.write(master, b"\x1b[O\x14")
-                        notification = b"\x1b]777;notify;Fluzo notification test;Synthetic completion test. No agent work was executed.\x1b\\"
+                        os.write(master, b"\r\x1b[O")
+                        notification = b"\x1b]777;notify;Fluzo notification test;Custom test  safe\x1b\\"
                         receive(notification, start)
                         self.assertEqual(output.count(notification), 1)
                     os.write(master, b"\x03")

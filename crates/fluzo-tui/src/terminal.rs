@@ -312,7 +312,9 @@ pub fn run_demo(
             }
             if shell.notification_test {
                 shell.notification_test = false;
-                shell.status = notifications.schedule_test(started.elapsed()).into();
+                shell.status = notifications
+                    .schedule_message(started.elapsed(), shell.notification_text())
+                    .into();
                 dirty = true;
             }
             if let Some(result) = notifications.tick(started.elapsed(), terminal.backend_mut()) {
