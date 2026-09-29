@@ -10,7 +10,15 @@ an owned application protocol and an in-memory scenario driver; see
 [APPLICATION.md](APPLICATION.md). SIM-01 adds test-only strict HTTP/SSE fixtures
 and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
 UI-01 adds an explicit interactive demo shell, composer and palette; see
-[TUI.md](TUI.md). Agent execution, production async transport, full TUI workflows,
+[TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
+The current visual iteration follows Crush-style responsive conversation layout,
+wrapped messages, expandable synthetic tool output and a growing borderless
+composer. The original FLUZO relief wordmark is restored in the wide sidebar;
+compact mode retains its one-line header. The original 80%-width top loader is
+also restored, honoring work/idle, FPS 0 and reduced motion without changing layout.
+The inspected Crush revision uses FSL-1.1-MIT; do not copy its source or artwork
+into this MIT workspace by assuming an unrestricted license. File persistence
+and the remaining UI-02 settings integration are not implemented. Agent execution, production async transport, full TUI workflows,
 providers, persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
@@ -268,6 +276,11 @@ cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo
 The binary supports bootstrap help/version, a static protocol demo and
 `demo --interactive`, a synthetic TUI shell. The interactive shell queries the
 application port supplied by CLI; it never executes tasks or reads `.fluzo`.
+Current keys follow Crush for implemented demo actions: Enter sends a retained
+preview, Ctrl+J/Shift+Enter inserts a newline, Esc cancels playback, Ctrl+C exits,
+Ctrl+G shows help and Ctrl+B toggles the wide sidebar. Ctrl+S now opens read-only
+session information, not draft preview. See TUI.md for unavailable shortcuts and
+terminal encoding limits; key-map alignment is not full workflow parity.
 Focused checks are `cargo test -p fluzo-tui --locked --offline` and
 `python3 -m unittest discover -s scripts -p 'test_tui.py'` (Linux PTY).
 Ratatui 0.29.0/Crossterm 0.28.1 and Unicode/signal helpers are pinned; terminal

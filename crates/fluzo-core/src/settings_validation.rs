@@ -16,8 +16,17 @@ impl Settings {
                 }
                 _ => false,
             };
-            let out_of_range =
-                matches!(value, SettingValue::Integer(value) if value > i64::MAX as u64);
+            let out_of_range = matches!(value, SettingValue::Integer(value)
+                if value > descriptor.integer_maximum.unwrap_or(i64::MAX as u64));
+            if let (SettingKind::Choice(options), SettingValue::Text(value)) =
+                (&descriptor.kind, &value)
+                && !options.contains(value)
+            {
+                errors.push(ValidationError::new(
+                    safe_key(&descriptor.key),
+                    ValidationCode::UnsupportedValue,
+                ));
+            }
             if invalid || out_of_range {
                 let code = match descriptor.constraint {
                     Constraint::SchemaVersion => ValidationCode::UnsupportedVersion,
