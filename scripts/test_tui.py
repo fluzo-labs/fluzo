@@ -165,6 +165,7 @@ class TerminalTests(unittest.TestCase):
                     wait_for(b"Demo state: Running")
                     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 60, 0, 0))
                     child.send_signal(signal.SIGWINCH)
+                    wait_for(b"> animation_fps ", row=4)
                     os.write(master, b"\x7f")
                     wait_for(b"> animation_fp ", row=4)
                     os.write(master, b"\x0e")
