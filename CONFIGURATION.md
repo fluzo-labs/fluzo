@@ -43,7 +43,7 @@ validation without importing runtime or the TOML parser.
 
 ## Visual session preferences
 
-The isolated `demo --interactive` shell exposes the C1 presentation subset below.
+The isolated `demo --interactive` shell exposes the presentation subset below.
 The shared core registry supplies its descriptors, defaults, choices and validation;
 the menu does not import runtime configuration parsing. This catalog follows the
 approved D0 design revision `53b345e9f1782beef839b42b4c0de4773ed371df`, PRD 29.2.2.
@@ -55,11 +55,13 @@ The table describes the current implementation, not a separate schema.
 | `tui.animation_fps` | Cap animation-driven redraws | Integer 0 through 60 | 60 | Live presentation |
 | `tui.reduced_motion` | Disable animated motion | Boolean | Off | Live presentation |
 | `tui.flags.render_diagnostics` | Show aggregate rendering diagnostics | Boolean | Off | Live presentation |
+| `tui.notifications.desktop_enabled` | Explicit desktop opt-in | Boolean | Off | Session Apply; Ghostty only |
 
 The Developer Menu is disabled by default. Start the demo with `--dev-menu` and
 open it through the command palette; `--no-dev-menu` wins if both are supplied.
-The theme picker exposes only `tui.theme`. The Developer Menu exposes all four
-controls and a separate synthetic notification-text editor, which is not a setting.
+The theme picker exposes only `tui.theme`. The Developer Menu exposes these five
+controls, a separate synthetic notification-text editor and an in-app preview.
+Neither synthetic action is a persistent setting.
 No extra pulse, logo, accent, density or tool-detail selectors are selected by D0.
 
 Typing filters the menu. Up/Down and Tab/Shift+Tab select entries; Left/Right
@@ -71,7 +73,8 @@ are rejected; a rejected edit does not change applied preferences.
 
 - `BuiltIn` identifies untouched defaults in the current defaults-plus-CLI host.
 - `CommandLine` identifies invocation overrides. `--theme`, `--animation-fps` and
-  `--reduced-motion` lock their corresponding controls against edits and Reset.
+  `--reduced-motion` and `--desktop-notifications` lock their corresponding controls
+  against edits and Reset.
   The lock message follows the selected entry, including before an edit attempt.
 - `Draft` identifies a temporary preview that differs from the applied value.
 - `ActiveSnapshot` identifies an explicit session-applied override. Applying a
@@ -80,14 +83,14 @@ are rejected; a rejected edit does not change applied preferences.
 Ctrl+A applies the preview to this session and increments its UI settings version.
 Esc or closing without Apply restores applied values. Ctrl+R previews defaults:
 in Theme preview it resets only the theme; in the Developer Menu it resets all
-four unlocked visual preferences, independently of the search filter. Reset is
+five unlocked preferences, independently of the search filter. Reset is
 reversible through Esc. These operations preserve composer text, focus and scroll.
 FPS 0 and reduced motion stop animation, not input or static state updates;
 terminal color/ASCII capabilities still constrain presentation.
 
 The demo does not read or write `.fluzo`, discover saved preferences or implement
 persistent provenance. Save remains unavailable; C3/UI-03 owns the shared save/apply
-integration. C2 owns bounded notification preferences, not this four-control slice.
+integration. C2 adds the notification preference and isolated preview.
 Desktop test delivery remains separately opt-in and capability/focus gated.
 Presentation settings cannot authorize tools, providers, Laya or policy changes.
 
@@ -114,12 +117,20 @@ how long a desktop service displays a popup.
 The reusable TUI `notification_stack` module validates settings on construction
 and atomic reconfiguration. A duration change affects future receipts only;
 existing deadlines never restart. Available display capacity is supplied by the
-future layout owner and may be zero without changing `max_visible`. The component
+layout owner and may be zero without changing `max_visible`. The component
 has no file writer, external notification transport or rendering side effects.
 See [the C2 logic contract](TUI.md#c2-notification-logic-without-visual-integration)
-for event ordering, memory bounds, expiry and integration limitations. The current
-menu remains unchanged; reversible notification controls and persistence are not
-claimed by this increment.
+for event ordering, memory bounds, expiry and integration limitations.
+
+Desktop enablement is a reversible draft until Ctrl+A applies it for the session.
+Unsupported transports reject menu edits; CLI overrides stay locked. Only applied
+settings reach the external host: opening, Reset, Cancel and internal previews
+never schedule an external send. Applying a disable cancels a pending external
+test; re-enabling does not replay it. Explicit Ctrl+T tests and natural synthetic
+playback completion retain opt-in, capability and known-blur checks. Applying an
+enable does not itself send a notification. No persistence or new transport is added.
+Duration and stack-count keys remain editable through the typed configuration API;
+no duplicate Developer Menu steppers are introduced.
 
 ## Defaults and missing user configuration
 

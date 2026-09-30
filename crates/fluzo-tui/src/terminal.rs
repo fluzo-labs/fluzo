@@ -206,6 +206,7 @@ pub fn run_demo(
             .is_ok_and(|value| matches!(value.as_str(), "truecolor" | "24bit"))
             || std::env::var("TERM").is_ok_and(|value| value == "xterm-ghostty"));
     let synchronized = std::env::var("TERM").is_ok_and(|value| value == "xterm-ghostty");
+    shell.notification_transport_supported = synchronized;
     let mut notifications = crate::notification::Notifications::new(
         shell.preferences.effective().notifications.desktop_enabled,
         &std::env::var("TERM").unwrap_or_default(),
@@ -237,6 +238,7 @@ pub fn run_demo(
             }
             shell.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height));
             shell.elapsed = started.elapsed();
+            dirty |= shell.advance_notifications();
             let scrollbar_visible = shell.scrollbar_visible();
             if scrollbar_visible != last_scrollbar_visible {
                 dirty = true;
@@ -310,6 +312,7 @@ pub fn run_demo(
                 }
                 dirty |= changed;
             }
+            notifications.set_enabled(shell.preferences.applied().notifications.desktop_enabled);
             if shell.notification_test {
                 shell.notification_test = false;
                 shell.status = notifications

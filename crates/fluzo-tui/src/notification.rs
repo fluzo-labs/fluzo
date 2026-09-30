@@ -39,6 +39,13 @@ impl Notifications {
         }
     }
 
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        if self.enabled != enabled {
+            self.test_deadline = None;
+            self.enabled = enabled;
+        }
+    }
+
     pub(crate) fn focus(&mut self, focused: bool) {
         self.focused = Some(focused);
     }
@@ -251,6 +258,36 @@ mod tests {
         );
         notifications.focus(false);
         assert_eq!(notifications.suppression_reason(), None);
+    }
+
+    #[test]
+    fn disabling_cancels_pending_delivery_and_reenable_does_not_replay() {
+        let mut notifications = Notifications::new(true, "xterm-ghostty");
+        notifications.focus(false);
+        notifications.schedule_test(Duration::ZERO);
+        notifications.set_enabled(false);
+        let mut output = Vec::new();
+        assert!(
+            notifications
+                .tick(Duration::from_secs(3), &mut output)
+                .is_none()
+        );
+        notifications.set_enabled(true);
+        assert!(
+            notifications
+                .tick(Duration::from_secs(4), &mut output)
+                .is_none()
+        );
+        assert!(output.is_empty());
+        notifications.schedule_test(Duration::from_secs(4));
+        notifications.set_enabled(true);
+        assert!(
+            notifications
+                .tick(Duration::from_secs(7), &mut output)
+                .unwrap()
+                .unwrap()
+        );
+        assert_eq!(output, TEST_COMPLETED);
     }
 
     #[test]
