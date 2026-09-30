@@ -173,6 +173,14 @@ impl Preferences {
         validate(draft)
     }
 
+    pub fn reset_theme(&mut self) {
+        if !self.locked.contains("tui.theme")
+            && let Some(draft) = self.draft.as_mut()
+        {
+            draft.theme = TuiSettings::default().theme;
+        }
+    }
+
     pub fn reset(&mut self) {
         let defaults = TuiSettings::default();
         if let Some(draft) = self.draft.as_mut() {
