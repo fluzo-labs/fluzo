@@ -1095,7 +1095,13 @@ impl Shell {
                         );
                         self.close_preview();
                     }
-                    KeyCode::Char('r') => self.preferences.reset(),
+                    KeyCode::Char('r') => {
+                        if self.overlay == Some(Overlay::Theme) {
+                            self.preferences.reset_theme();
+                        } else {
+                            self.preferences.reset();
+                        }
+                    }
                     KeyCode::Char('e') if self.overlay == Some(Overlay::Developer) => {
                         self.editing_notification = true;
                         self.notification_editor.cursor = self.notification_editor.text.len();
@@ -1136,7 +1142,11 @@ impl Shell {
                             .preferences
                             .change(selected, if key.code == KeyCode::Left { -1 } else { 1 })
                         {
-                            self.status = error.into();
+                            if self.preferences.source(selected)
+                                != fluzo_core::settings::SettingOrigin::CommandLine
+                            {
+                                self.status = error.into();
+                            }
                         } else {
                             self.status =
                                 "Temporary preview; Esc reverts, Ctrl+A applies for session."
@@ -1800,11 +1810,15 @@ impl Shell {
                                 descriptor.description,
                                 theme.muted,
                             )));
-                            lines.push(Line::from(if self.status.starts_with("Locked") {
-                                self.status.as_str()
-                            } else {
-                                "Live | Left/Right edit | Up/Down/Tab select"
-                            }));
+                            lines.push(Line::from(
+                                if self.preferences.source(key)
+                                    == fluzo_core::settings::SettingOrigin::CommandLine
+                                {
+                                    "Locked by command line; preview cannot override it."
+                                } else {
+                                    "Live | Left/Right edit | Up/Down/Tab select"
+                                },
+                            ));
                         } else {
                             lines.push(Line::from("Synthetic text only; do not enter secrets."));
                             lines.push(Line::from("Enter edits | Ctrl+T sends after 3 seconds"));
@@ -3607,6 +3621,89 @@ mod tests {
         assert_eq!(state.preferences.effective().theme, "high-contrast");
         assert_eq!(state.preferences.version, 1);
         assert!(state.status.contains("no file saved"));
+    }
+
+    #[test]
+    fn theme_reset_preserves_other_preferences_and_remains_reversible() {
+        for locked in [false, true] {
+            let mut state = shell();
+            let mut options = VisualOptions::default();
+            options.settings.dev_menu = true;
+            options.settings.theme = "high-contrast".into();
+            options.settings.animation_fps = 15;
+            options.settings.reduced_motion = true;
+            options.settings.flags.render_diagnostics = true;
+            if locked {
+                options.locked.insert("tui.theme".into());
+            }
+            let original = options.settings.clone();
+            state.preferences = Preferences::new(options).unwrap();
+            state.paste("keep draft");
+            key(&mut state, KeyCode::Tab);
+            key(&mut state, KeyCode::PageUp);
+            let anchor = state.anchor;
+            let mut expected = original.clone();
+            if !locked {
+                expected.theme = "default".into();
+            }
+            state.action(5);
+            control(&mut state, 'r');
+            assert_eq!(state.preferences.effective(), &expected);
+            key(&mut state, KeyCode::Esc);
+            assert_eq!(state.preferences.effective(), &original);
+            state.action(5);
+            control(&mut state, 'r');
+            control(&mut state, 'a');
+            assert_eq!(state.preferences.effective(), &expected);
+            assert_eq!(state.anchor, anchor);
+            assert_eq!(state.focus, Focus::Conversation);
+            assert_eq!(state.draft.text, "keep draft");
+            state.action(6);
+            control(&mut state, 'r');
+            assert_eq!(state.preferences.effective().animation_fps, 60);
+            assert!(!state.preferences.effective().reduced_motion);
+            assert!(!state.preferences.effective().flags.render_diagnostics);
+            key(&mut state, KeyCode::Esc);
+            assert_eq!(state.preferences.effective(), &expected);
+        }
+    }
+
+    #[test]
+    fn visual_lock_feedback_tracks_selection_instead_of_last_error() {
+        for size in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            let mut state = shell();
+            let options =
+                VisualOptions::parse(&["--dev-menu".into(), "--animation-fps".into(), "0".into()])
+                    .unwrap();
+            state.preferences = Preferences::new(options).unwrap();
+            let mut terminal = Terminal::new(TestBackend::new(size.0, size.1)).unwrap();
+            let mut content = |state: &Shell| {
+                terminal.draw(|frame| state.render(frame, false)).unwrap();
+                terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>()
+            };
+            state.action(6);
+            key(&mut state, KeyCode::Down);
+            assert!(content(&state).contains("Locked by command line"));
+            key(&mut state, KeyCode::Right);
+            assert_eq!(state.preferences.effective().animation_fps, 0);
+            key(&mut state, KeyCode::Up);
+            assert!(!content(&state).contains("Locked by command line"));
+            key(&mut state, KeyCode::Right);
+            assert_eq!(state.preferences.effective().theme, "high-contrast");
+            key(&mut state, KeyCode::Down);
+            assert!(content(&state).contains("Locked by command line"));
+            control(&mut state, 'r');
+            assert!(content(&state).contains("Locked by command line"));
+            key(&mut state, KeyCode::Esc);
+            state.action(5);
+            assert!(!content(&state).contains("Locked by command line"));
+        }
     }
 
     #[test]

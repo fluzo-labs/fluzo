@@ -37,7 +37,45 @@ The developer menu now shows a selectable list with current values, plus the
 selected entry's metadata. Up/Down and Tab/Shift+Tab navigate, Home/End jump, Left/Right edit,
 Ctrl+U clears the search, and held arrow keys repeat. Typing still filters settings;
 clear the filter to navigate the full list. Ctrl+A applies session preferences,
-Ctrl+R previews defaults and Esc reverts. No persistence is added.
+Ctrl+R previews defaults and Esc reverts. In Theme preview, Reset affects only
+`tui.theme`; FPS, reduced motion and diagnostics remain unchanged. In the
+Developer Menu, Reset affects all four editable visual preferences, even when
+search filters the list. Both actions preserve CLI locks and remain reversible
+until Apply. The selected entry's CLI lock is shown immediately and never carried
+to another entry. No persistence is added.
+
+### C1 reversible-control corrections
+
+[C1 (#36)](https://github.com/fluzo-labs/fluzo/issues/36) follows the approved D0
+catalog in `fluzo-docs` revision `53b345e9f1782beef839b42b4c0de4773ed371df`,
+PRD 29.1/29.2.1/29.2.2 and architecture A06/A07. The four controls and their
+session/source rules are documented in [CONFIGURATION.md](CONFIGURATION.md#visual-session-preferences).
+These corrections preserve the selected wordmark, palettes and responsive layout;
+they add no customization controls.
+
+Two focused regressions failed before correction: theme Reset changed hidden
+preferences, and CLI lock feedback was not derived from the selected entry.
+The final focused checks passed on the uncommitted C1 correction tree based on
+`4894633edb64945e6d5647b74e76b1312db93aed`: 70 TUI tests, eight Python terminal-suite
+tests and workspace formatting. Tests cover theme-only Reset with/without a CLI
+lock, Cancel/Apply, retained composer/focus/scroll, unchanged Developer Menu Reset,
+and selected-entry lock feedback at 60x16, 80x24, 120x40 and 160x50. An intermediate
+regression also caught stale lock text outside the dialog; lock feedback now
+belongs only to the selected entry. A formatting check required one adjustment.
+
+Commands run from the application repository root:
+
+```sh
+cargo test -p fluzo-tui --locked --offline
+cargo fmt --all -- --check
+python3 -B -m unittest discover -s scripts -p 'test_tui.py'
+```
+
+Existing tests also cover 0/15/30/60 FPS, reduced motion, invalid input,
+preview rollback, full/cached rendering equivalence and terminal-capability
+fallbacks. These are synthetic component/PTY checks, not real-runtime acceptance,
+a new manual contrast review or reference performance evidence. Live inference
+is `not_run`. No issue closure or remote publication is implied.
 
 A wide preview-status row previously painted over the middle of the wordmark.
 It is now confined to the conversation width; regression buffers cover all
@@ -159,18 +197,24 @@ so this summary is not a claim of durable screenshot/recording evidence.
 
 ### Scope boundaries and acceptance still required
 
-The maintainer-selected FLUZO artwork differs from the pinned PRD's Y-shaped
-identity. It is deliberately preserved here; reconciliation in `fluzo-docs` is
-still required before parent acceptance. This local authorization does not amend
-that baseline or remove acceptance criteria.
+D0 reconciled the selected FLUZO artwork with the design baseline at
+`fluzo-docs` revision `53b345e9f1782beef839b42b4c0de4773ed371df`. That documentary
+decision preserves the existing appearance; it does not establish parent UI-02
+acceptance or authorize a redesign.
 
-UI-02 still needs reviewed contracts for additional logo speed/intensity and
-variant controls, accent/theme presets, layout/tool variants, the full
-notification preferences/preview surface, pending-restart/source presentation
-and applicable consent-aware Laya controls. Only the four existing typed visual
-preferences are editable (the separate notification test text is not a setting);
-preview/apply/reset/cancel remain session-only and cannot grant runtime authority.
-Failure/cancel transition fades are not supplied.
+Extra logo speed/intensity controls, manual compact/wide selectors, additional
+accent/contrast presets and layout/tool presentation selectors are optional and
+not selected. They are not C1 acceptance gates. Only the four existing typed
+visual preferences are editable (the separate notification test text is not a
+setting); preview/apply/reset/cancel remain session-only and cannot grant runtime
+authority. Error and cancellation use distinct static tints with independent
+state labels; no new fade animation is required or introduced by these fixes.
+
+C2 owns bounded notification preferences and isolated previews. C3 owns integration
+with shared save/apply and configuration provenance, including restart presentation
+where applicable. Real Laya consent/capacity integration remains later work; the
+prototype does not expose a fake operational control. C4 owns the combined UI-02
+acceptance evidence. These boundaries do not claim those phases are implemented.
 
 Setup, config discovery, atomic save/reload/conflict handling and persistent
 preference integration belong to the UI-03 boundary; they are not implemented

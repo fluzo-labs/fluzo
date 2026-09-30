@@ -41,6 +41,60 @@ Core uses Serde but no filesystem, environment, network, database or terminal
 operations. Runtime owns TOML parsing. TUI consumers can use core metadata and
 validation without importing runtime or the TOML parser.
 
+## Visual session preferences
+
+The isolated `demo --interactive` shell exposes the C1 presentation subset below.
+The shared core registry supplies its descriptors, defaults, choices and validation;
+the menu does not import runtime configuration parsing. This catalog follows the
+approved D0 design revision `53b345e9f1782beef839b42b4c0de4773ed371df`, PRD 29.2.2.
+The table describes the current implementation, not a separate schema.
+
+| Stable key | Purpose | Choices or bounds | Default | Application |
+| --- | --- | --- | --- | --- |
+| `tui.theme` | Select the reviewed palette | `default`, `high-contrast` | `default` | Live presentation |
+| `tui.animation_fps` | Cap animation-driven redraws | Integer 0 through 60 | 60 | Live presentation |
+| `tui.reduced_motion` | Disable animated motion | Boolean | Off | Live presentation |
+| `tui.flags.render_diagnostics` | Show aggregate rendering diagnostics | Boolean | Off | Live presentation |
+
+The Developer Menu is disabled by default. Start the demo with `--dev-menu` and
+open it through the command palette; `--no-dev-menu` wins if both are supplied.
+The theme picker exposes only `tui.theme`. The Developer Menu exposes all four
+controls and a separate synthetic notification-text editor, which is not a setting.
+No extra pulse, logo, accent, density or tool-detail selectors are selected by D0.
+
+Typing filters the menu. Up/Down and Tab/Shift+Tab select entries; Left/Right
+step FPS by one or switch theme/boolean values. FPS steppers stop at 0 and 60.
+The selected entry shows its key, purpose, default, preview-effective value,
+source and live application or CLI lock. No current editable control requires a
+restart. Unsupported themes, malformed/out-of-range CLI values and unknown keys
+are rejected; a rejected edit does not change applied preferences.
+
+- `BuiltIn` identifies untouched defaults in the current defaults-plus-CLI host.
+- `CommandLine` identifies invocation overrides. `--theme`, `--animation-fps` and
+  `--reduced-motion` lock their corresponding controls against edits and Reset.
+  The lock message follows the selected entry, including before an edit attempt.
+- `Draft` identifies a temporary preview that differs from the applied value.
+- `ActiveSnapshot` identifies an explicit session-applied override. Applying a
+  reset default is still a session action, not a new configuration-file source.
+
+Ctrl+A applies the preview to this session and increments its UI settings version.
+Esc or closing without Apply restores applied values. Ctrl+R previews defaults:
+in Theme preview it resets only the theme; in the Developer Menu it resets all
+four unlocked visual preferences, independently of the search filter. Reset is
+reversible through Esc. These operations preserve composer text, focus and scroll.
+FPS 0 and reduced motion stop animation, not input or static state updates;
+terminal color/ASCII capabilities still constrain presentation.
+
+The demo does not read or write `.fluzo`, discover saved preferences or implement
+persistent provenance. Save remains unavailable; C3/UI-03 owns the shared save/apply
+integration. C2 owns bounded notification preferences, not this four-control slice.
+Desktop test delivery remains separately opt-in and capability/focus gated.
+Presentation settings cannot authorize tools, providers, Laya or policy changes.
+
+See [C1 verification in TUI.md](TUI.md#c1-reversible-control-corrections) for the
+actual regression failures, final focused test results and remaining manual/runtime
+acceptance limits. No product acceptance or configuration persistence is implied.
+
 ## Defaults and missing user configuration
 
 The source of truth is the typed declarations in `settings.rs`. Generate a full
