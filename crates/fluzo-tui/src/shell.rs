@@ -2032,6 +2032,8 @@ impl Shell {
                                     && !self.notification_transport_supported
                                 {
                                     "Unavailable: Ghostty transport required"
+                                } else if key == "tui.notifications.desktop_enabled" {
+                                    "Session Apply | Left/Right edit | Up/Down/Tab select"
                                 } else {
                                     "Live | Left/Right edit | Up/Down/Tab select"
                                 },
@@ -3126,6 +3128,81 @@ mod tests {
                     state.notification_area(Rect::new(0, 0, 30, 8)),
                     Rect::default()
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn desktop_preference_metadata_distinguishes_apply_capability_and_cli_lock() {
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            for supported in [false, true] {
+                for locked in [false, true] {
+                    for enabled in [false, true] {
+                        let mut state = shell();
+                        state.notification_transport_supported = supported;
+                        let mut options = VisualOptions::default();
+                        options.settings.dev_menu = true;
+                        options.settings.notifications.desktop_enabled = enabled;
+                        if locked {
+                            options
+                                .locked
+                                .insert("tui.notifications.desktop_enabled".into());
+                        }
+                        state.preferences = Preferences::new(options).unwrap();
+                        state.action(6);
+                        for character in "desktop_enabled".chars() {
+                            key(&mut state, KeyCode::Char(character));
+                        }
+                        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                        for edited in [false, true] {
+                            if edited {
+                                key(&mut state, KeyCode::Right);
+                            }
+                            terminal.draw(|frame| state.render(frame, false)).unwrap();
+                            let text: String = terminal
+                                .backend()
+                                .buffer()
+                                .content
+                                .iter()
+                                .map(|cell| cell.symbol())
+                                .collect();
+                            let expected = if locked {
+                                "Locked by command line"
+                            } else if !supported {
+                                "Unavailable: Ghostty transport required"
+                            } else {
+                                "Session Apply"
+                            };
+                            assert!(text.contains(expected), "{width}x{height}: {expected}");
+                            assert!(!text.contains("Live |"));
+                            assert_eq!(
+                                state.preferences.applied().notifications.desktop_enabled,
+                                enabled
+                            );
+                            assert_eq!(
+                                state.preferences.effective().notifications.desktop_enabled,
+                                if edited && supported && !locked {
+                                    !enabled
+                                } else {
+                                    enabled
+                                }
+                            );
+                            assert!(!state.notification_test);
+                        }
+                        control(&mut state, 'u');
+                        key(&mut state, KeyCode::Home);
+                        terminal.draw(|frame| state.render(frame, false)).unwrap();
+                        let text: String = terminal
+                            .backend()
+                            .buffer()
+                            .content
+                            .iter()
+                            .map(|cell| cell.symbol())
+                            .collect();
+                        assert!(text.contains("Live |"));
+                        assert!(!text.contains("Session Apply"));
+                    }
+                }
             }
         }
     }
