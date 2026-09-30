@@ -5,6 +5,94 @@ terminal shell, multiline composer and searchable command palette. References:
 PRD 29/30/31 and architecture A07, section 12, at baseline
 `60c5b0732fb710cdf705476cee8d9156a5ecd971`.
 
+## C2 visual notification preview
+
+This user-authorized integration on `feature/c2-notification-preview` builds on
+PR #41 and supersedes the historical no-visual-integration notes below. It does
+not redesign the selected logo, palettes, sidebar, composer or conversation layout.
+
+Start `cargo run --locked --offline -p fluzo-cli -- demo --interactive --dev-menu`.
+Open Developer Menu through Ctrl+P, filter `notification preview`, then Enter.
+Opening enters an empty, clearly synthetic preview; it does not generate notices
+or send anything outside the terminal UI. Composer focus, text and scroll remain
+unchanged. While the preview is active:
+
+| Key | Action |
+| --- | --- |
+| Alt+N | Add a synthetic notice, cycling INFO/SUCCESS/WARNING/ERROR/APPROVAL |
+| Alt+B | Generate a 40-event burst to exercise bounded overflow |
+| Alt+R | Replay the latest event without extending its deadline |
+| Alt+D | Dismiss the oldest retained notice |
+| Ctrl+A | Apply pending preferences for this session and close preview |
+| Ctrl+R | Preview defaults for unlocked Developer Menu preferences |
+| Esc | Close, clear synthetic notices and revert unapplied preferences |
+
+Notices use the same rounded outer frame as existing dialogs (with the same ASCII
+fallback). ERROR borders and close buttons use the theme's red error color;
+WARNING uses its yellow warning color. Other severities retain the accent border.
+NO_COLOR retains the frame and explicit severity labels without colors.
+Each occupies five rows: three content rows plus
+top/bottom borders, at the top-right of the conversation, with existing semantic
+styles and explicit `[DEMO severity]` labels. Capacity includes the frame height.
+Each top border has a clickable `x` with a three-cell target; left-button press
+closes that notice only. Clicking the notice body, dragging, releasing or using
+other buttons does not activate the conversation underneath or change focus.
+Alt+D remains the keyboard alternative. They overlay only that
+conversation region, never reflow it or cover the composer, footer, sidebar or
+wordmark. Available slots are computed from conversation height; unsupported small
+viewports and open dialogs yield zero. No slide, flash or extra animation is added.
+Expiry runs on monotonic elapsed time even at FPS 0 and while notices are hidden.
+Cached animation redraws repaint notices after activity indicators. All examples
+use static synthetic text, not composer content or task output.
+
+`tui.notifications.desktop_enabled` joins the reversible settings list. Ghostty
+capability is required to edit it; invocation overrides remain visibly locked.
+Only explicitly applied settings reach the desktop host. Disabling cancels pending
+tests and re-enabling does not replay them. Ctrl+T and the existing text editor
+remain separate explicit external-test actions; they are not triggered by internal
+preview actions. Existing natural synthetic completion delivery still requires
+applied opt-in and known blur. No native desktop backend or config writer is added.
+
+### Crush notification research
+
+Read-only source inspection of `charmbracelet/crush` revision
+`2fbaa90b55ec711f713c35ed55602eeb789e6048` found two distinct paths:
+
+- `internal/ui/model/status.go` stores one `InfoMsg`, draws its severity indicator
+  and message over status-bar help, and uses a five-second default TTL. In
+  `internal/ui/model/ui.go:1507-1532`, InfoMsg schedules a timer and ClearStatusMsg
+  clears it. This is not the top-right multi-notice stack proposed for Fluzo.
+- `internal/ui/model/ui.go:678-762` selects a desktop backend and gates delivery on
+  focus-report capability, observed blur and non-disabled configuration. Auto
+  selects OSC for SSH/macOS and native delivery for supported local environments;
+  explicit choices include auto/native/osc/bell/disabled. The backend refreshes on
+  capability/configuration changes. Agent completion, permission and question
+  events request notifications from the UI, rather than rendering code sending them.
+- `internal/ui/notification/osc.go` probes OSC 99 support and falls back to OSC 777.
+  `native.go` delegates to a platform notifier. The notification-style picker in
+  `internal/ui/dialog/notifications.go` persists its selection; Fluzo does not copy
+  that global persistence, add backends or relax its explicit opt-in policy.
+
+The repository reference is [Crush](https://github.com/charmbracelet/crush).
+No upstream source was copied, built or executed, and no user terminal notification
+was sent for this research. The chosen stack follows Fluzo's approved D0/C2 contract,
+not a claim of pixel-for-pixel Crush notification behavior.
+
+The integration adds deterministic buffer/input regressions for no implicit events,
+deduplication, overflow, dismissal, expiry, zero capacity, preserved user state,
+CLI/capability gating and full/cached rendering at 60x16/80x24/120x40/160x50 with
+truecolor, ANSI and NO_COLOR/ASCII. A private-PTY scenario checks keyboard actions,
+resize, FPS-0 expiry, preserved draft, restoration and zero external OSC output.
+An initial PTY assertion used the wrong composer row and was corrected; Clippy
+also caught two local style issues. Human visual refinement and complete UI-04
+runtime/permission acceptance remain pending. No issue closure is implied.
+
+Local verification of this uncommitted integration based on `81cb61b` passed:
+144 Rust tests (84 TUI), 48 Python tests (nine terminal-suite cases), workspace
+format/check/build/Clippy with warnings denied, dependency/skill checks and the
+isolated offline LSP fixture. Commands are the full validation list in the C2 logic
+section below. Remote CI and live inference were not run for this branch.
+
 ## UI-02 stabilization contract
 
 This local increment stabilizes the existing visual demo for

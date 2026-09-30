@@ -327,6 +327,84 @@ class TerminalTests(unittest.TestCase):
                     os.close(master)
                     os.close(slave)
 
+    def test_in_app_preview_is_isolated_responsive_and_expires_at_zero_fps(self):
+        with tempfile.TemporaryDirectory(prefix="fluzo-in-app-") as directory:
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+            before = termios.tcgetattr(slave)
+            child = subprocess.Popen(
+                [self.binary, "demo", "--interactive", "--dev-menu", "--animation-fps", "0", "--ascii"],
+                stdin=slave, stdout=slave, stderr=slave, cwd=directory,
+                env={"HOME": directory, "TERM": "xterm-ghostty", "NO_COLOR": "1"},
+            )
+            screen = Screen()
+            output = bytearray()
+
+            def wait_for(marker, present=True, row=None):
+                deadline = time.monotonic() + 7
+                while (marker in (screen.text() if row is None else "".join(screen.cells[row]).encode())) != present:
+                    self.assertLess(time.monotonic(), deadline, repr(output[-1500:]))
+                    if select.select([master], [], [], max(0, deadline - time.monotonic()))[0]:
+                        data = os.read(master, 65536)
+                        self.assertTrue(data)
+                        output.extend(data)
+                        screen.feed(data)
+                        self.assertLess(len(output), 1024 * 1024)
+
+            try:
+                wait_for(b"Ask anything")
+                os.write(master, b"keep draft\x10developer\r")
+                wait_for(b"Developer menu")
+                os.write(master, b"desktop_enabled\x1b[C")
+                wait_for(b"> tui.notifications.desktop_enabled: on")
+                os.write(master, b"\x01")
+                wait_for(b"applied for session only")
+                self.assertNotIn(b"]777;notify;", output)
+                os.write(master, b"\x10developer\r")
+                wait_for(b"Developer menu")
+                os.write(master, b"notification preview\r")
+                wait_for(b"DEMO notices:")
+                self.assertNotIn(b"[DEMO INFO]", screen.text())
+                os.write(master, b"\x1b[I\x1bn")
+                wait_for(b"[DEMO INFO]")
+                label_row = next(index for index, row in enumerate(screen.cells) if "[DEMO INFO]" in "".join(row))
+                border_row = label_row - 1
+                close_column = "".join(screen.cells[border_row]).index(" x ") + 1
+                os.write(master, f"\x1b[<0;{close_column + 1};{border_row + 1}M\x1b[<0;{close_column + 1};{border_row + 1}m".encode())
+                wait_for(b"[DEMO INFO]", present=False)
+                os.write(master, b"\x1bn")
+                wait_for(b"[DEMO SUCCESS]")
+                os.write(master, b"\x1br")
+                os.write(master, b"\x1bb")
+                wait_for(b"[DEMO WARNING]")
+                for height, width in [(16, 60), (40, 120), (50, 160), (24, 80)]:
+                    screen.cells = [[" " for _ in range(260)] for _ in range(90)]
+                    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
+                    child.send_signal(signal.SIGWINCH)
+                    wait_for(b"keep draft", row=height - 6)
+                    wait_for(b"[DEMO")
+                os.write(master, b"\x1bd")
+                wait_for(b"[DEMO", present=False)
+                self.assertNotIn(b"]777;notify;", output)
+                os.write(master, b"\x1b")
+                wait_for(b"Notification preview closed")
+                os.write(master, b"\x03")
+                wait_for(b"Discard unsaved")
+                os.write(master, b"\t\r")
+                child.wait(timeout=5)
+                while select.select([master], [], [], 0)[0]:
+                    output.extend(os.read(master, 65536))
+                self.assertEqual(child.returncode, 0)
+                self.assertEqual(termios.tcgetattr(slave), before)
+                self.assertNotIn(b"]777;notify;", output)
+                self.assertEqual(list(Path(directory).iterdir()), [])
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=5)
+                os.close(master)
+                os.close(slave)
+
     def test_natural_playback_completion_notifies_once_but_cancel_does_not(self):
         with tempfile.TemporaryDirectory(prefix="fluzo-completion-") as directory:
             master, slave = pty.openpty()

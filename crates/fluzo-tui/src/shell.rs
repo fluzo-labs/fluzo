@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use crate::visual::{Preferences, Theme, VisualOptions, display_value};
 
+use crate::notification_stack::{Lifetime, NotificationStack, Severity};
 use crate::presentation;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -262,6 +263,10 @@ pub struct Shell {
     pub notification_test: bool,
     notification_editor: Editor,
     editing_notification: bool,
+    notification_preview: bool,
+    notification_sequence: u64,
+    notification_stack: NotificationStack,
+    pub notification_transport_supported: bool,
     pub elapsed: Duration,
     changed_at: Duration,
     pub truecolor: bool,
@@ -322,6 +327,11 @@ impl Shell {
                 cursor: 0,
             },
             editing_notification: false,
+            notification_preview: false,
+            notification_sequence: 0,
+            notification_stack: NotificationStack::new(Default::default(), 0)
+                .map_err(|_| "Invalid default notification settings.")?,
+            notification_transport_supported: false,
             elapsed: Duration::ZERO,
             changed_at: Duration::ZERO,
             truecolor: false,
@@ -389,6 +399,26 @@ impl Shell {
         self.resize(area);
         if self.overlay.is_some() || area.width < 60 || area.height < 16 {
             return false;
+        }
+        let notice_area = self.notification_area(area);
+        let hit = self
+            .notification_stack
+            .visible(usize::from(notice_area.height / 5))
+            .enumerate()
+            .find_map(|(index, notice)| {
+                let rect = Rect::new(
+                    notice_area.x,
+                    notice_area.y + index as u16 * 5,
+                    notice_area.width,
+                    5,
+                );
+                rect.contains((event.column, event.row).into())
+                    .then_some((notice.cursor(), rect))
+            });
+        if let Some((cursor, rect)) = hit {
+            return event.kind == MouseEventKind::Down(MouseButton::Left)
+                && Self::notification_close_area(rect).contains((event.column, event.row).into())
+                && self.notification_stack.dismiss(cursor);
         }
         let layout = self.body_layout(area);
         if event.kind == MouseEventKind::Down(MouseButton::Left)
@@ -742,6 +772,16 @@ impl Shell {
         }
         self.next_scene = false;
         self.editing_notification = false;
+        self.notification_preview = false;
+        let cursors: Vec<_> = self
+            .notification_stack
+            .retained()
+            .iter()
+            .map(|notice| notice.cursor())
+            .collect();
+        for cursor in cursors {
+            self.notification_stack.dismiss(cursor);
+        }
         self.overlay = None;
     }
 
@@ -767,7 +807,117 @@ impl Shell {
         {
             keys.push("Notification test message".into());
         }
+        if self.overlay == Some(Overlay::Developer)
+            && "notification preview".contains(&self.filter.to_lowercase())
+        {
+            keys.push("Notification preview".into());
+        }
         keys
+    }
+
+    pub(crate) fn advance_notifications(&mut self) -> bool {
+        match self.notification_stack.advance(self.elapsed) {
+            Ok(expired) => expired > 0,
+            Err(_) => false,
+        }
+    }
+
+    fn preview_notice(&mut self, repeat: bool) {
+        if !repeat || self.notification_sequence == 0 {
+            self.notification_sequence = self.notification_sequence.saturating_add(1);
+        }
+        let severity = match self.notification_sequence % 5 {
+            0 => Severity::Approval,
+            1 => Severity::Information,
+            2 => Severity::Success,
+            3 => Severity::Warning,
+            _ => Severity::Error,
+        };
+        let cursor = fluzo_core::application::Cursor {
+            epoch: 0,
+            sequence: self.notification_sequence,
+        };
+        if self
+            .notification_stack
+            .receive(
+                cursor,
+                severity,
+                Lifetime::Transient,
+                "Synthetic notice. No agent work was executed.",
+                self.elapsed,
+            )
+            .is_err()
+        {
+            self.status = "Notification preview unavailable; invalid clock or settings.".into();
+        }
+    }
+
+    fn notification_area(&self, area: Rect) -> Rect {
+        if !self.notification_preview
+            || self.overlay.is_some()
+            || area.width < 60
+            || area.height < 16
+        {
+            return Rect::default();
+        }
+        let conversation = self.body_layout(area)[1];
+        let top = conversation.y.max(area.y + 3);
+        let width = conversation.width.min(48);
+        Rect::new(
+            conversation.right().saturating_sub(width),
+            top,
+            width,
+            conversation.bottom().saturating_sub(top),
+        )
+    }
+
+    fn notification_close_area(rect: Rect) -> Rect {
+        Rect::new(rect.right().saturating_sub(4), rect.y, 3, 1)
+    }
+
+    fn render_notifications(&self, frame: &mut Frame, color: bool) {
+        let area = self.notification_area(frame.area());
+        let theme = Theme::new(self.preferences.effective(), color);
+        for (index, notice) in self
+            .notification_stack
+            .visible(usize::from(area.height / 5))
+            .enumerate()
+        {
+            let rect = Rect::new(area.x, area.y + index as u16 * 5, area.width, 5);
+            let (label, style) = match notice.severity() {
+                Severity::Information => ("INFO", theme.accent),
+                Severity::Success => ("SUCCESS", theme.success),
+                Severity::Warning => ("WARNING", theme.warning),
+                Severity::Error => ("ERROR", theme.error),
+                Severity::Approval => ("APPROVAL", theme.warning),
+            };
+            let border_style = match notice.severity() {
+                Severity::Error => theme.error,
+                Severity::Warning => theme.warning,
+                _ => theme.accent,
+            };
+            self.render_dialog_frame(
+                frame,
+                rect,
+                Theme {
+                    accent: border_style,
+                    ..theme
+                },
+            );
+            frame.render_widget(
+                Paragraph::new(" x ").style(border_style),
+                Self::notification_close_area(rect),
+            );
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(Span::styled(format!("[DEMO {label}]"), style)),
+                    Line::from(notice.text()),
+                    Line::from(Span::styled("Alt+D dismiss oldest", theme.muted)),
+                ])
+                .style(theme.base),
+                Rect::new(rect.x + 2, rect.y + 1, rect.width.saturating_sub(4), 3),
+            );
+        }
     }
 
     pub(crate) fn notification_text(&self) -> &str {
@@ -1054,6 +1204,47 @@ impl Shell {
             self.request_quit();
             return;
         }
+        if self.notification_preview && self.overlay.is_none() {
+            if key.code == KeyCode::Esc {
+                self.close_preview();
+                self.status = "Notification preview closed; unapplied preferences reverted.".into();
+                return;
+            }
+            if key.modifiers == KeyModifiers::ALT {
+                match key.code {
+                    KeyCode::Char('n') => self.preview_notice(false),
+                    KeyCode::Char('b') => {
+                        for _ in 0..40 {
+                            self.preview_notice(false);
+                        }
+                    }
+                    KeyCode::Char('r') => self.preview_notice(true),
+                    KeyCode::Char('d') => {
+                        if let Some(cursor) = self
+                            .notification_stack
+                            .retained()
+                            .first()
+                            .map(|notice| notice.cursor())
+                        {
+                            self.notification_stack.dismiss(cursor);
+                        }
+                    }
+                    _ => {}
+                }
+                return;
+            }
+            if control && key.code == KeyCode::Char('a') {
+                self.preferences.apply();
+                self.close_preview();
+                self.status =
+                    "Notification preview applied for session only; no file saved.".into();
+                return;
+            }
+            if control && key.code == KeyCode::Char('r') {
+                self.preferences.reset();
+                return;
+            }
+        }
         if self.editing_notification {
             match key.code {
                 KeyCode::Esc => self.editing_notification = false,
@@ -1130,6 +1321,28 @@ impl Shell {
                 }
                 KeyCode::Left | KeyCode::Right | KeyCode::Enter => {
                     if let Some(selected) = self.visual_keys().get(self.selection) {
+                        if selected == "Notification preview" {
+                            if key.code == KeyCode::Enter
+                                && self
+                                    .notification_stack
+                                    .configure(self.preferences.effective().notifications.clone())
+                                    .is_ok()
+                            {
+                                self.notification_preview = true;
+                                self.overlay = None;
+                                self.status = "DEMO notices: Alt+N add | Alt+B burst | Alt+R replay | Alt+D dismiss".into();
+                            }
+                            return;
+                        }
+                        if selected == "tui.notifications.desktop_enabled"
+                            && !self.notification_transport_supported
+                            && self.preferences.source(selected)
+                                != fluzo_core::settings::SettingOrigin::CommandLine
+                        {
+                            self.status =
+                                "Notifications unavailable: this preview requires Ghostty.".into();
+                            return;
+                        }
                         if selected == "Notification test message" {
                             if key.code == KeyCode::Enter {
                                 self.editing_notification = true;
@@ -1815,10 +2028,22 @@ impl Shell {
                                     == fluzo_core::settings::SettingOrigin::CommandLine
                                 {
                                     "Locked by command line; preview cannot override it."
+                                } else if key == "tui.notifications.desktop_enabled"
+                                    && !self.notification_transport_supported
+                                {
+                                    "Unavailable: Ghostty transport required"
                                 } else {
                                     "Live | Left/Right edit | Up/Down/Tab select"
                                 },
                             ));
+                        } else if key == "Notification preview" {
+                            lines.push(Line::from(
+                                "Enter opens an empty in-app preview; no external send.",
+                            ));
+                            lines.push(Line::from(
+                                "Alt+N add | Alt+B burst | Alt+R replay | Alt+D dismiss",
+                            ));
+                            lines.push(Line::from("Ctrl+A apply | Ctrl+R reset | Esc revert"));
                         } else {
                             lines.push(Line::from("Synthetic text only; do not enter secrets."));
                             lines.push(Line::from("Enter edits | Ctrl+T sends after 3 seconds"));
@@ -2460,6 +2685,7 @@ impl Shell {
             self.render_wordmark(frame, color);
         }
         self.render_message_loading(frame, color, geometry.loading);
+        self.render_notifications(frame, color);
         self.render_diagnostics(frame, color);
         self.render_cursor(frame);
         crate::visual::terminal_colors(frame.buffer_mut(), color, self.truecolor);
@@ -2580,6 +2806,373 @@ mod tests {
         ));
     }
 
+    fn open_notification_preview(state: &mut Shell) {
+        state.action(6);
+        for character in "notification preview".chars() {
+            key(state, KeyCode::Char(character));
+        }
+        key(state, KeyCode::Enter);
+        assert!(state.notification_preview);
+        assert!(state.overlay.is_none());
+    }
+
+    fn preview_key(state: &mut Shell, character: char) {
+        state.key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::ALT));
+    }
+
+    #[test]
+    fn notification_preview_is_explicit_bounded_and_preserves_user_state() {
+        let mut state = shell();
+        let mut options = VisualOptions::default();
+        options.settings.dev_menu = true;
+        state.preferences = Preferences::new(options).unwrap();
+        state.paste("retained draft");
+        key(&mut state, KeyCode::Tab);
+        key(&mut state, KeyCode::PageUp);
+        let anchor = state.anchor;
+        let snapshot = state.snapshot.clone();
+        open_notification_preview(&mut state);
+        assert!(state.notification_stack.retained().is_empty());
+        assert!(!state.notification_test);
+        preview_key(&mut state, 'n');
+        let first = state.notification_stack.retained()[0].clone();
+        preview_key(&mut state, 'r');
+        assert_eq!(state.notification_stack.retained(), &[first]);
+        preview_key(&mut state, 'b');
+        assert_eq!(state.notification_stack.retained().len(), 32);
+        assert_eq!(state.notification_stack.overflow_count(), 9);
+        preview_key(&mut state, 'd');
+        assert_eq!(state.notification_stack.retained().len(), 31);
+        assert_eq!(state.anchor, anchor);
+        assert_eq!(state.focus, Focus::Conversation);
+        assert_eq!(state.draft.text, "retained draft");
+        assert_eq!(state.snapshot, snapshot);
+        assert!(!state.notification_test);
+        state.elapsed = Duration::from_secs(5);
+        assert!(state.advance_notifications());
+        assert!(state.notification_stack.retained().is_empty());
+        assert!(!state.advance_notifications());
+        preview_key(&mut state, 'n');
+        key(&mut state, KeyCode::Esc);
+        assert!(!state.notification_preview);
+        assert!(state.notification_stack.retained().is_empty());
+        assert_eq!(state.draft.text, "retained draft");
+    }
+
+    #[test]
+    fn notification_close_click_targets_one_notice_without_changing_focus() {
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            let mut state = shell();
+            let mut options = VisualOptions::default();
+            options.settings.dev_menu = true;
+            state.preferences = Preferences::new(options).unwrap();
+            state.paste("retained draft");
+            open_notification_preview(&mut state);
+            preview_key(&mut state, 'n');
+            preview_key(&mut state, 'n');
+            let area = Rect::new(0, 0, width, height);
+            state.resize(area);
+            let bounds = state.notification_area(area);
+            let visible = state
+                .notification_stack
+                .visible(usize::from(bounds.height / 5))
+                .count();
+            let index = visible.saturating_sub(1);
+            let target = state.notification_stack.retained()[index].cursor();
+            let rect = Rect::new(bounds.x, bounds.y + index as u16 * 5, bounds.width, 5);
+            let close = Shell::notification_close_area(rect);
+            let event = MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: close.x + 1,
+                row: close.y,
+                modifiers: KeyModifiers::NONE,
+            };
+            let anchor = state.anchor;
+            let selected = state.selected_fragment;
+            let snapshot = state.snapshot.clone();
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| state.render(frame, false)).unwrap();
+            assert_eq!(
+                terminal.backend().buffer()[(event.column, event.row)].symbol(),
+                "x"
+            );
+            for kind in [
+                MouseEventKind::Up(MouseButton::Left),
+                MouseEventKind::Down(MouseButton::Right),
+                MouseEventKind::ScrollDown,
+            ] {
+                assert!(!state.mouse(MouseEvent { kind, ..event }, area));
+                assert_eq!(state.notification_stack.retained().len(), 2);
+            }
+            assert!(!state.mouse(
+                MouseEvent {
+                    column: rect.x + 2,
+                    row: rect.y + 2,
+                    ..event
+                },
+                area
+            ));
+            assert_eq!(state.focus, Focus::Composer);
+            state.overlay = Some(Overlay::Help);
+            assert!(!state.mouse(event, area));
+            state.overlay = None;
+            assert!(state.mouse(event, area));
+            assert_eq!(state.notification_stack.retained().len(), 1);
+            assert!(
+                state
+                    .notification_stack
+                    .retained()
+                    .iter()
+                    .all(|notice| notice.cursor() != target)
+            );
+            assert_eq!(state.focus, Focus::Composer);
+            assert_eq!(state.anchor, anchor);
+            assert_eq!(state.selected_fragment, selected);
+            assert_eq!(state.draft.text, "retained draft");
+            assert_eq!(state.snapshot, snapshot);
+            assert!(!state.notification_test);
+        }
+    }
+
+    #[test]
+    fn notification_borders_and_close_buttons_follow_error_and_warning_colors() {
+        use ratatui::style::Color;
+        for name in ["default", "high-contrast"] {
+            for (color, rgb, ascii) in [
+                (true, true, false),
+                (true, false, true),
+                (false, false, true),
+            ] {
+                for severity in [
+                    Severity::Information,
+                    Severity::Success,
+                    Severity::Warning,
+                    Severity::Error,
+                    Severity::Approval,
+                ] {
+                    let mut state = shell();
+                    let mut options = VisualOptions {
+                        ascii,
+                        ..VisualOptions::default()
+                    };
+                    options.settings.theme = name.into();
+                    options.settings.dev_menu = true;
+                    state.preferences = Preferences::new(options).unwrap();
+                    state.truecolor = rgb;
+                    open_notification_preview(&mut state);
+                    state
+                        .notification_stack
+                        .receive(
+                            Cursor {
+                                epoch: 0,
+                                sequence: 1,
+                            },
+                            severity,
+                            Lifetime::Transient,
+                            "Synthetic fixture",
+                            Duration::ZERO,
+                        )
+                        .unwrap();
+                    let area = Rect::new(0, 0, 80, 24);
+                    let bounds = state.notification_area(area);
+                    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+                    terminal.draw(|frame| state.render(frame, color)).unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let expected = if !color {
+                        Color::Reset
+                    } else {
+                        match severity {
+                            Severity::Error => Color::Red,
+                            Severity::Warning => Color::Yellow,
+                            _ => {
+                                let mut sample =
+                                    ratatui::buffer::Buffer::empty(Rect::new(0, 0, 1, 1));
+                                sample[(0, 0)].set_style(
+                                    Theme::new(state.preferences.effective(), color).accent,
+                                );
+                                crate::visual::terminal_colors(&mut sample, color, rgb);
+                                sample[(0, 0)].fg
+                            }
+                        }
+                    };
+                    for (column, row) in [
+                        (bounds.x, bounds.y),
+                        (bounds.x + 1, bounds.y),
+                        (bounds.right() - 1, bounds.y + 2),
+                        (bounds.x + 1, bounds.y + 4),
+                        (bounds.right() - 3, bounds.y),
+                    ] {
+                        assert_eq!(buffer[(column, row)].fg, expected);
+                    }
+                    assert_eq!(buffer[(bounds.right() - 3, bounds.y)].symbol(), "x");
+                    let text = buffer
+                        .content
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>();
+                    let label = match severity {
+                        Severity::Error => "[DEMO ERROR]",
+                        Severity::Warning => "[DEMO WARNING]",
+                        _ => "[DEMO",
+                    };
+                    assert!(text.contains(label));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn notification_preview_buffers_preserve_geometry_and_cached_frames() {
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            for (color, rgb, ascii) in [
+                (true, true, false),
+                (true, false, false),
+                (false, false, true),
+            ] {
+                let mut state = shell();
+                state.truecolor = rgb;
+                let mut options = VisualOptions {
+                    ascii,
+                    ..VisualOptions::default()
+                };
+                options.settings.dev_menu = true;
+                state.preferences = Preferences::new(options).unwrap();
+                state.paste("keep composer");
+                let area = Rect::new(0, 0, width, height);
+                state.resize(area);
+                let layout = state.body_layout(area);
+                open_notification_preview(&mut state);
+                let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                terminal.draw(|frame| state.render(frame, color)).unwrap();
+                let before = terminal.backend().buffer().clone();
+                preview_key(&mut state, 'b');
+                let mut geometry = RenderGeometry::default();
+                terminal
+                    .draw(|frame| geometry = state.render_frame(frame, color))
+                    .unwrap();
+                let full = terminal.backend().buffer().clone();
+                let bounds = state.notification_area(area);
+                assert!(bounds.x >= layout[1].x);
+                assert!(bounds.right() <= layout[1].right());
+                assert!(bounds.bottom() <= layout[1].bottom());
+                assert_eq!(state.body_layout(area), layout);
+                let count = state
+                    .notification_stack
+                    .visible(usize::from(bounds.height / 5))
+                    .count();
+                assert!(count > 0);
+                for index in 0..count {
+                    let top = bounds.y + index as u16 * 5;
+                    let right = bounds.right() - 1;
+                    assert_eq!(
+                        full[(bounds.x, top)].symbol(),
+                        if ascii { "+" } else { "╭" }
+                    );
+                    assert_eq!(full[(right, top)].symbol(), if ascii { "+" } else { "╮" });
+                    assert_eq!(
+                        full[(bounds.x, top + 4)].symbol(),
+                        if ascii { "+" } else { "╰" }
+                    );
+                    assert_eq!(
+                        full[(right, top + 4)].symbol(),
+                        if ascii { "+" } else { "╯" }
+                    );
+                    for row in top + 1..top + 4 {
+                        assert_eq!(
+                            full[(bounds.x, row)].symbol(),
+                            if ascii { "|" } else { "│" }
+                        );
+                        assert_eq!(full[(right, row)].symbol(), if ascii { "|" } else { "│" });
+                    }
+                }
+                assert!(
+                    full.content
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains("[DEMO")
+                );
+                for row in 0..height {
+                    for column in 0..width {
+                        if !bounds.contains((column, row).into()) {
+                            assert_eq!(before[(column, row)], full[(column, row)]);
+                        }
+                    }
+                }
+                terminal
+                    .draw(|frame| {
+                        frame.buffer_mut().clone_from(&full);
+                        state.render_identity(frame, color, geometry);
+                    })
+                    .unwrap();
+                assert_eq!(terminal.backend().buffer(), &full);
+                state.overlay = Some(Overlay::Quit);
+                assert_eq!(state.notification_area(area), Rect::default());
+                state.elapsed = Duration::from_secs(5);
+                assert!(state.advance_notifications());
+                state.overlay = None;
+                terminal.draw(|frame| state.render(frame, color)).unwrap();
+                assert!(
+                    !terminal
+                        .backend()
+                        .buffer()
+                        .content
+                        .iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains("[DEMO")
+                );
+                assert_eq!(
+                    state.notification_area(Rect::new(0, 0, 30, 8)),
+                    Rect::default()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn desktop_preference_requires_supported_transport_and_explicit_apply() {
+        for supported in [false, true] {
+            let mut state = shell();
+            state.notification_transport_supported = supported;
+            let mut options = VisualOptions::default();
+            options.settings.dev_menu = true;
+            state.preferences = Preferences::new(options).unwrap();
+            state.action(6);
+            for character in "desktop_enabled".chars() {
+                key(&mut state, KeyCode::Char(character));
+            }
+            key(&mut state, KeyCode::Right);
+            assert_eq!(
+                state.preferences.effective().notifications.desktop_enabled,
+                supported
+            );
+            assert!(!state.preferences.applied().notifications.desktop_enabled);
+            assert!(!state.notification_test);
+            key(&mut state, KeyCode::Esc);
+            assert!(!state.preferences.effective().notifications.desktop_enabled);
+            state.action(6);
+            for character in "desktop_enabled".chars() {
+                key(&mut state, KeyCode::Char(character));
+            }
+            key(&mut state, KeyCode::Right);
+            control(&mut state, 'a');
+            assert_eq!(
+                state.preferences.applied().notifications.desktop_enabled,
+                supported
+            );
+            assert!(!state.notification_test);
+            state.action(6);
+            control(&mut state, 'r');
+            assert!(!state.preferences.effective().notifications.desktop_enabled);
+            key(&mut state, KeyCode::Esc);
+            assert_eq!(
+                state.preferences.applied().notifications.desktop_enabled,
+                supported
+            );
+        }
+    }
+
     #[test]
     fn developer_navigation_and_notification_editor_preserve_composer() {
         let mut state = shell();
@@ -2589,13 +3182,14 @@ mod tests {
         state.paste("retained composer");
         state.action(6);
         let total = state.visual_keys().len();
-        assert_eq!(total, 5);
+        assert_eq!(total, 7);
         key(&mut state, KeyCode::Tab);
         assert_eq!(state.selection, 1);
         key(&mut state, KeyCode::BackTab);
         assert_eq!(state.selection, 0);
         key(&mut state, KeyCode::End);
         assert_eq!(state.selection, total - 1);
+        key(&mut state, KeyCode::Up);
         key(&mut state, KeyCode::Enter);
         assert!(state.editing_notification);
         control(&mut state, 'u');

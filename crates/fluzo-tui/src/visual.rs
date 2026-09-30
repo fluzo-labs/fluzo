@@ -6,11 +6,12 @@ use fluzo_core::settings::{SettingDescriptor, SettingOrigin, SettingValue, Setti
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 
-pub const VISUAL_KEYS: [&str; 4] = [
+pub const VISUAL_KEYS: [&str; 5] = [
     "tui.theme",
     "tui.animation_fps",
     "tui.reduced_motion",
     "tui.flags.render_diagnostics",
+    "tui.notifications.desktop_enabled",
 ];
 
 #[derive(Clone, Debug, Default)]
@@ -112,6 +113,10 @@ impl Preferences {
         self.draft.as_ref().unwrap_or(&self.applied)
     }
 
+    pub fn applied(&self) -> &TuiSettings {
+        &self.applied
+    }
+
     pub fn begin(&mut self) {
         self.draft = Some(self.applied.clone());
     }
@@ -165,6 +170,9 @@ impl Preferences {
                 draft.animation_fps = draft.animation_fps.saturating_add_signed(direction).min(60)
             }
             "tui.reduced_motion" => draft.reduced_motion = !draft.reduced_motion,
+            "tui.notifications.desktop_enabled" => {
+                draft.notifications.desktop_enabled = !draft.notifications.desktop_enabled
+            }
             "tui.flags.render_diagnostics" => {
                 draft.flags.render_diagnostics = !draft.flags.render_diagnostics
             }
@@ -196,6 +204,9 @@ impl Preferences {
             if !self.locked.contains("tui.flags.render_diagnostics") {
                 draft.flags = defaults.flags;
             }
+            if !self.locked.contains("tui.notifications.desktop_enabled") {
+                draft.notifications.desktop_enabled = defaults.notifications.desktop_enabled;
+            }
         }
     }
 
@@ -217,6 +228,9 @@ fn value(settings: &TuiSettings, key: &str) -> SettingValue {
         "tui.animation_fps" => SettingValue::Integer(u64::from(settings.animation_fps)),
         "tui.reduced_motion" => SettingValue::Boolean(settings.reduced_motion),
         "tui.flags.render_diagnostics" => SettingValue::Boolean(settings.flags.render_diagnostics),
+        "tui.notifications.desktop_enabled" => {
+            SettingValue::Boolean(settings.notifications.desktop_enabled)
+        }
         _ => SettingValue::Unset,
     }
 }
