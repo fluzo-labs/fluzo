@@ -1,6 +1,7 @@
 pub mod identity;
 pub mod inspection;
 mod notification;
+pub mod notification_stack;
 pub mod presentation;
 pub mod shell;
 pub mod terminal;

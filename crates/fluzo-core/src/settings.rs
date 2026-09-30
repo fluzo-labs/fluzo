@@ -420,6 +420,8 @@ impl Settings {
         for (descriptor, _) in &mut entries {
             match descriptor.key.as_str() {
                 "tui.animation_fps" => descriptor.integer_maximum = Some(60),
+                "tui.notifications.duration_seconds" => descriptor.integer_maximum = Some(30),
+                "tui.notifications.max_visible" => descriptor.integer_maximum = Some(5),
                 "tui.theme" => {
                     descriptor.kind =
                         SettingKind::Choice(vec!["default".to_owned(), "high-contrast".to_owned()]);
