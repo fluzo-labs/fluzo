@@ -61,6 +61,45 @@ class RequestTests(unittest.TestCase):
         with patch("check_lsp.time.monotonic", return_value=0):
             self.assertEqual(client.request("test", {}), "ok")
 
+    def test_indexing_invalidation_retries_with_new_id_and_same_deadline(self):
+        for method in ["textDocument/definition", "textDocument/references", "textDocument/rename", "textDocument/documentSymbol"]:
+            with self.subTest(method=method):
+                client = self.client([
+                    {"id": 1, "error": {"code": -32801, "message": "content modified"}},
+                    {"id": 2, "result": "ok"},
+                ])
+                with patch("check_lsp.time.monotonic", return_value=10):
+                    self.assertEqual(client.request_stable(method, {}, deadline=12), "ok")
+                self.assertEqual(client.sequence, 2)
+                self.assertEqual([call.kwargs["timeout"] for call in client.messages.get.call_args_list], [2, 2])
+
+    def test_indexing_retries_stop_at_attempt_limit(self):
+        client = self.client([
+            {"id": identity, "error": {"code": -32801, "message": "content modified"}}
+            for identity in range(1, 9)
+        ])
+        with patch("check_lsp.time.monotonic", return_value=0):
+            with self.assertRaises(RuntimeError):
+                client.request_stable("textDocument/references", {})
+        self.assertEqual(client.sequence, 8)
+
+    def test_indexing_retries_do_not_extend_outer_deadline(self):
+        client = self.client([
+            {"id": 1, "error": {"code": -32801, "message": "content modified"}},
+        ])
+        with patch("check_lsp.time.monotonic", side_effect=[0, 0, 0, 1, 2]):
+            with self.assertRaises(TimeoutError):
+                client.request_stable("textDocument/references", {}, deadline=2)
+        self.assertEqual(client.sequence, 1)
+
+    def test_other_errors_and_lifecycle_requests_are_not_retried(self):
+        for method, code in [("textDocument/references", -32603), ("initialize", -32801), ("shutdown", -32801)]:
+            with self.subTest(method=method, code=code):
+                client = self.client([{"id": 1, "error": {"code": code, "message": "fixture"}}])
+                with self.assertRaises(RuntimeError):
+                    client.request_stable(method, {})
+                self.assertEqual(client.sequence, 1)
+
     def test_server_errors_are_preserved(self):
         client = self.client([{"id": 1, "error": {"code": -32801, "message": "content modified"}}])
         with self.assertRaises(RuntimeError):

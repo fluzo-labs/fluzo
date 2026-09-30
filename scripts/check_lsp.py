@@ -50,6 +50,21 @@ class Client:
     def notify(self, method, params):
         self.send({"method": method, "params": params})
 
+    def request_stable(self, method, params, *, deadline=None):
+        now = time.monotonic()
+        deadline = min(now + 60, deadline) if deadline is not None else now + 60
+        methods = {"textDocument/definition", "textDocument/references",
+                   "textDocument/rename", "textDocument/documentSymbol"}
+        for attempt in range(8):
+            try:
+                return self.request(method, params, deadline=deadline)
+            except RuntimeError as error:
+                details = error.args[0] if error.args else None
+                if (method not in methods or not isinstance(details, dict)
+                        or details.get("code") != -32801 or attempt == 7):
+                    raise
+                print(f"LSP indexing invalidated {method}; retry {attempt + 1}/7", file=sys.stderr)
+
     def request(self, method, params, *, deadline=None):
         now = time.monotonic()
         deadline = min(now + 60, deadline) if deadline is not None else now + 60
@@ -157,12 +172,7 @@ def main():
                           "position": position(text, "availability_text")}
                 deadline = time.monotonic() + 60
                 while True:
-                    try:
-                        definitions = client.request("textDocument/definition", params, deadline=deadline)
-                    except RuntimeError as error:
-                        if error.args[0].get("code") != -32801:
-                            raise
-                        definitions = None
+                    definitions = client.request_stable("textDocument/definition", params, deadline=deadline)
                     if definitions:
                         break
                     if time.monotonic() >= deadline:
@@ -170,9 +180,9 @@ def main():
                     time.sleep(0.2)
                 locations = definitions if isinstance(definitions, list) else [definitions]
                 assert any("fluzo-tui/src/lib.rs" in item.get("uri", item.get("targetUri", "")) for item in locations)
-                references = client.request("textDocument/references", {**params, "context": {"includeDeclaration": True}})
+                references = client.request_stable("textDocument/references", {**params, "context": {"includeDeclaration": True}})
                 assert len({item["uri"] for item in references}) >= 2
-                edit = client.request("textDocument/rename", {**params, "newName": "status_label"})
+                edit = client.request_stable("textDocument/rename", {**params, "newName": "status_label"})
                 changes = dict(edit.get("changes", {}))
                 for change in edit.get("documentChanges", []):
                     changes[change["textDocument"]["uri"]] = change["edits"]
@@ -196,7 +206,7 @@ def main():
                 client.notify("textDocument/didSave", {"textDocument": {"uri": source.as_uri()}})
                 deadline = time.monotonic() + 60
                 while True:
-                    client.request("textDocument/documentSymbol", {"textDocument": {"uri": source.as_uri()}}, deadline=deadline)
+                    client.request_stable("textDocument/documentSymbol", {"textDocument": {"uri": source.as_uri()}}, deadline=deadline)
                     if any(message.get("method") == "textDocument/publishDiagnostics" and
                            any(str(item.get("code")) == "E0308" for item in message["params"].get("diagnostics", []))
                            for message in client.notifications):
