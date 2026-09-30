@@ -529,6 +529,42 @@ mod tests {
     }
 
     #[test]
+    fn notification_bounds_share_metadata_and_preserve_defaults() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.tui.notifications.duration_seconds, 5);
+        assert_eq!(settings.tui.notifications.max_visible, 3);
+        assert!(!settings.tui.notifications.desktop_enabled);
+        for (key, maximum) in [
+            ("tui.notifications.duration_seconds", 30),
+            ("tui.notifications.max_visible", 5),
+        ] {
+            let descriptor = settings
+                .descriptors()
+                .into_iter()
+                .find(|entry| entry.key == key)
+                .unwrap();
+            assert_eq!(descriptor.constraint, Constraint::Positive);
+            assert_eq!(descriptor.integer_maximum, Some(maximum));
+            for value in [0, 1, maximum, maximum + 1, u64::from(u32::MAX)] {
+                settings.tui.notifications = NotificationSettings::default();
+                if key.ends_with("duration_seconds") {
+                    settings.tui.notifications.duration_seconds = value;
+                } else {
+                    settings.tui.notifications.max_visible = value as u32;
+                }
+                let result = settings.validate();
+                if (1..=maximum).contains(&value) {
+                    assert!(result.is_ok());
+                } else {
+                    assert!(result.unwrap_err().iter().any(|error| {
+                        error.key == key && error.code == ValidationCode::OutOfRange
+                    }));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_positive_and_fraction_descriptor_is_enforced() {
         for (descriptor, value) in configured().entries() {
             if descriptor.constraint == Constraint::Positive {

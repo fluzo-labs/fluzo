@@ -96,6 +96,91 @@ add a native desktop backend or an in-app notification stack. Keyboard/buffer
 regressions cover navigation, editing, draft preservation and logo composition;
 the PTY test sends custom pasted text and verifies the exact sanitized OSC bytes.
 
+### C2 notification logic without visual integration
+
+The non-visual portion of [C2 (#37)](https://github.com/fluzo-labs/fluzo/issues/37)
+adds `fluzo_tui::notification_stack::NotificationStack`. This is a reusable owned
+presentation model, not a renderer or an application-port change. The interactive
+shell, keyboard bindings, artwork, colors, layout and existing desktop-test
+transport are unchanged. The shell does not instantiate the new stack yet.
+
+- Each stack consumes one ordered event stream in a fixed application cursor
+  epoch. The host must supply strictly increasing sequence numbers for distinct
+  notices, in delivery order; gaps are allowed. It must not mix independent
+  streams, reuse a cursor for distinct outcomes or deliver unseen older events.
+  Epoch changes fail explicitly and require a fresh stack after host resync.
+- A fixed-size sequence watermark rejects duplicate/stale delivery even after
+  expiry, dismissal or overflow, without an unbounded deduplication index. Equal
+  text with distinct increasing cursors is retained independently. Coalescing
+  preserves the original text, severity and deadline and cannot resend externally.
+- At most 32 notices, including pending ones, are retained. Text is sanitized
+  incrementally with the existing terminal sanitizer, made single-line, and capped
+  at 1024 UTF-8 bytes including `...` when truncated, at a grapheme boundary.
+  A very large single grapheme may reduce to the indicator alone. Text storage
+  uses bounded boxed strings; metadata consists only of fixed-size IDs, enums
+  and timestamps. No raw payload, callback or authoritative task state is retained.
+- Overflow considers the incoming notice too: informational notices are discarded
+  first, then success, warning, error and approval, oldest first within a priority.
+  A lower-priority incoming notice cannot evict a higher-priority retained one.
+  A saturating aggregate counter records overflow without generating more notices.
+- Transient deadlines start at receipt, including while pending. The host supplies
+  elapsed monotonic time to `receive`/`advance` and advances before reading a view.
+  Reversed time and deadline overflow fail without mutation. `UntilDismissed`
+  records persist until explicit dismissal or bounded overflow; they are still
+  only presentation records, not durable failure/approval history.
+- `visible(available_slots)` returns the oldest retained entries up to the smaller
+  of available capacity and configured maximum. Capacity can fall to zero and
+  recover without changing configuration or deadlines. The future renderer owns
+  geometry and must exclude composer, dialogs and permission controls when
+  calculating slots; this model alone does not prove absence of visual overlap.
+- Settings changes validate atomically through core; invalid changes preserve all
+  prior state. Duration changes affect new notices only. Dismissal, expiry and
+  overflow cannot approve, resume, cancel, execute or send anything. The caller
+  retains authoritative failures and approvals independently (UI-04 integration).
+
+The core boundary regression first failed on the previously unlimited duration.
+After correction, core and TOML/draft regressions passed, along with ten deterministic
+stack tests covering boundary values, pending expiry, duplicate replay after
+removal, identical text with distinct IDs, overflow priority/age, saturating
+counters, 1000-event bursts, bounded sanitized text, Unicode clusters, zero display
+capacity, atomic settings rejection and invalid time/epochs. No sleeps, real
+notifications, filesystem fixtures or live inference are used by these tests.
+
+Focused commands from the repository root:
+
+```sh
+cargo test -p fluzo-core --locked --offline notification_bounds
+cargo test -p fluzo-runtime --lib --locked --offline notification_ranges
+cargo test -p fluzo-tui --locked --offline notification_stack
+```
+
+On the uncommitted non-visual C2 tree based on
+`9c3a40451944e980891967d09e48ca10c2387817`, the complete local checks passed:
+140 workspace Rust tests (80 TUI), 47 Python tests including eight existing PTY
+paths, formatting, workspace check/build, Clippy with warnings denied, the
+resolved dependency/skill checker and the isolated offline LSP fixture. Commands:
+
+```sh
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --locked --offline
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+cargo test --workspace --locked --offline
+cargo build --workspace --locked --offline
+python3 -B scripts/check_dev_setup.py
+python3 -B -m unittest discover -s scripts -p 'test_*.py'
+python3 -B scripts/check_lsp.py
+```
+
+These results are local, not remote CI or visual acceptance. No new dependencies,
+protocol types, renderer code or application execution paths were added.
+
+The 1-30 second and 1-5 visible settings limits now apply to shared configuration
+validation; see [CONFIGURATION.md](CONFIGURATION.md#bounded-notification-settings).
+This does not complete C2: visual preview placement, reversible notification
+controls and new buffer/PTY acceptance scenarios require separately authorized
+integration. Existing desktop test text remains capped at 256 bytes. Save/apply
+persistence remains C3, and full visual/runtime acceptance remains later work.
+
 ### Follow-up validation evidence
 
 The follow-up working tree based on `a7ff984` was validated before publication,

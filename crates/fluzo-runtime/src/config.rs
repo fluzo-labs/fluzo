@@ -500,6 +500,42 @@ mod tests {
     }
 
     #[test]
+    fn notification_ranges_reject_invalid_files_and_preserve_drafts() {
+        let source = "schema_version = 1\n# retained\n[tui.notifications]\nduration_seconds = 5\nmax_visible = 3\n";
+        for (field, maximum) in [("duration_seconds", 30), ("max_visible", 5)] {
+            let key = format!("tui.notifications.{field}");
+            for value in [0, 1, maximum, maximum + 1, i64::MAX as u64] {
+                let document =
+                    format!("schema_version = 1\n[tui.notifications]\n{field} = {value}\n");
+                let parsed = parse_settings(&document);
+                let edited = update_draft(source, &key, SettingValue::Integer(value));
+                if (1..=maximum).contains(&value) {
+                    assert!(parsed.is_ok());
+                    let edited = edited.unwrap();
+                    assert!(edited.contains("# retained"));
+                    assert!(parse_settings(&edited).is_ok());
+                } else {
+                    assert!(parsed.unwrap_err().to_string().contains(&key));
+                    assert!(edited.unwrap_err().to_string().contains(&key));
+                }
+                let original = parse_settings(source).unwrap();
+                assert_eq!(original.tui.notifications.duration_seconds, 5);
+                assert_eq!(original.tui.notifications.max_visible, 3);
+            }
+            for value in ["-1", "1.5", "'invalid'"] {
+                let document =
+                    format!("schema_version = 1\n[tui.notifications]\n{field} = {value}\n");
+                assert!(
+                    parse_settings(&document)
+                        .unwrap_err()
+                        .to_string()
+                        .contains(&key)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn typed_draft_edit_preserves_unrelated_comments_and_revalidates() {
         let original = "schema_version = 1\n# keep this\n[project]\nname = 'fixture' # untouched\n[tui]\nanimation_fps = 60\n";
         let edited = update_draft(original, "tui.animation_fps", SettingValue::Integer(0)).unwrap();

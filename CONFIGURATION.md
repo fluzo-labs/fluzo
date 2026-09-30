@@ -95,6 +95,32 @@ See [C1 verification in TUI.md](TUI.md#c1-reversible-control-corrections) for th
 actual regression failures, final focused test results and remaining manual/runtime
 acceptance limits. No product acceptance or configuration persistence is implied.
 
+## Bounded notification settings
+
+The non-visual C2 slice ([#37](https://github.com/fluzo-labs/fluzo/issues/37))
+implements the D0 limits from `fluzo-docs` revision
+`53b345e9f1782beef839b42b4c0de4773ed371df`, PRD 29.3.1, without changing the demo UI.
+The shared registry now bounds `tui.notifications.duration_seconds` to 1 through
+30 seconds and `tui.notifications.max_visible` to 1 through 5. Defaults remain
+5 seconds and 3 notices; `desktop_enabled` remains false.
+
+Core validation, TOML loading and `update_draft` use the same metadata. Zero,
+negative, wrong-type and over-limit values fail with the relevant key; no clamping,
+rewriting or automatic migration occurs. Previously accepted out-of-range files
+require explicit correction before loading or editing. Rejected draft edits leave
+the original source untouched. These limits describe in-app presentation, not
+how long a desktop service displays a popup.
+
+The reusable TUI `notification_stack` module validates settings on construction
+and atomic reconfiguration. A duration change affects future receipts only;
+existing deadlines never restart. Available display capacity is supplied by the
+future layout owner and may be zero without changing `max_visible`. The component
+has no file writer, external notification transport or rendering side effects.
+See [the C2 logic contract](TUI.md#c2-notification-logic-without-visual-integration)
+for event ordering, memory bounds, expiry and integration limitations. The current
+menu remains unchanged; reversible notification controls and persistence are not
+claimed by this increment.
+
 ## Defaults and missing user configuration
 
 The source of truth is the typed declarations in `settings.rs`. Generate a full
