@@ -167,9 +167,17 @@ impl ConfigurationFile {
         (&file)
             .take(MAX_CONFIG_BYTES as u64 + 1)
             .read_to_string(&mut source)
-            .map_err(|_| ConfigurationError::Invalid {
-                key: "<document>".into(),
-                errors: vec![],
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::InvalidData {
+                    ConfigurationError::Invalid {
+                        code: fluzo_core::configuration::ConfigErrorCode::InvalidEncoding,
+                        key: "<document>".into(),
+                        span: None,
+                        errors: vec![],
+                    }
+                } else {
+                    ConfigurationError::Inaccessible
+                }
             })?;
         if source.len() > MAX_CONFIG_BYTES {
             return Err(ConfigurationError::Capacity);

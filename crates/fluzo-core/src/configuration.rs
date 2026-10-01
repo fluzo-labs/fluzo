@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::settings::{SettingOrigin, SettingValue, TuiSettings, ValidationError};
 
-pub const CONFIGURATION_PROTOCOL: u32 = 1;
+pub const CONFIGURATION_PROTOCOL: u32 = 2;
 pub const MAX_EDITS: usize = 256;
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_REQUESTS: usize = 64;
@@ -56,6 +56,19 @@ pub struct ConfigurationRequest {
     pub action: ConfigurationAction,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ConfigErrorCode {
+    TooLarge,
+    Syntax,
+    UnknownField,
+    InvalidType,
+    InvalidValue,
+    MissingVersion,
+    Validation,
+    Serialization,
+    InvalidEncoding,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ConfigurationError {
     UnsupportedProtocol,
@@ -67,7 +80,9 @@ pub enum ConfigurationError {
     ReadOnly,
     Conflict,
     Invalid {
+        code: ConfigErrorCode,
         key: String,
+        span: Option<std::ops::Range<usize>>,
         errors: Vec<ValidationError>,
     },
     Inaccessible,

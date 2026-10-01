@@ -143,6 +143,31 @@ pending state and preservation of a synthetic existing pending state. Current
 restart-class settings have no selectable alternative supported by the registry;
 this is not evidence of a production restart implementation.
 
+### S1 review corrections
+
+The post-merge review of #47 found three regressions, reproduced before correction
+by `cargo test -p fluzo-runtime --lib --locked --offline review_regression`:
+
+- Apply expanded the entire effective configuration into TOML and could reject
+  a valid sparse file below 1 MiB. It now adapts only the small presentation
+  subset, assigns it to a typed candidate and revalidates the complete candidate
+  before replacement. Unrelated model/pool data and file bytes remain unchanged.
+  The regression uses 9,000 pools in a valid 232,909-byte file.
+- Invalid/inaccessible Reload could change the origins of retained valid values.
+  Provenance now uses the last valid saved source and its file-presence flag,
+  independently of the latest observation/problem. Tests retain saved, draft and
+  effective values/origins for repository and explicit-file selections.
+- Configuration error adaptation discarded categories and positions. Protocol 2
+  carries the shared diagnostic code, safe key, optional byte range and validation
+  errors without source values. Invalid encoding is distinct from an I/O failure;
+  public-port and serialization tests cover diagnostics and old-protocol rejection.
+
+The three original regressions failed by assertion before their fixes and now
+pass. Intermediate compilation failures while migrating error fields and a
+private-helper call were corrected; they are not behavioral test evidence.
+These changes do not alter filesystem coordination requirements, permissions,
+defaults or the selected interface. See APPLICATION.md for protocol compatibility.
+
 ## Visual session preferences
 
 The isolated `demo --interactive` shell exposes the presentation subset below.
