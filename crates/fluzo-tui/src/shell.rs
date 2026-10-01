@@ -114,13 +114,13 @@ impl Sanitizer {
 }
 
 #[derive(Default)]
-struct Editor {
-    text: String,
-    cursor: usize,
+pub(crate) struct Editor {
+    pub(crate) text: String,
+    pub(crate) cursor: usize,
 }
 
 impl Editor {
-    fn insert(&mut self, text: &str) -> bool {
+    pub(crate) fn insert(&mut self, text: &str) -> bool {
         if self.text.len().saturating_add(text.len()) > DRAFT_LIMIT {
             return false;
         }
@@ -142,7 +142,7 @@ impl Editor {
         }
     }
 
-    fn key(&mut self, code: KeyCode) {
+    pub(crate) fn key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Left => self.left(),
             KeyCode::Right => self.right(),
@@ -298,7 +298,20 @@ impl Shell {
         {
             return Err("Interactive preview requires a valid synthetic snapshot.");
         }
-        let mut state = Self {
+        let mut state = Self::empty(snapshot)?;
+        state.append(
+            "System",
+            "Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.",
+        );
+        state.append(
+            "System",
+            "Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.",
+        );
+        Ok(state)
+    }
+
+    fn empty(snapshot: Snapshot) -> Result<Self, &'static str> {
+        Ok(Self {
             #[cfg(test)]
             formatting_passes: std::cell::Cell::new(0),
             draft: Editor::default(),
@@ -352,16 +365,65 @@ impl Shell {
             input_history: VecDeque::new(),
             history_position: None,
             history_draft: String::new(),
-        };
-        state.append(
+        })
+    }
+
+    pub fn configuration_shell() -> Result<Self, &'static str> {
+        let mut shell = Self::empty(Snapshot {
+            protocol_version: PROTOCOL_VERSION,
+            demo: false,
+            cursor: fluzo_core::application::Cursor {
+                epoch: 0,
+                sequence: 0,
+            },
+            tasks: vec![],
+            next_page: None,
+        })?;
+        shell.status =
+            "Agent runtime unavailable. Ctrl+P opens configuration; no execution.".into();
+        shell.append(
             "System",
-            "Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.",
+            "Configuration workspace. No agent runtime, providers or tools are connected.",
         );
-        state.append(
-            "System",
-            "Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.",
-        );
-        Ok(state)
+        Ok(shell)
+    }
+
+    pub(crate) fn configuration_input(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Char('b') if control => self.hide_sidebar = !self.hide_sidebar,
+            KeyCode::Tab => {
+                self.focus = if self.focus == Focus::Composer {
+                    Focus::Conversation
+                } else {
+                    Focus::Composer
+                }
+            }
+            KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.status = "Execution unavailable; composer draft retained.".into()
+            }
+            KeyCode::Enter if self.focus == Focus::Composer => {
+                self.draft.insert("\n");
+            }
+            KeyCode::Char(character)
+                if !control
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && self.focus == Focus::Composer =>
+            {
+                self.draft.insert(&character.to_string());
+            }
+            code if self.focus == Focus::Composer => self.draft.key(code),
+            KeyCode::Up => {
+                self.scroll_rows(-1);
+            }
+            KeyCode::Down => {
+                self.scroll_rows(1);
+            }
+            _ => {}
+        }
     }
 
     pub fn set_repository(&mut self, repository: &str) {
@@ -1818,7 +1880,12 @@ impl Shell {
             };
             let text = draft_rows.get(top + offset).cloned().unwrap_or_default();
             let text = if self.draft.text.is_empty() && offset == 0 {
-                "Ask anything… (offline demo)".into()
+                if self.snapshot.demo {
+                    "Ask anything… (offline demo)"
+                } else {
+                    "Draft only; execution unavailable"
+                }
+                .into()
             } else {
                 text
             };
@@ -2377,7 +2444,12 @@ impl Shell {
         }
         hints.extend([("ctrl+c", "quit"), ("ctrl+g", "help")]);
         let state = format!(
-            "demo {}{}{}",
+            "{} {}{}{}",
+            if self.snapshot.demo {
+                "demo"
+            } else {
+                "offline"
+            },
             if self.anchor.is_some() {
                 "paused"
             } else {
@@ -2644,7 +2716,12 @@ impl Shell {
             self.color_identity(std::slice::from_mut(&mut wordmark), color);
             let mut spans = wordmark.spans;
             spans.push(Span::raw(" "));
-            let details = if matches!(self.overlay, Some(Overlay::Developer | Overlay::Theme)) {
+            let details = if !self.snapshot.demo {
+                Line::from(Span::styled(
+                    "Configuration / runtime unavailable",
+                    theme.muted,
+                ))
+            } else if matches!(self.overlay, Some(Overlay::Developer | Overlay::Theme)) {
                 Line::from(Span::styled(
                     format!("Demo state: {:?}", self.task_state()),
                     theme.muted,
@@ -2675,10 +2752,11 @@ impl Shell {
                 Rect::new(area.x + 1, area.y + 2, self.body_area(area).width, 1),
             );
             frame.render_widget(
-                Paragraph::new(format!(
-                    "Demo state: {:?} · NORMAL · offline",
-                    self.task_state()
-                ))
+                Paragraph::new(if self.snapshot.demo {
+                    format!("Demo state: {:?} · NORMAL · offline", self.task_state())
+                } else {
+                    "NORMAL / runtime unavailable / no execution".into()
+                })
                 .style(theme.muted),
                 Rect::new(area.x + 1, area.y + 2, self.body_area(area).width, 1),
             );
@@ -2735,6 +2813,31 @@ impl Shell {
             area.height - 3,
         );
         let theme = Theme::new(self.preferences.effective(), color);
+        if !self.snapshot.demo {
+            let lines = vec![
+                Line::default(),
+                Line::default(),
+                Line::default(),
+                Line::default(),
+                Line::from("Configuration workspace"),
+                Line::from(self.repository.clone()),
+                Line::default(),
+                Line::from("Agent runtime unavailable"),
+                Line::from("No provider contacted"),
+                Line::from("No task or session active"),
+                Line::default(),
+                Line::from("Ctrl+P Configuration"),
+                Line::from("NORMAL / offline"),
+            ];
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .style(theme.muted)
+                    .wrap(ratatui::widgets::Wrap { trim: false }),
+                inner,
+            );
+            self.render_wordmark(frame, color);
+            return;
+        }
         let session = self
             .snapshot
             .tasks

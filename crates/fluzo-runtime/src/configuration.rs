@@ -184,11 +184,30 @@ impl ConfigurationPort for ConfigurationService {
 
     fn snapshot(&mut self) -> Result<ConfigurationSnapshot, ConfigurationError> {
         self.collect()?;
-        self.projection.clone().ok_or(if self.unavailable {
+        let mut snapshot = self.projection.clone().ok_or(if self.unavailable {
             ConfigurationError::Unavailable
         } else {
             ConfigurationError::Busy
-        })
+        })?;
+        snapshot.remaining_requests = MAX_REQUESTS.saturating_sub(self.records.len());
+        snapshot.next_request_id = ConfigurationRequestId(
+            self.records
+                .iter()
+                .map(|(request, _)| request.id.0)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1),
+        );
+        if self.unavailable || self.sender.is_none() || snapshot.remaining_requests == 0 {
+            let reason = if snapshot.remaining_requests == 0 {
+                ConfigurationError::Capacity
+            } else {
+                ConfigurationError::Unavailable
+            };
+            snapshot.save_unavailable = Some(reason.clone());
+            snapshot.apply_unavailable = Some(reason);
+        }
+        Ok(snapshot)
     }
 }
 
@@ -269,6 +288,7 @@ fn invalid(error: ConfigError) -> ConfigurationError {
 
 struct State {
     file: ConfigurationFile,
+    policy: WritePolicy,
     observed: Option<Observation>,
     discovery: Discovery,
     problem: Option<ConfigurationError>,
@@ -306,6 +326,7 @@ impl State {
         let defaults = encode_settings(&Settings::default()).map_err(invalid)?;
         let mut state = Self {
             file: ConfigurationFile::open(root, explicit, policy)?,
+            policy,
             observed: None,
             discovery: Discovery::Missing,
             problem: None,
@@ -713,11 +734,20 @@ impl State {
                         effective_origin,
                         draft_origin,
                         cli_locked: locked,
+                        descriptor,
                     },
                 )
             })
             .collect();
         ConfigurationSnapshot {
+            save_unavailable: self.problem.clone().or_else(|| {
+                (self.policy == WritePolicy::ReadOnly
+                    || (self.saved_has_file && self.policy != WritePolicy::CoordinatedLocalWriters))
+                    .then_some(ConfigurationError::ReadOnly)
+            }),
+            apply_unavailable: self.problem.clone(),
+            remaining_requests: MAX_REQUESTS,
+            next_request_id: ConfigurationRequestId(1),
             version: self.version,
             discovery: self.discovery.clone(),
             problem: self.problem.clone(),

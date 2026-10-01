@@ -183,7 +183,7 @@ impl Setup {
                         ConfigurationOutcome::SetupPrepared => "Review every value and target. Ctrl+S confirms creation; Esc returns without saving.".into(),
                         ConfigurationOutcome::Saved => {
                             self.saved = true;
-                            "Configuration saved offline. Agent runtime is not implemented; no execution started.".into()
+                            if self.explicit { "Configuration saved offline. Agent runtime is not implemented; no execution started." } else { "Configuration saved offline. F2 opens settings; Esc exits. Agent runtime is not implemented." }.into()
                         }
                         _ => self.discovery_text(),
                     };
@@ -685,6 +685,10 @@ mod tests {
     fn port(discovery: Discovery) -> Port {
         Port {
             snapshot: ConfigurationSnapshot {
+                save_unavailable: None,
+                apply_unavailable: None,
+                remaining_requests: MAX_REQUESTS,
+                next_request_id: ConfigurationRequestId(1),
                 version: Version {
                     instance: 1,
                     revision: 1,

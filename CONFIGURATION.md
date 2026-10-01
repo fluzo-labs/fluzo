@@ -43,6 +43,103 @@ Core uses Serde but no filesystem, environment, network, database or terminal
 operations. Runtime owns TOML parsing. TUI consumers can use core metadata and
 validation without importing runtime or the TOML parser.
 
+## Normal configuration (UI-03 S3)
+
+S3 (#46, refinement R2) builds on main `d03b60d84e7dcd225348baf2fe8888cbd22640d9`
+and approved fluzo-docs revision `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`,
+PRD 26/29.2.2/30 and architecture A06/A07, 10.2/10.3. With valid selected
+configuration, interactive `fluzo` opens a configuration-only shell, not the
+synthetic demo or an execution runtime. Ctrl+P opens searchable Configuration
+entries; All / advanced exposes every registry field. Ordinary setup offers F2
+into this shell after confirmed creation. Explicit init remains setup-only.
+Headless contracts and the explicit demo's isolation remain unchanged.
+
+The editor uses owned descriptors from configuration protocol 4. Types, defaults,
+units, privacy, provenance, saved/draft/effective values and CLI locks are shown.
+Fixed schema values have no editable alternative. Models/pools have validated
+names and explicit add/remove operations; related changes validate together.
+Unchanged redacted/sanitized projections are never used as replacement input.
+Text/reference and collection inputs are explicit whole-value replacements,
+initially blank, with Esc retaining the original. Credential inputs are references,
+not credential resolution. Lists use one escaped item per line; maps use escaped
+key=value entries. Supported escapes are backslash, equals, n/r/t and whole-item
+`\\e` for an empty item. Duplicate map keys are rejected; empty input clears a
+list/map or optional value. Enter stages; Shift+Enter adds an input line.
+
+Controls: type to search, Ctrl+U shows all fields, Tab/arrows select, Left/Right
+step numbers or select boolean/enum alternatives, Enter replaces, Space selects
+Save/Apply keys, Ctrl+D restores the selected default in the draft, Ctrl+N adds a
+model, Ctrl+P adds a pool and Delete stages collection removal. F1 explains all
+controls. Ctrl+V validates, Ctrl+S saves selected future values, Ctrl+A applies
+selected presentation values. Without explicit selection, changed keys are used.
+Ctrl+X twice discards drafts; Ctrl+R twice reloads/discards. Neither undoes prior
+Save or Apply. Esc closes the view retaining drafts and composer/focus/scroll.
+Closing during validation prevents the chained Save/Apply; dispatched effects
+still reconcile by request identity and are never automatically replayed.
+
+The runtime projects Save/Apply unavailability and remaining request capacity.
+Ordinary hosts remain CreateOnly: replacement is unavailable even after setup
+created the file. Session presentation Apply is independent of that restriction.
+Real replacement tests run only through the controlled coordinated host. No CLI
+flag, confirmation or config data grants this capability. Operational Apply stays
+unavailable; restart state is pending only. CLI overrides govern active settings,
+not the separately saved future defaults.
+
+The service retains 64 request records without eviction. Keystrokes remain local;
+a Validate/Edit consumes one record, chained Save/Apply needs a second. Exhaustion
+preserves the displayed draft and retained outcomes, rejects new mutation and
+requires reconciliation followed by explicit application reopening. Reopening
+loses unsaved in-memory drafts; it is not automatic recovery or retry. Input fields
+are bounded to 8 KiB and edit requests retain existing count/byte limits. Oversized
+atomic changes are rejected, not split. Private configuration values must not be
+copied into diagnostics or test artifacts.
+
+### S3 verification and parent evidence mapping
+
+Focused commands:
+
+```sh
+cargo test -p fluzo-cli --test configuration --locked --offline
+cargo test -p fluzo-tui --locked --offline configuration
+cargo test -p fluzo-runtime --lib --locked --offline configuration
+python3 -B -m unittest discover -s scripts -p 'test_configuration.py'
+python3 -B -m unittest discover -s scripts -p 'test_setup.py'
+```
+
+The CLI-crate integration harness composes the actual TUI editor and shared worker
+with private real files, independently parses saved data and verifies comments,
+redacted values, collection transactions, Save/Apply distinction, conflicts,
+operational rejection, CreateOnly refusal and record exhaustion. TUI unit fixtures
+verify typed inputs, registry coverage, late completion, failure/uncertainty,
+redaction, bounded paste and representative buffer sizes. These unit fixtures do
+not prove filesystem durability. Three actual-binary PTYs verify ordinary entry,
+setup-to-settings handoff, presentation Apply, CLI locks, preserved composer/file,
+resize, signal restoration and a registered endpoint receiving zero requests.
+A silent endpoint is not evidence of universal network isolation.
+
+| Original #8 criterion | Revision-linked evidence and remaining gate |
+| --- | --- |
+| Missing config opens setup | Accepted S2 (#45), merges `196140b`/`d03b60d`; existing setup PTYs plus S3 explicit F2 handoff regression |
+| Valid config skips setup | Accepted S2 discovery; S3 ordinary shell PTYs with unavailable credentials/provider and devmenu disabled |
+| Save/reload, defaults, conflicts and CLI precedence without models | Accepted S1 (#44), merge `83c42b9`; S2 setup evidence; S3 real editor/worker tests, buffers and PTYs under the same R2 write boundary |
+| Linked evidence and documentation | This section, TUI.md, APPLICATION.md and the scoped S3 delivery; final reviewed revision and human acceptance still required |
+
+Local validation of the S3 working tree based on `37a5077` (content-identical to
+integrated `d03b60d`) passed 193 Rust cases and 66 Python cases, including three
+new settings PTYs and eleven setup PTYs. Format/check/Clippy/build, development
+boundaries, isolated LSP and the standalone private-network HTTP profile passed.
+Commands are the AGENTS.md suite and focused commands above. The final Python
+suite completed in 76.234 seconds; timing is not a performance claim.
+S3 is uncommitted implementation evidence until delivery records identify its
+revision. Initial shell integration exposed incorrect Cursor construction and
+helper names; compiler errors were corrected. The pre-S3 valid-startup PTY expected
+the old setup-only status and exit key; it was updated to verify the new normal
+shell and preserve the no-write assertion. Initial Clippy findings were corrected
+without suppressions. No before-change behavioral failure is claimed for the new
+editor. Human Ghostty/Alacritty review, parent acceptance and remote CI remain
+separate pending gates; live inference is not_run. C3 wiring, production consent,
+agent execution and broader visual/performance acceptance are not implemented.
+
 ## Offline setup (UI-03 S2)
 
 S2 (#45, refinement R2) uses the write-capability decision in fluzo-docs #11,

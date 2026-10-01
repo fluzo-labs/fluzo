@@ -1,3 +1,4 @@
+pub mod configuration;
 pub mod identity;
 pub mod inspection;
 mod notification;
@@ -7,6 +8,7 @@ pub mod setup;
 pub mod shell;
 pub mod terminal;
 pub mod visual;
+pub mod workspace;
 
 use fluzo_core::RuntimeAvailability;
 

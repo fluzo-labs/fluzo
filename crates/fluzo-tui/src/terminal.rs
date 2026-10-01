@@ -387,6 +387,10 @@ pub fn run_setup(
             "Setup requires terminal stdin and stdout.",
         ));
     }
+    let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
+    let mut workspace =
+        crate::workspace::Workspace::new(&target, ascii || limited).map_err(io::Error::other)?;
+    let mut normal = false;
     let mut setup = crate::setup::Setup::new(target, explicit);
     let stop = Arc::new(AtomicBool::new(false));
     let mut signals = Signals(Vec::new());
@@ -416,9 +420,40 @@ pub fn run_setup(
                 terminal.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height))?;
                 dirty = true;
             }
-            dirty |= setup.poll(port);
+            if normal {
+                dirty |= workspace.poll(port);
+            } else {
+                dirty |= setup.poll(port);
+                if !explicit
+                    && !setup.saved
+                    && setup.snapshot.as_ref().is_some_and(|snapshot| {
+                        snapshot.discovery == fluzo_core::configuration::Discovery::Valid
+                    })
+                    && workspace.configuration.snapshot.is_none()
+                {
+                    workspace.poll(port);
+                    normal = workspace
+                        .configuration
+                        .snapshot
+                        .as_ref()
+                        .is_some_and(|snapshot| {
+                            snapshot.discovery == fluzo_core::configuration::Discovery::Valid
+                                && snapshot.problem.is_none()
+                        });
+                    dirty |= normal;
+                }
+            }
+            if workspace.shell.quit {
+                break;
+            }
             if dirty {
-                terminal.draw(|frame| setup.render(frame, color, ascii || limited))?;
+                terminal.draw(|frame| {
+                    if normal {
+                        workspace.render(frame, color);
+                    } else {
+                        setup.render(frame, color, ascii || limited);
+                    }
+                })?;
                 dirty = false;
             }
             if event::poll(Duration::from_millis(50))? {
@@ -429,15 +464,27 @@ pub fn run_setup(
                             || (key.modifiers.contains(event::KeyModifiers::CONTROL)
                                 && matches!(key.code, event::KeyCode::Char('c' | 'q'))) =>
                     {
-                        setup.key(key, port)
+                        if normal {
+                            workspace.key(key, port);
+                        } else if !explicit && setup.saved && key.code == event::KeyCode::F(2) {
+                            normal = true;
+                        } else {
+                            setup.key(key, port);
+                        }
                     }
-                    Event::Paste(text) => setup.paste(&text),
+                    Event::Paste(text) if size.width >= 60 && size.height >= 16 => {
+                        if normal {
+                            workspace.paste(&text);
+                        } else {
+                            setup.paste(&text);
+                        }
+                    }
                     _ => {}
                 }
                 dirty = true;
             }
         }
-        Ok(setup.saved)
+        Ok(setup.saved || normal)
     }));
     let cleanup = guard.restore(&mut output);
     std::panic::set_hook(previous_hook);

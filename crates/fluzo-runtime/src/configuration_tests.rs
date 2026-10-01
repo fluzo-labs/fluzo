@@ -61,6 +61,68 @@ fn edit(state: &mut State, edits: Vec<Edit>) {
 }
 
 #[test]
+fn s3_capabilities_metadata_and_protocol_follow_runtime_policy() {
+    let root = Root::new();
+    for policy in [
+        WritePolicy::ReadOnly,
+        WritePolicy::CreateOnly,
+        WritePolicy::CoordinatedLocalWriters,
+    ] {
+        let mut state = State::open(&root.0, None, vec![], policy, 1).unwrap();
+        assert_eq!(
+            state.snapshot().save_unavailable,
+            (policy == WritePolicy::ReadOnly).then_some(ConfigurationError::ReadOnly)
+        );
+        for value in state.snapshot().values.values() {
+            assert!(state.saved.descriptors().contains(&value.descriptor));
+        }
+        for protocol in [1, 2, 3] {
+            let request = ConfigurationRequest {
+                protocol,
+                id: ConfigurationRequestId(1),
+                action: ConfigurationAction::Reload,
+            };
+            assert_eq!(
+                state.execute(&request),
+                Err(ConfigurationError::UnsupportedProtocol)
+            );
+        }
+    }
+    fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
+    let mut state = State::open(&root.0, None, vec![], WritePolicy::CreateOnly, 1).unwrap();
+    assert_eq!(
+        state.snapshot().save_unavailable,
+        Some(ConfigurationError::ReadOnly)
+    );
+    assert_eq!(state.snapshot().apply_unavailable, None);
+    edit(
+        &mut state,
+        vec![set("tui.theme", SettingValue::Text("high-contrast".into()))],
+    );
+    let version = state.version;
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::Save {
+                expected: version,
+                keys: keys(&["tui.theme"])
+            }
+        ),
+        Err(ConfigurationError::ReadOnly)
+    );
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::Apply {
+                expected: version,
+                keys: keys(&["tui.theme"])
+            }
+        ),
+        Ok(ConfigurationOutcome::Applied)
+    );
+}
+
+#[test]
 fn discovery_distinguishes_missing_valid_invalid_and_inaccessible() {
     let root = Root::new();
     assert_eq!(root.state().discovery, Discovery::Missing);

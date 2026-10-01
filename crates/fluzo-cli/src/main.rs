@@ -99,7 +99,7 @@ fn main() -> ExitCode {
                 "Fluzo development bootstrap\nUsage: fluzo --help | --version | demo [--interactive]\nInteractive options: --animation-fps <0..60> (default 60; alternatives 30/15/0)\n  --reduced-motion --theme <default|high-contrast> --ascii\n  --dev-menu | --no-dev-menu (disable wins)\n  --desktop-notifications (opt-in; Ghostty OSC 777, unfocused only)\n  Developer menu: Ctrl+T schedules a notification test in 3 seconds\nRead-only demo: no .fluzo loading or saving; visual options require demo --interactive."
             );
             println!(
-                "Setup: fluzo [init] [--config <workspace-relative path>] [visual options]\nMissing configuration opens offline setup interactively; headless returns configuration_required.\nExisting files are preserved: replacement requires a controlled host. No connectivity probes."
+                "Setup: fluzo [init] [--config <workspace-relative path>] [visual options]\nMissing configuration opens offline setup interactively; headless returns configuration_required.\nExisting files are preserved: replacement requires a controlled host. No connectivity probes.\nValid configuration opens the normal shell: Ctrl+P opens typed Configuration views; F1 shows editor help.\nAfter ordinary setup creation, F2 opens settings. Ctrl+S saves future values only where permitted; Ctrl+A applies presentation.\nNo tasks execute. The explicit demo remains isolated from user configuration."
             );
             println!(
                 "{}",
