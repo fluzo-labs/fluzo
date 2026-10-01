@@ -27,6 +27,64 @@ that API. `fluzo_tui::inspection::inspect_task` consumes only the core port; its
 pure fixture rejects every mutation/lifecycle call. The CLI supplies the concrete
 scenario adapter. No production runtime dependency is added to TUI.
 
+## Configuration port (UI-03 S1)
+
+UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
+`fluzo_core::configuration::ConfigurationPort` alongside the task port, without
+changing task protocol version 1 or inventing tasks for configuration edits.
+Its separately versioned requests own typed values and a configuration request
+ID. Versions contain a service instance and revision; an old instance/revision
+cannot authorize an edit, save, cancel or apply on a new snapshot.
+
+The runtime `ConfigurationService::start` receives host-owned workspace/config
+selection, typed CLI overrides and an explicit filesystem write policy. It
+spawns one worker; only that worker parses files, validates candidates, writes
+configuration and builds projections. The client methods use bounded nonblocking
+queues and never wait for disk. An initial snapshot may return Busy until the
+worker publishes discovery. There is no view-driven setup, inference or task
+execution. S2/S3 and C3 remain responsible for their own composition/UI wiring.
+
+Requests support Reload, Edit, Cancel, selected Save and selected Apply. Submit
+returns accepted identity, not effect completion. Status returns Unknown,
+Accepted, Completed with version/outcome, or Failed with a typed category.
+Identical request-ID retries return the existing record; changed payload reuse
+fails. A post-save lost acknowledgement is reconciled by status without another
+write. Records are not evicted to permit duplicate execution. Failed workers
+turn unresolved accepted requests into Uncertain, not success or automatic retry.
+
+Limits per service: 8 queued requests, 64 retained request records, 256 edits or
+selected keys per request, 1 MiB budget for retained edit text/collection payloads,
+and 1 MiB per configuration document. Key lengths and collection names are
+bounded. Result queue capacity is 9; a slow client backpressures the worker rather
+than creating more workers. Record exhaustion rejects new work. The host must
+reconcile before replacing a service; IDs are not durable across crashes.
+Instances are unique within the host process, not a cross-process wire identity.
+
+`quiesce` closes admission and lets accepted work drain; status/snapshot calls
+continue collecting results. Dropping the client does not prove an in-flight
+filesystem call stopped and does not roll back a write. The host owns this
+lifecycle, not a TUI consumer. Local filesystem calls can block the worker;
+no OS-level hard deadline or forced cancellation guarantee is claimed.
+
+Snapshots distinguish saved/draft/effective values, each origin and CLI locks,
+and include effective presentation settings and pending restart keys. Sensitive
+values and credential references are redacted. Public string projections remove
+terminal control and bidi-format characters; these display-only values must not
+be written back as replacement configuration. Edits contain only intentional
+changes; runtime retains the original private document. The projection is not a
+promise of general secret detection in arbitrary public user-entered strings.
+
+Up to 64 versioned change records retain request identity and outcome, never
+payload values. A saturating dropped count identifies older record loss. These
+are bounded diagnostic projections, not durable audit or production sink
+acknowledgements. No per-frame records are generated.
+
+See CONFIGURATION.md for exact file/path/concurrency support and the distinction
+between real persistence/presentation application and unavailable operational
+application. Protocol round trips, bounded queues, accepted/completed separation,
+duplicate requests, stale versions and actual adapter effects are tested in
+`cargo test -p fluzo-runtime --lib --locked --offline configuration`.
+
 ## Acknowledgement, replay and cursors
 
 A command acknowledgement means accepted, never completed. The scenario host must

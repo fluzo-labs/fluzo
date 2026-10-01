@@ -17,9 +17,12 @@ composer. The original FLUZO relief wordmark is restored in the wide sidebar;
 compact mode retains its one-line header. The original 80%-width top loader is
 also restored, honoring work/idle, FPS 0 and reduced motion without changing layout.
 The inspected Crush revision uses FSL-1.1-MIT; do not copy its source or artwork
-into this MIT workspace by assuming an unrestricted license. File persistence
-and the remaining UI-02 settings integration are not implemented. Agent execution, production async transport, full TUI workflows,
-providers, persistence and runtime acceptance are not implemented. The
+into this MIT workspace by assuming an unrestricted license. UI-03 S1 adds a
+separate typed configuration port and worker-owned local save/apply service;
+see CONFIGURATION.md for its explicit coordinated-writer filesystem contract.
+Setup, normal configuration views and UI-02 C3 menu wiring remain unimplemented.
+Agent execution, production task transport, full TUI workflows, providers,
+session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
 
@@ -309,6 +312,13 @@ Focused protocol checks use
 `cargo test -p fluzo-runtime --test http_simulator --locked --offline`.
 Runtime E2E, benchmarks and packaging are still unimplemented. CI commands passed locally;
 a remote workflow run is not implied.
+
+S1 configuration checks use
+`cargo test -p fluzo-runtime --lib --locked --offline configuration`.
+The service uses a separate core configuration port and one bounded runtime
+worker; it does not extend task IDs or wire the demo to user configuration.
+Writes require an explicitly supplied coordinated-local-writer policy; arbitrary
+external editors and network filesystems are not covered by that contract.
 
 Run the narrowest relevant tests after a change, then the applicable workspace
 checks. Define supported feature combinations explicitly rather than assuming
