@@ -20,7 +20,12 @@ The inspected Crush revision uses FSL-1.1-MIT; do not copy its source or artwork
 into this MIT workspace by assuming an unrestricted license. UI-03 S1 adds a
 separate typed configuration port and worker-owned local save/apply service;
 see CONFIGURATION.md for its explicit coordinated-writer filesystem contract.
-Setup, normal configuration views and UI-02 C3 menu wiring remain unimplemented.
+UI-03 S2 adds offline welcome/setup and headless configuration discovery using
+configuration protocol 3. Under #45 R2 and fluzo-docs revision
+`ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, ordinary CLI hosts may exclusively
+create missing files but cannot replace existing files. Controlled hosts test
+version-bound replacement with verified backups. Normal configuration views and
+UI-02 C3 menu wiring remain unimplemented.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
@@ -315,10 +320,16 @@ a remote workflow run is not implied.
 
 S1 configuration checks use
 `cargo test -p fluzo-runtime --lib --locked --offline configuration`.
+S2 setup checks use
+`cargo test -p fluzo-runtime --lib --locked --offline setup`,
+`cargo test -p fluzo-tui --locked --offline setup`, and
+`python3 -B -m unittest discover -s scripts -p 'test_setup.py'`.
 The service uses a separate core configuration port and one bounded runtime
 worker; it does not extend task IDs or wire the demo to user configuration.
-Writes require an explicitly supplied coordinated-local-writer policy; arbitrary
-external editors and network filesystems are not covered by that contract.
+Replacement requires an explicitly supplied coordinated-local-writer policy;
+exclusive creation uses CreateOnly and never upgrades itself to replacement.
+Arbitrary external editors and network filesystems are not covered by the
+coordinated replacement contract. Setup visual acceptance remains a human gate.
 
 Run the narrowest relevant tests after a change, then the applicable workspace
 checks. Define supported feature combinations explicitly rather than assuming

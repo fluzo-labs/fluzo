@@ -908,6 +908,292 @@ fn review_regression_public_port_retains_diagnostics_and_rejects_old_protocol() 
 }
 
 #[test]
+fn setup_creation_requires_current_confirmation_and_never_replaces() {
+    let root = Root::new();
+    let mut state = State::open(&root.0, None, vec![], WritePolicy::CreateOnly, 1).unwrap();
+    let expected = state.version;
+    execute(
+        &mut state,
+        ConfigurationAction::PrepareSetup {
+            expected,
+            edits: vec![set("tui.animation_fps", SettingValue::Integer(0))],
+        },
+    )
+    .unwrap();
+    assert!(!root.0.join(".fluzo").exists());
+    assert_eq!(
+        state.snapshot().setup.unwrap().values["tui.animation_fps"],
+        SettingValue::Integer(0)
+    );
+    let confirmation = state.version;
+    execute(
+        &mut state,
+        ConfigurationAction::Cancel {
+            expected: confirmation,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::ConfirmSetup {
+                expected: confirmation
+            }
+        ),
+        Err(ConfigurationError::Conflict)
+    );
+    let expected = state.version;
+    execute(
+        &mut state,
+        ConfigurationAction::PrepareSetup {
+            expected,
+            edits: vec![],
+        },
+    )
+    .unwrap();
+    let confirmation = state.version;
+    fs::write(root.0.join(".fluzo"), "external bytes").unwrap();
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::ConfirmSetup {
+                expected: confirmation
+            }
+        ),
+        Err(ConfigurationError::Conflict)
+    );
+    assert_eq!(
+        fs::read_to_string(root.0.join(".fluzo")).unwrap(),
+        "external bytes"
+    );
+    let expected = state.version;
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::PrepareSetup {
+                expected,
+                edits: vec![]
+            }
+        ),
+        Err(ConfigurationError::ReadOnly)
+    );
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+}
+
+#[test]
+fn setup_saves_complete_defaults_without_applying_cli_or_resolving_secrets() {
+    let root = Root::new();
+    let mut service = ConfigurationService::start(
+        root.0.clone(),
+        None,
+        vec![set("tui.animation_fps", SettingValue::Integer(15))],
+        WritePolicy::CreateOnly,
+    )
+    .unwrap();
+    let snapshot = ready(&mut service);
+    let prepare = ConfigurationRequest {
+        protocol: CONFIGURATION_PROTOCOL,
+        id: ConfigurationRequestId(1),
+        action: ConfigurationAction::PrepareSetup {
+            expected: snapshot.version,
+            edits: vec![set("tui.animation_fps", SettingValue::Integer(0))],
+        },
+    };
+    service.submit(prepare).unwrap();
+    assert!(matches!(
+        completed(&mut service, ConfigurationRequestId(1)),
+        ConfigurationRequestStatus::Completed {
+            outcome: ConfigurationOutcome::SetupPrepared,
+            ..
+        }
+    ));
+    let snapshot = service.snapshot().unwrap();
+    assert_eq!(snapshot.effective_ui.animation_fps, 15);
+    let request = ConfigurationRequest {
+        protocol: CONFIGURATION_PROTOCOL,
+        id: ConfigurationRequestId(2),
+        action: ConfigurationAction::ConfirmSetup {
+            expected: snapshot.version,
+        },
+    };
+    service.submit(request.clone()).unwrap();
+    assert!(matches!(
+        completed(&mut service, request.id),
+        ConfigurationRequestStatus::Completed {
+            outcome: ConfigurationOutcome::Saved,
+            ..
+        }
+    ));
+    let disk = fs::read_to_string(root.0.join(".fluzo")).unwrap();
+    let settings = parse_settings(&disk).unwrap();
+    assert_eq!(settings.tui.animation_fps, 0);
+    assert_eq!(disk, encode_settings(&settings).unwrap());
+    assert_eq!(service.snapshot().unwrap().effective_ui.animation_fps, 15);
+    service.submit(request.clone()).unwrap();
+    completed(&mut service, request.id);
+    assert_eq!(fs::read_to_string(root.0.join(".fluzo")).unwrap(), disk);
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        fs::metadata(root.0.join(".fluzo"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn setup_replacement_preserves_exact_invalid_bytes_in_independent_backup() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    for original in [
+        b"broken = [".to_vec(),
+        vec![0xff, 0xfe],
+        b"schema_version = 900".to_vec(),
+        b"schema_version = 1".to_vec(),
+    ] {
+        let root = Root::new();
+        fs::write(root.0.join(".fluzo"), &original).unwrap();
+        let mut state = root.state();
+        let expected = state.version;
+        execute(
+            &mut state,
+            ConfigurationAction::PrepareSetup {
+                expected,
+                edits: vec![],
+            },
+        )
+        .unwrap();
+        assert!(state.snapshot().setup.unwrap().replacing);
+        assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+        let expected = state.version;
+        execute(&mut state, ConfigurationAction::ConfirmSetup { expected }).unwrap();
+        let backup = root.0.join(state.snapshot().backup.unwrap());
+        assert_eq!(fs::read(&backup).unwrap(), original);
+        assert_ne!(
+            fs::metadata(&backup).unwrap().ino(),
+            fs::metadata(root.0.join(".fluzo")).unwrap().ino()
+        );
+        assert_eq!(
+            fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(root.state().saved, Settings::default());
+    }
+}
+
+#[test]
+fn setup_backup_failures_and_collisions_preserve_original() {
+    use crate::configuration_file::{FAILURE, Fault};
+    for fault in [
+        Fault::BackupWrite,
+        Fault::BackupSync,
+        Fault::BackupVerify,
+        Fault::BackupDirectorySync,
+    ] {
+        let root = Root::new();
+        fs::write(root.0.join(".fluzo"), "broken = [").unwrap();
+        let mut state = root.state();
+        let expected = state.version;
+        execute(
+            &mut state,
+            ConfigurationAction::PrepareSetup {
+                expected,
+                edits: vec![],
+            },
+        )
+        .unwrap();
+        let expected = state.version;
+        FAILURE.with(|value| value.set(Some(fault)));
+        let result = execute(&mut state, ConfigurationAction::ConfirmSetup { expected });
+        FAILURE.with(|value| value.set(None));
+        assert_eq!(result, Err(ConfigurationError::WriteFailed));
+        assert_eq!(
+            fs::read_to_string(root.0.join(".fluzo")).unwrap(),
+            "broken = ["
+        );
+    }
+    let root = Root::new();
+    fs::write(root.0.join(".fluzo"), "broken = [").unwrap();
+    let collision = root
+        .0
+        .join(format!(".fluzo-backup-{}-1", std::process::id()));
+    fs::write(&collision, "unrelated backup").unwrap();
+    let mut state = root.state();
+    let expected = state.version;
+    execute(
+        &mut state,
+        ConfigurationAction::PrepareSetup {
+            expected,
+            edits: vec![],
+        },
+    )
+    .unwrap();
+    let expected = state.version;
+    assert_eq!(
+        execute(&mut state, ConfigurationAction::ConfirmSetup { expected }),
+        Err(ConfigurationError::WriteFailed)
+    );
+    assert_eq!(fs::read_to_string(collision).unwrap(), "unrelated backup");
+    assert_eq!(
+        fs::read_to_string(root.0.join(".fluzo")).unwrap(),
+        "broken = ["
+    );
+}
+
+#[test]
+fn setup_candidate_changes_invalidate_confirmation_and_uncertainty_blocks_replay() {
+    use crate::configuration_file::{FAILURE, Fault};
+    let root = Root::new();
+    let mut state = root.state();
+    let expected = state.version;
+    execute(
+        &mut state,
+        ConfigurationAction::PrepareSetup {
+            expected,
+            edits: vec![],
+        },
+    )
+    .unwrap();
+    let old = state.version;
+    execute(
+        &mut state,
+        ConfigurationAction::PrepareSetup {
+            expected: old,
+            edits: vec![set("tui.animation_fps", SettingValue::Integer(0))],
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::ConfirmSetup { expected: old }
+        ),
+        Err(ConfigurationError::Conflict)
+    );
+    let expected = state.version;
+    FAILURE.with(|value| value.set(Some(Fault::AfterReplace)));
+    let result = execute(&mut state, ConfigurationAction::ConfirmSetup { expected });
+    FAILURE.with(|value| value.set(None));
+    assert_eq!(result, Err(ConfigurationError::Uncertain));
+    let expected = state.version;
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::PrepareSetup {
+                expected,
+                edits: vec![]
+            }
+        ),
+        Err(ConfigurationError::Uncertain)
+    );
+    execute(&mut state, ConfigurationAction::Reload).unwrap();
+    assert_eq!(state.saved.tui.animation_fps, 0);
+    assert_eq!(state.effective.tui.animation_fps, 60);
+}
+
+#[test]
 fn process_lock_helper() {
     use std::io::{Read, Write};
     let Some(path) = std::env::var_os("FLUZO_CONFIG_LOCK_FIXTURE") else {

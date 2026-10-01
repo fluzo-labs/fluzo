@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::settings::{SettingOrigin, SettingValue, TuiSettings, ValidationError};
 
-pub const CONFIGURATION_PROTOCOL: u32 = 2;
+pub const CONFIGURATION_PROTOCOL: u32 = 3;
 pub const MAX_EDITS: usize = 256;
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_REQUESTS: usize = 64;
@@ -32,6 +32,13 @@ pub enum Edit {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ConfigurationAction {
     Reload,
+    PrepareSetup {
+        expected: Version,
+        edits: Vec<Edit>,
+    },
+    ConfirmSetup {
+        expected: Version,
+    },
     Edit {
         expected: Version,
         edits: Vec<Edit>,
@@ -107,6 +114,7 @@ pub enum ConfigurationOutcome {
     Saved,
     Applied,
     RestartPending,
+    SetupPrepared,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -148,6 +156,14 @@ pub struct ConfigurationSnapshot {
     pub pending_restart: Vec<String>,
     pub changes: Vec<ConfigurationChange>,
     pub dropped_changes: u64,
+    pub setup: Option<SetupPreview>,
+    pub backup: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SetupPreview {
+    pub replacing: bool,
+    pub values: BTreeMap<String, SettingValue>,
 }
 
 pub trait ConfigurationPort {

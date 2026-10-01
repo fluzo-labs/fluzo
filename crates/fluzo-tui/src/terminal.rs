@@ -376,6 +376,81 @@ pub fn run_demo(
     }
 }
 
+pub fn run_setup(
+    port: &mut dyn fluzo_core::configuration::ConfigurationPort,
+    target: String,
+    explicit: bool,
+    ascii: bool,
+) -> io::Result<bool> {
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return Err(io::Error::other(
+            "Setup requires terminal stdin and stdout.",
+        ));
+    }
+    let mut setup = crate::setup::Setup::new(target, explicit);
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut signals = Signals(Vec::new());
+    for signal in [
+        signal_hook::consts::SIGTERM,
+        signal_hook::consts::SIGHUP,
+        signal_hook::consts::SIGINT,
+    ] {
+        signals
+            .0
+            .push(signal_hook::flag::register(signal, stop.clone())?);
+    }
+    let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
+    let color = !limited && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+    let mut output = io::stdout();
+    let mut guard = TerminalGuard::enter(&mut output)?;
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> io::Result<bool> {
+        let mut terminal = Terminal::new(CrosstermBackend::new(&mut output))?;
+        let mut dirty = true;
+        let mut size = terminal.size()?;
+        while !setup.quit && !stop.load(Ordering::Relaxed) {
+            let current = terminal.size()?;
+            if size != current {
+                size = current;
+                terminal.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height))?;
+                dirty = true;
+            }
+            dirty |= setup.poll(port);
+            if dirty {
+                terminal.draw(|frame| setup.render(frame, color, ascii || limited))?;
+                dirty = false;
+            }
+            if event::poll(Duration::from_millis(50))? {
+                match event::read()? {
+                    Event::Key(key)
+                        if size.width >= 60 && size.height >= 16
+                            || key.code == event::KeyCode::Esc
+                            || (key.modifiers.contains(event::KeyModifiers::CONTROL)
+                                && matches!(key.code, event::KeyCode::Char('c' | 'q'))) =>
+                    {
+                        setup.key(key, port)
+                    }
+                    Event::Paste(text) => setup.paste(&text),
+                    _ => {}
+                }
+                dirty = true;
+            }
+        }
+        Ok(setup.saved)
+    }));
+    let cleanup = guard.restore(&mut output);
+    std::panic::set_hook(previous_hook);
+    match result {
+        Ok(Ok(saved)) => cleanup.map(|()| saved),
+        Ok(Err(error)) => Err(combine(error, cleanup)),
+        Err(_) => Err(combine(
+            io::Error::other("Setup stopped after an internal error."),
+            cleanup,
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,36 @@ terminal shell, multiline composer and searchable command palette. References:
 PRD 29/30/31 and architecture A07, section 12, at baseline
 `60c5b0732fb710cdf705476cee8d9156a5ecd971`.
 
+## S2 offline setup
+
+`fluzo` opens offline welcome/setup when the selected workspace has no `.fluzo`.
+`fluzo init` explicitly opens setup; `--config` selects a workspace-scoped file.
+Existing valid files skip the form, without contacting their providers or resolving
+credentials. Existing files cannot be replaced by the ordinary CLI host under
+#45 R2 and fluzo-docs revision `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`.
+Startup stays an honest configuration-only view: the agent runtime is unavailable.
+
+The new surface reuses the compact FLUZO identity, shared theme and rounded/ASCII
+frames. It does not alter the accepted demo logo, composer, layout, palettes or
+notifications. There is no animation loop or desktop notification in setup.
+Use Enter to continue/edit, Tab/arrows to select, Ctrl+U to clear input, Ctrl+A
+for advanced fields, Ctrl+S to prepare a redacted summary and Ctrl+S again to
+confirm. Esc cancels review or exits; Ctrl+C/Ctrl+Q exit. PageUp/PageDown scroll
+summary/target details. Sensitive inputs are masked; paste and key-repeat cannot
+confirm. Shared validation reports safe keys/reasons; drafts survive errors.
+A 60x16 minimum is enforced visually, with resize/exit guidance below it.
+
+CLI presentation overrides are shown separately and never silently persisted.
+Saving complete defaults offline is supported without selecting a model. Optional
+Laya/OTLP settings do not authorize connectivity; connection tests are unavailable.
+See CONFIGURATION.md for persistence, backup and cancellation limits.
+
+Unit buffers cover 60x16, 80x24, 120x40 and 160x50 plus a too-small case, color and
+ASCII/no-color. `python3 -B -m unittest discover -s scripts -p 'test_setup.py'`
+uses private PTYs for save, paste/cancel, concurrent creation, validation, resize,
+valid-file skip and signal restoration. Human Ghostty/Alacritty review of the new
+setup surface remains pending; buffer/PTY checks do not establish visual acceptance.
+
 ## C2 visual notification preview
 
 This user-authorized integration on `feature/c2-notification-preview` builds on

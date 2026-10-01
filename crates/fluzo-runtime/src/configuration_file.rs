@@ -9,6 +9,7 @@ use crate::config::MAX_CONFIG_BYTES;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WritePolicy {
     ReadOnly,
+    CreateOnly,
     CoordinatedLocalWriters,
 }
 
@@ -18,12 +19,19 @@ pub(crate) struct Observation {
     identity: Vec<u64>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RawObservation {
+    pub source: Option<Vec<u8>>,
+    identity: Vec<u64>,
+}
+
 pub(crate) struct ConfigurationFile {
     directory: File,
     parent_path: PathBuf,
     name: String,
     policy: WritePolicy,
     serial: u64,
+    pub(crate) backup: Option<String>,
 }
 
 impl ConfigurationFile {
@@ -92,6 +100,7 @@ impl ConfigurationFile {
             name,
             policy,
             serial: 0,
+            backup: None,
         })
     }
 
@@ -129,6 +138,22 @@ impl ConfigurationFile {
     }
 
     pub(crate) fn read(&self) -> Result<Observation, ConfigurationError> {
+        let raw = self.read_raw()?;
+        let source = raw.source.map(String::from_utf8).transpose().map_err(|_| {
+            ConfigurationError::Invalid {
+                code: fluzo_core::configuration::ConfigErrorCode::InvalidEncoding,
+                key: "<document>".into(),
+                span: None,
+                errors: vec![],
+            }
+        })?;
+        Ok(Observation {
+            source,
+            identity: raw.identity,
+        })
+    }
+
+    pub(crate) fn read_raw(&self) -> Result<RawObservation, ConfigurationError> {
         self.verify_parent()?;
         let path = self.anchored(&self.name);
         let mut options = OpenOptions::new();
@@ -143,7 +168,7 @@ impl ConfigurationFile {
         let file = match options.open(&path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Observation {
+                return Ok(RawObservation {
                     source: None,
                     identity: Vec::new(),
                 });
@@ -163,22 +188,11 @@ impl ConfigurationFile {
                 return Err(ConfigurationError::UnsupportedPath);
             }
         }
-        let mut source = String::new();
+        let mut source = Vec::new();
         (&file)
             .take(MAX_CONFIG_BYTES as u64 + 1)
-            .read_to_string(&mut source)
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::InvalidData {
-                    ConfigurationError::Invalid {
-                        code: fluzo_core::configuration::ConfigErrorCode::InvalidEncoding,
-                        key: "<document>".into(),
-                        span: None,
-                        errors: vec![],
-                    }
-                } else {
-                    ConfigurationError::Inaccessible
-                }
-            })?;
+            .read_to_end(&mut source)
+            .map_err(|_| ConfigurationError::Inaccessible)?;
         if source.len() > MAX_CONFIG_BYTES {
             return Err(ConfigurationError::Capacity);
         }
@@ -189,7 +203,7 @@ impl ConfigurationFile {
         if identity(&metadata) != identity(&after) || identity(&after) != identity(&current) {
             return Err(ConfigurationError::Conflict);
         }
-        Ok(Observation {
+        Ok(RawObservation {
             source: Some(source),
             identity: identity(&after),
         })
@@ -200,9 +214,41 @@ impl ConfigurationFile {
         expected: &Observation,
         source: &str,
     ) -> Result<Observation, ConfigurationError> {
-        if self.policy != WritePolicy::CoordinatedLocalWriters {
+        self.commit(
+            &RawObservation {
+                source: expected
+                    .source
+                    .as_ref()
+                    .map(|text| text.as_bytes().to_vec()),
+                identity: expected.identity.clone(),
+            },
+            source,
+            false,
+        )
+    }
+
+    pub(crate) fn prepare_setup(&self) -> Result<RawObservation, ConfigurationError> {
+        let observed = self.read_raw()?;
+        self.check_policy(observed.source.is_some())?;
+        Ok(observed)
+    }
+
+    fn check_policy(&self, replacing: bool) -> Result<(), ConfigurationError> {
+        if self.policy == WritePolicy::ReadOnly
+            || (replacing && self.policy != WritePolicy::CoordinatedLocalWriters)
+        {
             return Err(ConfigurationError::ReadOnly);
         }
+        Ok(())
+    }
+
+    pub(crate) fn commit(
+        &mut self,
+        expected: &RawObservation,
+        source: &str,
+        backup: bool,
+    ) -> Result<Observation, ConfigurationError> {
+        self.check_policy(expected.source.is_some())?;
         if source.len() > MAX_CONFIG_BYTES {
             return Err(ConfigurationError::Capacity);
         }
@@ -210,7 +256,7 @@ impl ConfigurationFile {
             fs::TryLockError::WouldBlock => ConfigurationError::Busy,
             fs::TryLockError::Error(_) => ConfigurationError::Unavailable,
         })?;
-        let result = self.save_locked(expected, source);
+        let result = self.save_locked(expected, source, backup);
         let unlocked = self.directory.unlock();
         if unlocked.is_err() && result.is_ok() {
             return Err(ConfigurationError::Uncertain);
@@ -220,16 +266,56 @@ impl ConfigurationFile {
 
     fn save_locked(
         &mut self,
-        expected: &Observation,
+        expected: &RawObservation,
         source: &str,
+        backup: bool,
     ) -> Result<Observation, ConfigurationError> {
-        if &self.read()? != expected {
+        if &self.read_raw()? != expected {
             return Err(ConfigurationError::Conflict);
         }
         self.serial = self
             .serial
             .checked_add(1)
             .ok_or(ConfigurationError::Capacity)?;
+        if backup && let Some(bytes) = &expected.source {
+            let name = format!(".fluzo-backup-{}-{}", std::process::id(), self.serial);
+            let path = self.anchored(&name);
+            let mut options = OpenOptions::new();
+            options.read(true).write(true).create_new(true);
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            self.fail_at(Fault::BackupWrite)?;
+            let mut file = options
+                .open(path)
+                .map_err(|_| ConfigurationError::WriteFailed)?;
+            self.backup = Some(name);
+            file.write_all(bytes)
+                .map_err(|_| ConfigurationError::WriteFailed)?;
+            self.fail_at(Fault::BackupSync)?;
+            file.sync_all()
+                .map_err(|_| ConfigurationError::WriteFailed)?;
+            use std::io::{Seek, SeekFrom};
+            file.seek(SeekFrom::Start(0))
+                .map_err(|_| ConfigurationError::WriteFailed)?;
+            let mut verified = Vec::new();
+            file.take(MAX_CONFIG_BYTES as u64 + 1)
+                .read_to_end(&mut verified)
+                .map_err(|_| ConfigurationError::WriteFailed)?;
+            self.fail_at(Fault::BackupVerify)?;
+            if verified != *bytes {
+                return Err(ConfigurationError::WriteFailed);
+            }
+            self.fail_at(Fault::BackupDirectorySync)?;
+            self.directory
+                .sync_all()
+                .map_err(|_| ConfigurationError::WriteFailed)?;
+            if &self.read_raw()? != expected {
+                return Err(ConfigurationError::Conflict);
+            }
+        }
         let temporary = self.anchored(&format!(
             ".fluzo-save-{}-{}",
             std::process::id(),
@@ -251,7 +337,7 @@ impl ConfigurationFile {
             self.fail_at(Fault::FileSync)?;
             file.sync_all()
                 .map_err(|_| ConfigurationError::WriteFailed)?;
-            if &self.read()? != expected {
+            if &self.read_raw()? != expected {
                 return Err(ConfigurationError::Conflict);
             }
             self.fail_at(Fault::BeforeReplace)?;
@@ -286,11 +372,13 @@ impl ConfigurationFile {
     fn fail_at(&self, fault: Fault) -> Result<(), ConfigurationError> {
         #[cfg(test)]
         if FAILURE.with(|value| value.get()) == Some(fault) {
-            return Err(if matches!(fault, Fault::BeforeReplace | Fault::FileSync) {
-                ConfigurationError::WriteFailed
-            } else {
-                ConfigurationError::Uncertain
-            });
+            return Err(
+                if !matches!(fault, Fault::AfterReplace | Fault::DirectorySync) {
+                    ConfigurationError::WriteFailed
+                } else {
+                    ConfigurationError::Uncertain
+                },
+            );
         }
         let _ = fault;
         Ok(())
@@ -299,6 +387,10 @@ impl ConfigurationFile {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) enum Fault {
+    BackupWrite,
+    BackupSync,
+    BackupVerify,
+    BackupDirectorySync,
     FileSync,
     BeforeReplace,
     AfterReplace,
