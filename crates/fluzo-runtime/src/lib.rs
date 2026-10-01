@@ -1,4 +1,6 @@
 pub mod config;
+pub mod configuration;
+mod configuration_file;
 pub mod scenario;
 
 #[cfg(test)]

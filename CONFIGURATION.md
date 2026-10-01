@@ -3,8 +3,10 @@
 This implements the library scope of [FND-02 (#2)](https://github.com/fluzo-labs/fluzo/issues/2),
 using [PRD v0.2 sections 26, 27 and 43](https://github.com/fluzo-labs/fluzo-docs/blob/60c5b0732fb710cdf705476cee8d9156a5ecd971/PRD.md)
 and [architecture A06, section 10](https://github.com/fluzo-labs/fluzo-docs/blob/60c5b0732fb710cdf705476cee8d9156a5ecd971/ARCHITECTURE.md).
-It does not implement a wizard, configuration CLI, application port, file saving,
-active-task application, credentials service, provider or agent execution.
+FND-02 alone does not implement a wizard, configuration CLI, application port,
+file saving, active-task application, credentials service, provider or agent
+execution. UI-03 S1 adds the shared service described below; setup and normal
+configuration views remain separate work.
 
 ## Ownership and APIs
 
@@ -40,6 +42,106 @@ active-task application, credentials service, provider or agent execution.
 Core uses Serde but no filesystem, environment, network, database or terminal
 operations. Runtime owns TOML parsing. TUI consumers can use core metadata and
 validation without importing runtime or the TOML parser.
+
+## Shared configuration service (UI-03 S1)
+
+[#44](https://github.com/fluzo-labs/fluzo/issues/44), under UI-03 #8, adds
+`fluzo_runtime::configuration::ConfigurationService` implementing core's separate
+`ConfigurationPort`. Design: PRD 26/29.2.2/30 and architecture A06/A07 sections
+5.1/10, with approved D0 revision `53b345e9f1782beef839b42b4c0de4773ed371df`.
+This is a reusable library, not setup, normal settings views or C3 menu wiring.
+The existing CLI demo remains isolated and does not load or save user settings.
+
+The composition root supplies an absolute workspace path, optional relative or
+workspace-contained absolute config path, typed CLI overrides and a write policy.
+No HOME/global configuration or credentials are discovered. Startup happens on a
+dedicated worker. Missing files use shared defaults; invalid/inaccessible files
+produce explicit discovery/problem state and cannot be overwritten by Save.
+Explicit Reload discards the current draft on a valid read, updates saved values,
+and never silently replaces active effective settings. Invalid reload preserves
+the prior valid values while exposing the new problem.
+
+`config::update_batch` edits schema-defined fields and model/pool collections in
+one candidate document, then validates the complete result. This avoids invalid
+intermediate model/pool references. Add/remove collection operations are explicit;
+Save selects leaf keys or whole `models.<id>` / `capacity_pools.<id>` entries.
+Selecting an incomplete related change fails validation without a partial save.
+An empty Save on a missing file creates the generated non-secret defaults.
+
+Save changes only future configuration. Apply validates selected presentation
+settings against the effective snapshot; operational application returns
+`Unavailable`. CLI overrides remain effective and locked for Apply, but future
+file values may be saved separately. Cancel restores the saved draft without
+undoing prior Save or Apply. Restart-rule selections are recorded as pending,
+not activated. No task, budget, deadline, grant or remote transport is owned by
+this service. Production operational enforcement is not certified by its fixtures.
+
+### Filesystem and concurrency contract
+
+The initial adapter supports Linux x86_64, a usable `/proc/self/fd`, and local
+filesystems with file synchronization, directory synchronization, hard links,
+atomic same-directory rename and directory advisory locking. No dependency or
+unsafe code is added. Paths are traversed component-by-component through held
+directory handles with no-follow opens; parent traversal, directory symlinks,
+non-regular targets and multiply-linked configuration files are rejected.
+Parent identity and target content/metadata are checked before saving.
+
+The host must explicitly select `CoordinatedLocalWriters` only for a trusted,
+stable workspace where all concurrent writers honor the same parent-directory
+exclusive lock. Use `ReadOnly` otherwise. This is an integration precondition,
+not user consent, an OS sandbox or protection against arbitrary editors or a
+hostile process that ignores locks. The adapter cannot detect that all external
+writers cooperate or certify a network filesystem. No caller may silently opt
+into this policy for an unverified production workspace. S2/S3 integration must
+retain this limitation or obtain a reviewed stronger adapter before offering
+writes outside the supported environment.
+
+Under that contract, a nonblocking directory lock serializes check-and-replace
+across cooperating processes without a removable lock-file race. The original
+observation includes exact bounded content and inode/device/timestamp metadata;
+external changes observed before commit require Reload/reconciliation. A final
+version check plus rename alone is not claimed to prevent uncooperative races.
+Creation uses exclusive temporary creation and a no-replace hard link, so an
+unexpected newly created target is not overwritten. Replacement uses atomic
+rename. Temporary files are mode 0600, flushed before commit; the parent is
+synchronized afterwards. Existing broad access permissions are not propagated.
+
+Precommit failure preserves the previous file. Failure after replacement or
+parent synchronization is `Uncertain`, blocks further Save/Apply, and requires
+explicit Reload; it never claims rollback. A process crash can leave a private
+temporary file. There is no automatic orphan deletion or operation replay.
+Reopening reads actual disk state; in-memory request IDs do not promise durable
+exactly-once execution across process restarts. Network-filesystem hangs and
+power-loss durability are not established by local injected-failure tests.
+
+### Evidence and limitations
+
+Focused command: `cargo test -p fluzo-runtime --lib --locked --offline configuration`.
+The S1 suite covers actual creation/replacement/reload, selected saves, collection
+transactions, CLI precedence, invalid documents, external creation/removal/inode
+replacement, locks across a child process, symlink/hardlink refusal, injected
+pre/post-replacement and synchronization failures, queue limits, replay and
+redacted projections. Tests use private temporary roots and bounded process
+handshakes, not providers or sleeps as scheduling evidence.
+
+The initial batch-helper compilation failed due to a retained String return
+where unit was required; this was corrected before the service tests ran. It was
+not a reproduced behavior regression. New service behavior had no previous
+implementation to test. Synthetic operational assertions establish isolation,
+not production capacity draining, audit persistence or consent enforcement.
+Live inference is not run. No visual appearance changes are part of S1.
+
+Local validation on the uncommitted S1 implementation based on `8d709d9`:
+162 Rust test cases passed (15 configuration cases, including one child-process
+helper), 52 Python cases passed, and format/check/Clippy/build, dependency/skill
+checks, isolated LSP and the private-network HTTP profile passed. Commands are
+the existing AGENTS.md validation list. No remote CI or human acceptance is
+implied. Clippy initially rejected an unnecessary borrow after path hardening;
+it was fixed without lint suppression. A restart test initially expected a
+pending flag for an unchanged fixed-value setting; it now verifies no false
+pending state and preservation of a synthetic existing pending state. Current
+restart-class settings have no selectable alternative supported by the registry;
+this is not evidence of a production restart implementation.
 
 ## Visual session preferences
 

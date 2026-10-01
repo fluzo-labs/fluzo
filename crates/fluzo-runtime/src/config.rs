@@ -213,15 +213,101 @@ fn check_value(item: &Item, key: &str, descriptor: &SettingDescriptor) -> Result
 }
 
 pub fn update_draft(source: &str, key: &str, value: SettingValue) -> Result<String, ConfigError> {
-    let settings = parse_settings(source)?;
-    let descriptor = settings
-        .descriptors()
-        .into_iter()
-        .find(|descriptor| descriptor.key == key)
-        .ok_or_else(|| ConfigError::new(ConfigErrorCode::UnknownField, "<unknown-key>", None))?;
+    update_batch(
+        source,
+        &[fluzo_core::configuration::Edit::Set {
+            key: key.into(),
+            value,
+        }],
+    )
+}
+
+pub fn update_batch(
+    source: &str,
+    edits: &[fluzo_core::configuration::Edit],
+) -> Result<String, ConfigError> {
+    use fluzo_core::configuration::{Edit, MAX_EDITS};
+    parse_settings(source)?;
+    if edits.len() > MAX_EDITS {
+        return Err(ConfigError::new(ConfigErrorCode::TooLarge, "", None));
+    }
     let mut document = source
         .parse::<DocumentMut>()
         .map_err(|error| ConfigError::new(ConfigErrorCode::Syntax, "", error.span()))?;
+    for edit in edits {
+        match edit {
+            Edit::Set { key, value } => set_value(&mut document, key, value.clone())?,
+            Edit::AddModel { name } | Edit::AddPool { name } => {
+                let group = if matches!(edit, Edit::AddModel { .. }) {
+                    "models"
+                } else {
+                    "capacity_pools"
+                };
+                if !valid_identifier(name) {
+                    return Err(ConfigError::new(
+                        ConfigErrorCode::UnknownField,
+                        "<invalid-key>",
+                        None,
+                    ));
+                }
+                if document.get(group).is_none() {
+                    document.insert(group, Item::Table(toml_edit::Table::new()));
+                }
+                let table = document[group]
+                    .as_table_like_mut()
+                    .ok_or_else(|| ConfigError::new(ConfigErrorCode::InvalidType, group, None))?;
+                if table.contains_key(name) {
+                    return Err(ConfigError::new(ConfigErrorCode::InvalidValue, group, None));
+                }
+                table.insert(name, Item::Table(toml_edit::Table::new()));
+            }
+            Edit::RemoveModel { name } | Edit::RemovePool { name } => {
+                let group = if matches!(edit, Edit::RemoveModel { .. }) {
+                    "models"
+                } else {
+                    "capacity_pools"
+                };
+                if !valid_identifier(name) {
+                    return Err(ConfigError::new(
+                        ConfigErrorCode::UnknownField,
+                        "<invalid-key>",
+                        None,
+                    ));
+                }
+                let table = document
+                    .get_mut(group)
+                    .and_then(Item::as_table_like_mut)
+                    .ok_or_else(|| ConfigError::new(ConfigErrorCode::UnknownField, group, None))?;
+                if table.remove(name).is_none() {
+                    return Err(ConfigError::new(ConfigErrorCode::UnknownField, group, None));
+                }
+            }
+        }
+    }
+    let output = document.to_string();
+    parse_settings(&output)?;
+    Ok(output)
+}
+
+fn set_value(
+    document: &mut DocumentMut,
+    key: &str,
+    value: SettingValue,
+) -> Result<(), ConfigError> {
+    if !key.split('.').all(valid_identifier) {
+        return Err(ConfigError::new(
+            ConfigErrorCode::UnknownField,
+            "<invalid-key>",
+            None,
+        ));
+    }
+    let schema_key = template_key(key);
+    let descriptor = Settings::default()
+        .descriptors()
+        .into_iter()
+        .chain(Settings::collection_descriptors())
+        .find(|descriptor| descriptor.key == schema_key)
+        .ok_or_else(|| ConfigError::new(ConfigErrorCode::UnknownField, "<unknown-key>", None))?;
     let item = match value {
         SettingValue::Boolean(value) => toml_edit::value(value),
         SettingValue::Integer(value) => toml_edit::value(
@@ -267,9 +353,7 @@ pub fn update_draft(source: &str, key: &str, value: SettingValue) -> Result<Stri
             .and_then(Item::as_table_like_mut)
             .ok_or_else(|| ConfigError::new(ConfigErrorCode::InvalidType, key, None))?;
     }
-    let output = document.to_string();
-    parse_settings(&output)?;
-    Ok(output)
+    Ok(())
 }
 
 #[cfg(test)]
