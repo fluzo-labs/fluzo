@@ -95,6 +95,131 @@ fn text(view: &ConfigurationView, width: u16, height: u16, ascii: bool) -> Strin
 }
 
 #[test]
+fn review_regression_effective_only_collections_can_be_recreated_after_reload() {
+    for (group, shortcut) in [("models", 'n'), ("capacity_pools", 'p')] {
+        let mut port = Port::new();
+        let mut settings = Settings::default();
+        settings.models.insert("old".into(), Default::default());
+        settings
+            .capacity_pools
+            .insert("old".into(), Default::default());
+        for (descriptor, effective) in settings
+            .entries()
+            .into_iter()
+            .filter(|(descriptor, _)| descriptor.key.starts_with(&format!("{group}.old.")))
+        {
+            port.snapshot.values.insert(
+                descriptor.key.clone(),
+                ConfigurationValue {
+                    descriptor,
+                    saved: SettingValue::Unset,
+                    draft: SettingValue::Unset,
+                    effective,
+                    saved_origin: fluzo_core::settings::SettingOrigin::SavedFuture,
+                    draft_origin: fluzo_core::settings::SettingOrigin::SavedFuture,
+                    effective_origin: fluzo_core::settings::SettingOrigin::ActiveSnapshot,
+                    cli_locked: false,
+                },
+            );
+        }
+        let mut view = view(&mut port);
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char('r'),
+            KeyModifiers::CONTROL,
+        );
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char('r'),
+            KeyModifiers::CONTROL,
+        );
+        port.outcome = ConfigurationRequestStatus::Completed {
+            version: port.snapshot.version,
+            outcome: ConfigurationOutcome::Reloaded,
+        };
+        view.poll(&mut port);
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char(shortcut),
+            KeyModifiers::CONTROL,
+        );
+        view.paste("old");
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(
+            view.collections.get(&format!("{group}.old")),
+            Some(&true),
+            "{}",
+            view.status
+        );
+        assert!(
+            view.snapshot
+                .as_ref()
+                .unwrap()
+                .values
+                .keys()
+                .any(|key| key.starts_with(&format!("{group}.old.")))
+        );
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char(shortcut),
+            KeyModifiers::CONTROL,
+        );
+        view.paste("old");
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(view.status.contains("already exists"));
+    }
+}
+
+#[test]
+fn review_regression_partial_completion_preserves_other_pending_scopes() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    view.staged.extend([
+        "tui.theme".into(),
+        "tui.reduced_motion".into(),
+        "harness.max_turns".into(),
+    ]);
+    view.unapplied
+        .extend(["tui.theme".into(), "tui.reduced_motion".into()]);
+    view.checked.insert("tui.theme".into());
+    view.save(&mut port);
+    port.outcome = ConfigurationRequestStatus::Completed {
+        version: port.snapshot.version,
+        outcome: ConfigurationOutcome::Saved,
+    };
+    view.poll(&mut port);
+    assert!(!view.staged.contains("tui.theme"));
+    assert!(view.staged.contains("tui.reduced_motion"));
+    assert!(view.staged.contains("harness.max_turns"));
+    assert!(view.unapplied.contains("tui.theme"));
+    assert!(view.checked.is_empty());
+    view.checked.insert("tui.reduced_motion".into());
+    view.apply(&mut port);
+    port.outcome = ConfigurationRequestStatus::Failed(ConfigurationError::Unavailable);
+    view.poll(&mut port);
+    assert!(view.unapplied.contains("tui.reduced_motion"));
+    assert!(view.checked.contains("tui.reduced_motion"));
+    view.apply(&mut port);
+    port.outcome = ConfigurationRequestStatus::Completed {
+        version: port.snapshot.version,
+        outcome: ConfigurationOutcome::Applied,
+    };
+    view.poll(&mut port);
+    assert!(!view.unapplied.contains("tui.reduced_motion"));
+    assert!(view.unapplied.contains("tui.theme"));
+    assert!(view.staged.contains("tui.reduced_motion"));
+    assert!(view.checked.is_empty());
+    view.save(&mut port);
+    assert!(
+        matches!(&port.requests.last().unwrap().action, ConfigurationAction::Save { keys, .. } if keys == &vec!["harness.max_turns".to_owned(), "tui.reduced_motion".to_owned()])
+    );
+}
+
+#[test]
 fn registry_coverage_and_typed_inputs_include_collections_optional_and_escaped_maps() {
     let mut port = Port::new();
     let mut view = view(&mut port);
