@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{SettingOrigin, SettingValue, TuiSettings, ValidationError};
+use crate::settings::{
+    SettingDescriptor, SettingOrigin, SettingValue, TuiSettings, ValidationError,
+};
 
-pub const CONFIGURATION_PROTOCOL: u32 = 3;
+pub const CONFIGURATION_PROTOCOL: u32 = 4;
 pub const MAX_EDITS: usize = 256;
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_REQUESTS: usize = 64;
@@ -130,6 +132,7 @@ pub enum ConfigurationRequestStatus {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationValue {
+    pub descriptor: SettingDescriptor,
     pub saved: SettingValue,
     pub draft: SettingValue,
     pub effective: SettingValue,
@@ -148,6 +151,10 @@ pub struct ConfigurationChange {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationSnapshot {
+    pub save_unavailable: Option<ConfigurationError>,
+    pub apply_unavailable: Option<ConfigurationError>,
+    pub remaining_requests: usize,
+    pub next_request_id: ConfigurationRequestId,
     pub version: Version,
     pub discovery: Discovery,
     pub problem: Option<ConfigurationError>,

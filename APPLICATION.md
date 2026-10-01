@@ -33,10 +33,11 @@ UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
 `fluzo_core::configuration::ConfigurationPort` alongside the task port, without
 changing task protocol version 1 or inventing tasks for configuration edits.
 Its separately versioned requests own typed values and a configuration request
-ID. Configuration protocol 3 retains protocol 2's typed diagnostic codes and optional UTF-8
+ID. Configuration protocol 4 retains protocol 2's typed diagnostic codes and optional UTF-8
 byte ranges in Invalid outcomes, including syntax, missing-version, size and
 encoding failures. It rejects protocols 1 and 2 instead of silently discarding new
-error fields; task protocol 1 is unchanged. Codes and ranges contain no source
+error fields; protocol 3 is also rejected by the S3 capability/descriptor extension.
+Task protocol 1 is unchanged. Codes and ranges contain no source
 values. Runtime's existing ConfigErrorCode import re-exports the core type.
 Versions contain a service instance and revision; an old instance/revision
 cannot authorize an edit, save, cancel or apply on a new snapshot.
@@ -47,8 +48,8 @@ spawns one worker; only that worker parses files, validates candidates, writes
 configuration and builds projections. The client methods use bounded nonblocking
 queues and never wait for disk. An initial snapshot may return Busy until the
 worker publishes discovery. There is no view-driven setup, inference or task
-execution. S2 wires the setup host; S3 and C3 remain responsible for their
-normal-view and Developer Menu composition/UI wiring.
+execution. S2 wires setup and S3 wires normal configuration views without a
+production task runtime. C3 Developer Menu composition remains separate.
 
 Requests support Reload, Edit, Cancel, selected Save and selected Apply.
 S2 (#45 R2) adds PrepareSetup with expected version and typed edits, followed by
@@ -56,7 +57,7 @@ ConfirmSetup with the prepared version. Preparation carries a bounded private
 candidate and observed original on the worker, not in a widget. Snapshots expose
 only a redacted SetupPreview and any retained backup basename. Confirm consumes
 preparation; intervening actions invalidate it. Replayed request IDs still return
-the retained outcome. Config protocol 3 is required; task protocol 1 is unchanged.
+the retained outcome. Config protocol 4 is required; task protocol 1 is unchanged.
 See CONFIGURATION.md for CreateOnly versus coordinated replacement and backup
 failure/uncertainty semantics. No new dependencies or transport handles cross core. Submit
 returns accepted identity, not effect completion. Status returns Unknown,
@@ -79,6 +80,13 @@ continue collecting results. Dropping the client does not prove an in-flight
 filesystem call stopped and does not roll back a write. The host owns this
 lifecycle, not a TUI consumer. Local filesystem calls can block the worker;
 no OS-level hard deadline or forced cancellation guarantee is claimed.
+
+S3 snapshots also carry registry descriptors, typed Save/Apply unavailability,
+remaining record capacity and the next request identity for the single composed
+client. These are observations, not authorization; runtime rechecks every effect.
+A second client must not treat the suggested identity as an atomic reservation.
+The TUI retains only intentional edits and reconciles completion after closing a
+view. Exhaustion never evicts records or automatically restarts a worker.
 
 Snapshots distinguish saved/draft/effective values, each origin and CLI locks,
 and include effective presentation settings and pending restart keys. Sensitive

@@ -106,8 +106,9 @@ class SetupTests(unittest.TestCase):
 
             try:
                 if action == "valid":
-                    wait_for(b"Setup skipped")
-                    os.write(master, b"\x1b")
+                    wait_for(b"Configuration workspace")
+                    self.assertNotIn(b"Welcome to Fluzo", screen.text())
+                    os.write(master, b"\x03")
                 else:
                     wait_for(b"Welcome to Fluzo")
                     self.assertFalse((root / ".fluzo").exists())

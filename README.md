@@ -4,7 +4,8 @@
 
 **Status: development bootstrap.** The four-crate Cargo workspace, bootstrap
 help/version binary, typed configuration, application protocol and deterministic
-scenario driver, interactive demo shell and offline configuration setup are available.
+scenario driver, interactive demo shell, offline setup and typed configuration
+views are available.
 Agent execution, full TUI workflows, providers and session persistence are not implemented. There are no releases or
 measured runtime performance results yet.
 
@@ -51,7 +52,11 @@ is missing; `fluzo init` explicitly opens setup, and `--config` selects a worksp
 file. Creation requires review and confirmation. Existing files are not replaced by
 the ordinary CLI host; coordinated replacement is limited to controlled hosts.
 Headless missing-config startup returns structured `configuration_required` on stderr.
-No provider is contacted. Production active runtime application remains unavailable.
+With valid configuration, interactive startup opens the normal configuration-only
+shell: Ctrl+P opens settings without devmenu, F1 shows editing help. After ordinary
+setup creation, F2 explicitly enters that shell. Presentation Apply is available;
+Save replacement remains restricted to controlled hosts. The explicit demo remains
+isolated. No provider is contacted. Production active runtime application remains unavailable.
 Runtime tests, benchmarks and
 release packaging will be documented when implemented. [APPLICATION.md](APPLICATION.md)
 describes the FND-03 port, snapshot/cursor contracts and effect-free protocol demo;

@@ -24,8 +24,11 @@ UI-03 S2 adds offline welcome/setup and headless configuration discovery using
 configuration protocol 3. Under #45 R2 and fluzo-docs revision
 `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, ordinary CLI hosts may exclusively
 create missing files but cannot replace existing files. Controlled hosts test
-version-bound replacement with verified backups. Normal configuration views and
-UI-02 C3 menu wiring remain unimplemented.
+version-bound replacement with verified backups. UI-03 S3 (#46 R2) adds the
+normal configuration-only shell and typed basic/advanced editing with protocol 4,
+owned descriptors, operation availability and bounded request reconciliation.
+Ordinary hosts still cannot replace configuration; presentation Apply is separate.
+UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
@@ -317,6 +320,15 @@ Focused protocol checks use
 `cargo test -p fluzo-runtime --test http_simulator --locked --offline`.
 Runtime E2E, benchmarks and packaging are still unimplemented. CI commands passed locally;
 a remote workflow run is not implied.
+
+S3 focused checks use `cargo test -p fluzo-cli --test configuration --locked --offline`,
+`cargo test -p fluzo-tui --locked --offline configuration`, and
+`python3 -B -m unittest discover -s scripts -p 'test_configuration.py'`.
+They compose actual controlled-host UI/service persistence, unit projections and
+ordinary-host PTYs separately. S3 does not add dependencies or a task runtime.
+The normal shell uses Ctrl+P; F1 explains settings controls. Setup F2 handoff is
+explicit. Service exhaustion retains outcomes and drafts without automatic replay
+or replacement; reopening explicitly loses unsaved local drafts.
 
 S1 configuration checks use
 `cargo test -p fluzo-runtime --lib --locked --offline configuration`.

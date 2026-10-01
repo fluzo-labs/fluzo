@@ -5,6 +5,42 @@ terminal shell, multiline composer and searchable command palette. References:
 PRD 29/30/31 and architecture A07, section 12, at baseline
 `60c5b0732fb710cdf705476cee8d9156a5ecd971`.
 
+## S3 normal configuration
+
+S3 (#46 R2) exposes Configuration through Ctrl+P in ordinary interactive startup
+with a valid selected config, without devmenu or an available agent. The shell
+reuses the accepted identity, composer and responsive layout but contains no
+synthetic tasks, provider metrics or demo playback controls. The explicit demo
+retains its original behavior and no-user-config-I/O boundary. Headless behavior
+is unchanged. After ordinary setup creation, F2 explicitly enters settings;
+explicit init stays in setup. No transition starts execution.
+
+Models, limits, pools, storage, telemetry, theme, notifications, devmenu and
+All / advanced entries share the typed editor. F1 explains keyboard controls;
+search and selection survive asynchronous projection updates. Composer, focus and
+scroll survive settings navigation. Display sanitization is separate from masking
+sensitive replacement inputs. Notifications duration/count use shared finite
+bounds; desktop preferences cannot create a notification or operational adapter.
+The idle configuration host has event-driven rendering, not an animation loop.
+
+Ctrl+S Save and Ctrl+A Apply show accepted/pending before confirmed completion.
+Save replacement is unavailable in ordinary hosts, including after first creation.
+Presentation Apply uses the shared worker and changes the real effective theme;
+CLI locks remain authoritative. C3 does not become wired by editing devmenu's
+normal preference. Operational controls remain unavailable, restart stays pending,
+and partial/unknown outcomes do not authorize replay. See CONFIGURATION.md for
+input formats, whole-value replacement, collection semantics and record exhaustion.
+
+`cargo test -p fluzo-tui --locked --offline configuration` covers reducers/buffers;
+`cargo test -p fluzo-cli --test configuration --locked --offline` composes actual
+UI/service/file behavior in controlled hosts. `python3 -B -m unittest discover -s
+scripts -p 'test_configuration.py'` exercises actual ordinary startup and setup
+handoff, CLI locks, file preservation, resize and restoration in private PTYs.
+Buffers cover minimum/80x24/120x40/160x50, plus too-small and ASCII/no-color cases.
+These checks do not establish human visual acceptance: scoped Ghostty/Alacritty
+review of the new settings surface remains pending. No C3, production runtime or
+broader UI-05/performance acceptance is claimed.
+
 ## S2 offline setup
 
 `fluzo` opens offline welcome/setup when the selected workspace has no `.fluzo`.
