@@ -136,8 +136,22 @@ class SetupTests(unittest.TestCase):
                     elif action == "signal":
                         child.terminate()
                     else:
+                        if action == "review":
+                            os.write(master, b"\t" * 8 + b"\r\x153\r")
+                            wait_for(b"> capacity_pools.local.max_in_flight = 3")
                         os.write(master, b"\x13")
                         wait_for(b"Review every value")
+                        if action == "review":
+                            os.write(master, b"\x1b[6~")
+                            wait_for(b"context.compaction_threshold = 0.8")
+                            wait_for(b"context.safety_reserve_fraction = 0.05")
+                            os.write(master, b"\x1b")
+                            wait_for(b"Welcome to Fluzo")
+                            self.assertIn(b"Target:", screen.text())
+                            self.assertIn(b"> capacity_pools.local.max_in_flight = 3", screen.text())
+                            self.assertFalse((root / ".fluzo").exists())
+                            os.write(master, b"\x13")
+                            wait_for(b"Review every value")
                         self.assertFalse((root / ".fluzo").exists())
                         if action == "conflict":
                             (root / ".fluzo").write_bytes(original)
@@ -148,8 +162,14 @@ class SetupTests(unittest.TestCase):
                 self.assertEqual(termios.tcgetattr(slave), before)
                 self.assertNotIn(b"\x1b]777;", output)
                 self.assertNotIn(b"\x1b]52;", output)
-                if action == "save":
+                if action in ("save", "review"):
                     settings = tomllib.loads((root / ".fluzo").read_text())
+                    if action == "review":
+                        self.assertEqual(settings["capacity_pools"]["local"]["max_in_flight"], 3)
+                        self.assertEqual(settings["capacity_pools"]["local"]["foreground_reserved_slots"], 1)
+                        self.assertEqual(settings["models"], {})
+                        self.assertEqual(settings["context"]["compaction_threshold"], 0.8)
+                        self.assertEqual(settings["context"]["safety_reserve_fraction"], 0.05)
                     self.assertEqual(settings["tui"]["animation_fps"], 60)
                     self.assertFalse(settings["telemetry"]["export_enabled"])
                     self.assertEqual(sorted(path.name for path in root.iterdir()), [".fluzo"])
@@ -164,6 +184,9 @@ class SetupTests(unittest.TestCase):
                     child.wait(timeout=5)
                 os.close(master)
                 os.close(slave)
+
+    def test_review_regressions_preserve_pool_summary_and_return_navigation(self):
+        self.exercise("review")
 
     def test_setup_save_requires_two_explicit_steps(self):
         self.exercise("save")

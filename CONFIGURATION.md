@@ -124,6 +124,26 @@ profile. Commands are the AGENTS.md suite and focused commands above. No remote
 CI run or manual setup visual acceptance is implied. Scope remains S2 only;
 S3/C3 and production runtime execution are not implemented by this change.
 
+### S2 review corrections
+
+The final review of #49 found three setup regressions. Explicit pool preferences
+without a model were omitted; setup now creates the selected pool when its fields
+change, while untouched defaults still produce no model/pool entries. Summary
+formatting now covers fractions, lists and maps as well as scalar values, without
+changing redaction. Leaving a scrolled summary resets the viewport when the
+preview disappears, preserving selected field and draft on Cancel or Reload.
+
+Three focused tests compiled and failed on the intended assertions before the
+fixes, then passed with `cargo test -p fluzo-tui --locked --offline review_regression`.
+An additional private-PTY scenario checks visible pool edits, fractional summary
+values, return navigation and independent on-disk preservation without models.
+The correction tree based on `e106ff8` passes 177 workspace Rust cases and 63
+Python cases, including 11 setup cases, plus fmt/check/Clippy/build, dependency
+checks, isolated LSP and the standalone private-network HTTP profile. Commands
+remain the AGENTS.md suite. These are local results, not remote CI or evidence
+of a new human Ghostty/Alacritty visual session. Protocol 3, defaults, write
+capabilities and the accepted demo appearance are unchanged.
+
 ## Shared configuration service (UI-03 S1)
 
 [#44](https://github.com/fluzo-labs/fluzo/issues/44), under UI-03 #8, adds
