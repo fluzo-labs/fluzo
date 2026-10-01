@@ -9,17 +9,7 @@ use toml_edit::{DocumentMut, Item, TableLike, Value};
 
 pub const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConfigErrorCode {
-    TooLarge,
-    Syntax,
-    UnknownField,
-    InvalidType,
-    InvalidValue,
-    MissingVersion,
-    Validation,
-    Serialization,
-}
+pub use fluzo_core::configuration::ConfigErrorCode;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfigError {

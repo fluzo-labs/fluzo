@@ -755,6 +755,159 @@ fn reload_keeps_effective_provenance_and_invalid_input_keeps_draft() {
 }
 
 #[test]
+fn review_regression_apply_does_not_expand_valid_sparse_configuration() {
+    let root = Root::new();
+    let mut source = String::from("schema_version = 1\n");
+    for index in 0..9000 {
+        source.push_str(&format!("[capacity_pools.pool{index}]\n"));
+    }
+    let settings = parse_settings(&source).unwrap();
+    assert!(source.len() < crate::config::MAX_CONFIG_BYTES);
+    assert!(encode_settings(&settings).is_err());
+    fs::write(root.0.join(".fluzo"), &source).unwrap();
+    let mut state = root.state();
+    edit(
+        &mut state,
+        vec![set("tui.animation_fps", SettingValue::Integer(0))],
+    );
+    let version = state.version;
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::Apply {
+                expected: version,
+                keys: keys(&["tui.animation_fps"])
+            }
+        ),
+        Ok(ConfigurationOutcome::Applied)
+    );
+    assert_eq!(state.effective.tui.animation_fps, 0);
+    assert_eq!(state.effective.capacity_pools, settings.capacity_pools);
+    assert_eq!(fs::read_to_string(root.0.join(".fluzo")).unwrap(), source);
+}
+
+#[test]
+fn review_regression_failed_reload_preserves_saved_and_draft_origins() {
+    for explicit in [false, true] {
+        let root = Root::new();
+        fs::write(
+            root.0.join(".fluzo"),
+            "schema_version = 1\n[tui]\nanimation_fps = 30\n",
+        )
+        .unwrap();
+        let mut state = State::open(
+            &root.0,
+            explicit.then_some(Path::new(".fluzo")),
+            vec![],
+            WritePolicy::ReadOnly,
+            12,
+        )
+        .unwrap();
+        edit(
+            &mut state,
+            vec![set("tui.theme", SettingValue::Text("high-contrast".into()))],
+        );
+        let before = state.snapshot().values;
+        for source in ["schema_version = 1\nunknown = true\n", "broken = ["] {
+            fs::write(root.0.join(".fluzo"), source).unwrap();
+            execute(&mut state, ConfigurationAction::Reload).unwrap();
+            assert_eq!(state.snapshot().values, before);
+            assert_eq!(state.discovery, Discovery::Invalid);
+        }
+        fs::remove_file(root.0.join(".fluzo")).unwrap();
+        fs::create_dir(root.0.join(".fluzo")).unwrap();
+        execute(&mut state, ConfigurationAction::Reload).unwrap();
+        assert_eq!(state.snapshot().values, before);
+        assert_eq!(state.discovery, Discovery::Inaccessible);
+    }
+}
+
+#[test]
+fn review_regression_diagnostics_keep_safe_code_and_location() {
+    for (source, code, key) in [
+        ("schema_version = 1\nbroken = [", "Syntax", ""),
+        (
+            "[tui]\nanimation_fps = 30\n",
+            "MissingVersion",
+            "schema_version",
+        ),
+        (
+            "schema_version = 1\n[tui]\nanimation_fps = 'synthetic-private-value'\n",
+            "InvalidType",
+            "tui.animation_fps",
+        ),
+    ] {
+        let original = parse_settings(source).unwrap_err();
+        let error = invalid(original.clone());
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["Invalid"]["code"], code);
+        assert_eq!(json["Invalid"]["key"], key);
+        assert_eq!(
+            json["Invalid"]["span"],
+            serde_json::to_value(original.span).unwrap()
+        );
+        assert!(
+            !serde_json::to_string(&error)
+                .unwrap()
+                .contains("synthetic-private-value")
+        );
+        assert_eq!(
+            serde_json::from_value::<ConfigurationError>(json).unwrap(),
+            error
+        );
+    }
+    let error =
+        invalid(parse_settings(&" ".repeat(crate::config::MAX_CONFIG_BYTES + 1)).unwrap_err());
+    assert_eq!(
+        serde_json::to_value(error).unwrap()["Invalid"]["code"],
+        "TooLarge"
+    );
+}
+
+#[test]
+fn review_regression_public_port_retains_diagnostics_and_rejects_old_protocol() {
+    let root = Root::new();
+    let source = "schema_version = 1\nbroken = [";
+    fs::write(root.0.join(".fluzo"), source).unwrap();
+    let mut service =
+        ConfigurationService::start(root.0.clone(), None, vec![], WritePolicy::ReadOnly).unwrap();
+    let snapshot = ready(&mut service);
+    assert_eq!(
+        snapshot.problem,
+        Some(invalid(parse_settings(source).unwrap_err()))
+    );
+    assert_eq!(
+        service.submit(ConfigurationRequest {
+            protocol: 1,
+            id: ConfigurationRequestId(1),
+            action: ConfigurationAction::Reload,
+        }),
+        Err(ConfigurationError::UnsupportedProtocol)
+    );
+    fs::write(root.0.join(".fluzo"), [0xff, 0xfe]).unwrap();
+    let id = ConfigurationRequestId(2);
+    service
+        .submit(ConfigurationRequest {
+            protocol: CONFIGURATION_PROTOCOL,
+            id,
+            action: ConfigurationAction::Reload,
+        })
+        .unwrap();
+    assert!(matches!(
+        completed(&mut service, id),
+        ConfigurationRequestStatus::Completed { .. }
+    ));
+    assert!(matches!(
+        service.snapshot().unwrap().problem,
+        Some(ConfigurationError::Invalid {
+            code: ConfigErrorCode::InvalidEncoding,
+            span: None,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn process_lock_helper() {
     use std::io::{Read, Write};
     let Some(path) = std::env::var_os("FLUZO_CONFIG_LOCK_FIXTURE") else {

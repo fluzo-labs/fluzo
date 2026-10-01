@@ -33,7 +33,12 @@ UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
 `fluzo_core::configuration::ConfigurationPort` alongside the task port, without
 changing task protocol version 1 or inventing tasks for configuration edits.
 Its separately versioned requests own typed values and a configuration request
-ID. Versions contain a service instance and revision; an old instance/revision
+ID. Configuration protocol 2 preserves typed diagnostic codes and optional UTF-8
+byte ranges in Invalid outcomes, including syntax, missing-version, size and
+encoding failures. It rejects protocol 1 instead of silently discarding the new
+error fields; task protocol 1 is unchanged. Codes and ranges contain no source
+values. Runtime's existing ConfigErrorCode import re-exports the core type.
+Versions contain a service instance and revision; an old instance/revision
 cannot authorize an edit, save, cancel or apply on a new snapshot.
 
 The runtime `ConfigurationService::start` receives host-owned workspace/config

@@ -259,7 +259,9 @@ fn validate_edits(edits: &[Edit]) -> Result<(), ConfigurationError> {
 
 fn invalid(error: ConfigError) -> ConfigurationError {
     ConfigurationError::Invalid {
+        code: error.code,
         key: error.key,
+        span: error.span,
         errors: error.validation,
     }
 }
@@ -270,6 +272,7 @@ struct State {
     discovery: Discovery,
     problem: Option<ConfigurationError>,
     saved_source: String,
+    saved_has_file: bool,
     draft_source: String,
     saved: Settings,
     draft: Settings,
@@ -305,6 +308,7 @@ impl State {
             discovery: Discovery::Missing,
             problem: None,
             saved_source: defaults.clone(),
+            saved_has_file: false,
             draft_source: defaults,
             saved: Settings::default(),
             draft: Settings::default(),
@@ -374,6 +378,7 @@ impl State {
         } else {
             Discovery::Missing
         };
+        self.saved_has_file = observation.source.is_some();
         self.observed = Some(observation);
         self.problem = None;
         self.saved_source = source.clone();
@@ -454,6 +459,7 @@ impl State {
                     }
                 }
                 self.saved_source = source;
+                self.saved_has_file = true;
                 self.saved = settings;
                 self.saved_keys.extend(keys.iter().cloned());
                 self.discovery = Discovery::Valid;
@@ -496,10 +502,24 @@ impl State {
                         _ => return Err(ConfigurationError::Unavailable),
                     }
                 }
+                let presentation = Settings {
+                    tui: self.effective.tui.clone(),
+                    ..Settings::default()
+                };
                 let source =
-                    update_batch(&encode_settings(&self.effective).map_err(invalid)?, &edits)
+                    update_batch(&encode_settings(&presentation).map_err(invalid)?, &edits)
                         .map_err(invalid)?;
-                self.effective = parse_settings(&source).map_err(invalid)?;
+                let mut candidate = self.effective.clone();
+                candidate.tui = parse_settings(&source).map_err(invalid)?.tui;
+                candidate
+                    .validate()
+                    .map_err(|errors| ConfigurationError::Invalid {
+                        code: ConfigErrorCode::Validation,
+                        key: String::new(),
+                        span: None,
+                        errors,
+                    })?;
+                self.effective = candidate;
                 self.effective_origins
                     .extend(edits.iter().filter_map(|edit| {
                         if let Edit::Set { key, .. } = edit {
@@ -576,10 +596,9 @@ impl State {
             .map(|(descriptor, value)| (descriptor.key, value))
             .collect();
         let source_document = self
-            .observed
-            .as_ref()
-            .and_then(|observation| observation.source.as_ref())
-            .and_then(|source| source.parse::<toml_edit::DocumentMut>().ok());
+            .saved_has_file
+            .then(|| self.saved_source.parse::<toml_edit::DocumentMut>().ok())
+            .flatten();
         let values = entries
             .into_iter()
             .map(|(key, (descriptor, _))| {
