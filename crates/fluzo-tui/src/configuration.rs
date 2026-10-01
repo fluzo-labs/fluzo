@@ -52,6 +52,7 @@ pub struct ConfigurationView {
     collections: BTreeMap<String, bool>,
     checked: BTreeSet<String>,
     staged: BTreeSet<String>,
+    unapplied: BTreeSet<String>,
     input: Option<Input>,
     editor: Editor,
     pending: Option<Pending>,
@@ -75,6 +76,7 @@ impl Default for ConfigurationView {
             collections: BTreeMap::new(),
             checked: BTreeSet::new(),
             staged: BTreeSet::new(),
+            unapplied: BTreeSet::new(),
             input: None,
             editor: Editor::default(),
             pending: None,
@@ -199,9 +201,13 @@ impl ConfigurationView {
         }
     }
 
-    fn changed_keys(&self) -> Vec<String> {
-        let keys: BTreeSet<_> = self
-            .staged
+    fn changed_keys(&self, intent: Intent) -> Vec<String> {
+        let retained = if intent == Intent::Apply {
+            &self.unapplied
+        } else {
+            &self.staged
+        };
+        let keys: BTreeSet<_> = retained
             .iter()
             .cloned()
             .chain(self.edits.keys().cloned())
@@ -351,7 +357,7 @@ impl ConfigurationView {
             return;
         }
         let keys = if self.checked.is_empty() {
-            self.changed_keys()
+            self.changed_keys(intent)
         } else {
             self.checked.iter().cloned().collect()
         };
@@ -422,6 +428,31 @@ impl ConfigurationView {
                     if pending.editing {
                         self.staged.extend(self.edits.keys().cloned());
                         self.staged.extend(self.collections.keys().cloned());
+                        let descriptors = self.descriptors();
+                        self.unapplied.extend(
+                            self.edits
+                                .keys()
+                                .filter(|key| {
+                                    descriptors.get(*key).is_some_and(|descriptor| {
+                                        matches!(
+                                            descriptor.application,
+                                            fluzo_core::settings::ApplicationRule::Presentation
+                                                | fluzo_core::settings::ApplicationRule::Restart
+                                        )
+                                    }) && !self
+                                        .snapshot
+                                        .as_ref()
+                                        .and_then(|snapshot| snapshot.values.get(*key))
+                                        .is_some_and(|value| value.cli_locked)
+                                })
+                                .cloned(),
+                        );
+                        for (collection, add) in &self.collections {
+                            if !add {
+                                self.unapplied
+                                    .retain(|key| !key.starts_with(&format!("{collection}.")));
+                            }
+                        }
                         self.edits.clear();
                         self.collections.clear();
                         self.base = None;
@@ -432,6 +463,27 @@ impl ConfigurationView {
                                 "Draft validated after closing; Save/Apply not dispatched.".into();
                         }
                     } else {
+                        let covered = |key: &String| {
+                            pending.keys.iter().any(|selected| {
+                                key == selected || key.starts_with(&format!("{selected}."))
+                            })
+                        };
+                        match outcome {
+                            ConfigurationOutcome::Saved => self.staged.retain(|key| !covered(key)),
+                            ConfigurationOutcome::Applied
+                            | ConfigurationOutcome::RestartPending => {
+                                self.unapplied.retain(|key| !covered(key))
+                            }
+                            _ => {}
+                        }
+                        if matches!(
+                            outcome,
+                            ConfigurationOutcome::Saved
+                                | ConfigurationOutcome::Applied
+                                | ConfigurationOutcome::RestartPending
+                        ) {
+                            self.checked.retain(|key| !covered(key));
+                        }
                         if matches!(
                             outcome,
                             ConfigurationOutcome::Reloaded | ConfigurationOutcome::Cancelled
@@ -439,6 +491,7 @@ impl ConfigurationView {
                             self.edits.clear();
                             self.collections.clear();
                             self.staged.clear();
+                            self.unapplied.clear();
                             self.checked.clear();
                             self.base = None;
                             self.input = None;
@@ -507,11 +560,12 @@ impl ConfigurationView {
             Ok((None, SettingValue::Text(name))) => {
                 let model = matches!(self.input, Some(Input::Model));
                 let key = format!("{}.{name}", if model { "models" } else { "capacity_pools" });
-                if self
-                    .descriptors()
-                    .keys()
-                    .any(|field| field.starts_with(&format!("{key}.")))
-                {
+                let exists_in_draft = self.snapshot.as_ref().is_some_and(|snapshot| {
+                    snapshot.values.iter().any(|(field, value)| {
+                        field.starts_with(&format!("{key}.")) && value.draft != SettingValue::Unset
+                    })
+                });
+                if self.collections.get(&key) == Some(&true) || exists_in_draft {
                     self.status = "Collection already exists; choose another name.".into();
                     return;
                 }

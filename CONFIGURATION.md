@@ -71,7 +71,11 @@ step numbers or select boolean/enum alternatives, Enter replaces, Space selects
 Save/Apply keys, Ctrl+D restores the selected default in the draft, Ctrl+N adds a
 model, Ctrl+P adds a pool and Delete stages collection removal. F1 explains all
 controls. Ctrl+V validates, Ctrl+S saves selected future values, Ctrl+A applies
-selected presentation values. Without explicit selection, changed keys are used.
+selected presentation values. Without explicit selection, Save uses unsaved keys;
+Apply uses current edits plus previously validated, unlocked presentation/restart
+keys awaiting application. Explicit selection can still request an unavailable or
+CLI-locked operation and receives its typed rejection. Successful completion clears
+only the corresponding pending scope and completed selection, not other drafts.
 Ctrl+X twice discards drafts; Ctrl+R twice reloads/discards. Neither undoes prior
 Save or Apply. Esc closes the view retaining drafts and composer/focus/scroll.
 Closing during validation prevents the chained Save/Apply; dispatched effects
@@ -139,6 +143,39 @@ without suppressions. No before-change behavioral failure is claimed for the new
 editor. Human Ghostty/Alacritty review, parent acceptance and remote CI remain
 separate pending gates; live inference is not_run. C3 wiring, production consent,
 agent execution and broader visual/performance acceptance are not implemented.
+
+### S3 review corrections
+
+The review of integrated #51 (`724fa37`, content-identical to `0819ec7`) found
+stale operation selection and effective-only collection identity defects. Save and
+Apply now retain separate pending key sets: saving a removal cannot resubmit it on
+later saves, and previously saved operational or CLI-locked values do not pollute
+subsequent default presentation Apply. Current intentional edits are still checked
+by runtime; unsupported/locked edits are not silently applied or discarded.
+Partial success clears only completed keys, while failed operations retain drafts
+and explicit selection. Save-then-Apply and Apply-then-Save remain independent.
+
+Collection creation checks current draft existence and local additions instead of
+all projected descriptors. A removed model/pool may remain in the effective
+snapshot until later runtime integration, but that does not prevent recreating its
+name in future configuration. Effective values remain visible and unchanged;
+existing draft collections and duplicate local additions are still rejected.
+
+Three new regression tests compiled and failed on the intended assertions before
+correction: subsequent Save returned InvalidRequest, presentation Apply retained
+the default theme after Unavailable, and collection recreation was rejected.
+They now pass, with an additional partial-completion/failure preservation test.
+Existing actual-binary PTYs now verify Apply after CLI-lock rejection, retention of
+the locked draft and collection recreation after draft removal. An initial PTY
+extension reused an already-visible completion marker and sent input while pending;
+explicit intermediate screen transitions fixed the harness without timing sleeps.
+
+Local correction validation passes 197 Rust cases and 66 Python cases, plus
+fmt/check/Clippy/build, development boundaries, isolated LSP and private-network
+HTTP checks. Commands remain the AGENTS.md suite and S3 focused checks above.
+No new dependencies, protocol changes or write capabilities are introduced.
+Human visual/parent acceptance and correction publication remain separate; live
+inference is not_run. These fixes do not accept or close #46/#8.
 
 ## Offline setup (UI-03 S2)
 

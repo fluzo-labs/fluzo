@@ -62,6 +62,72 @@ fn set(view: &mut ConfigurationView, key: &str, value: SettingValue) {
 }
 
 #[test]
+fn review_regression_removed_collection_does_not_poison_later_saves() {
+    let root = Root::new();
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n[capacity_pools.old]\n",
+    )
+    .unwrap();
+    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut view = view(&mut service);
+    view.stage(Edit::RemovePool { name: "old".into() }).unwrap();
+    view.save(&mut service);
+    settle(&mut view, &mut service);
+    assert!(view.status.contains("Saved"));
+    set(
+        &mut view,
+        "tui.theme",
+        SettingValue::Text("high-contrast".into()),
+    );
+    view.save(&mut service);
+    settle(&mut view, &mut service);
+    assert!(view.status.contains("Saved"), "{}", view.status);
+    let saved = parse_settings(&fs::read_to_string(root.0.join(".fluzo")).unwrap()).unwrap();
+    assert!(saved.capacity_pools.is_empty());
+    assert_eq!(saved.tui.theme, "high-contrast");
+    view.apply(&mut service);
+    settle(&mut view, &mut service);
+    assert_eq!(
+        view.snapshot.as_ref().unwrap().effective_ui.theme,
+        "high-contrast"
+    );
+}
+
+#[test]
+fn review_regression_operational_save_does_not_poison_presentation_apply() {
+    let root = Root::new();
+    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut view = view(&mut service);
+    set(&mut view, "harness.max_turns", SettingValue::Integer(45));
+    view.save(&mut service);
+    settle(&mut view, &mut service);
+    assert!(view.status.contains("Saved"));
+    set(
+        &mut view,
+        "tui.theme",
+        SettingValue::Text("high-contrast".into()),
+    );
+    view.apply(&mut service);
+    settle(&mut view, &mut service);
+    assert_eq!(
+        view.snapshot.as_ref().unwrap().effective_ui.theme,
+        "high-contrast",
+        "{}",
+        view.status
+    );
+    assert_eq!(
+        view.snapshot.as_ref().unwrap().values["harness.max_turns"].effective,
+        SettingValue::Integer(30)
+    );
+    view.save(&mut service);
+    settle(&mut view, &mut service);
+    let saved = parse_settings(&fs::read_to_string(root.0.join(".fluzo")).unwrap()).unwrap();
+    assert_eq!(saved.harness.max_turns, 45);
+    assert_eq!(saved.tui.theme, "high-contrast");
+}
+
+#[test]
 fn normal_view_real_save_apply_preserves_redacted_values_and_comments() {
     let root = Root::new();
     let original = "schema_version = 1\n# retain this comment\n[project]\nname = 'private-fixture'\n[tools.shell.env]\nORIGINAL = 'unchanged'\n";
