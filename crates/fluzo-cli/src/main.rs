@@ -1,3 +1,5 @@
+mod startup;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -97,17 +99,16 @@ fn main() -> ExitCode {
                 "Fluzo development bootstrap\nUsage: fluzo --help | --version | demo [--interactive]\nInteractive options: --animation-fps <0..60> (default 60; alternatives 30/15/0)\n  --reduced-motion --theme <default|high-contrast> --ascii\n  --dev-menu | --no-dev-menu (disable wins)\n  --desktop-notifications (opt-in; Ghostty OSC 777, unfocused only)\n  Developer menu: Ctrl+T schedules a notification test in 3 seconds\nRead-only demo: no .fluzo loading or saving; visual options require demo --interactive."
             );
             println!(
+                "Setup: fluzo [init] [--config <workspace-relative path>] [visual options]\nMissing configuration opens offline setup interactively; headless returns configuration_required.\nExisting files are preserved: replacement requires a controlled host. No connectivity probes."
+            );
+            println!(
                 "{}",
                 fluzo_tui::availability_text(fluzo_runtime::availability())
             );
             return ExitCode::SUCCESS;
         }
     }
-    eprintln!(
-        "{}",
-        fluzo_tui::availability_text(fluzo_runtime::availability())
-    );
-    ExitCode::FAILURE
+    startup::run(&arguments)
 }
 
 fn demo_scenes(

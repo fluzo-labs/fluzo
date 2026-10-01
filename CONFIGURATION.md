@@ -43,13 +43,95 @@ Core uses Serde but no filesystem, environment, network, database or terminal
 operations. Runtime owns TOML parsing. TUI consumers can use core metadata and
 validation without importing runtime or the TOML parser.
 
+## Offline setup (UI-03 S2)
+
+S2 (#45, refinement R2) uses the write-capability decision in fluzo-docs #11,
+revision `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, PRD 26.1 and architecture
+10.2/10.3. Run `fluzo` in the selected workspace or `fluzo init` to open setup;
+`--config` selects a relative or workspace-contained absolute path. A valid file
+skips the form even when its provider or credential reference is unavailable.
+The startup view reports runtime unavailability honestly and offers no execution.
+The isolated `demo` commands retain their no-config-read/write contract.
+
+The form uses shared field descriptors/defaults. Basic fields cover an optional
+`coder` model, environment/named credential references, context/output capacity,
+model/pool slots and presentation preferences. Advanced fields cover optional
+`shadow` Laya preferences, storage quotas and OTLP preferences. These fixed setup
+aliases are not a general collection editor. Blank endpoint/model fields allow
+saving a valid configuration that is not execution-ready. No probe, inference,
+credential resolution or consent grant occurs, including when optional services
+are enabled. Connection tests are explicitly unavailable.
+
+Enter opens the form or edits a selected value; Tab/arrows navigate. Ctrl+U clears
+an input, Enter finishes editing, Ctrl+A toggles advanced fields. Ctrl+S first
+requests a validated redacted summary; a second explicit Ctrl+S confirms creation.
+PageUp/PageDown scroll the summary and target. Esc returns from review without
+saving, or exits the form. Ctrl+C/Ctrl+Q exit. Inputs are bounded to 2,048 bytes
+per field; paste cannot confirm. Sensitive inputs are masked, never echoed into
+summaries. CLI presentation overrides stay authoritative and visible; they do
+not overwrite the separately saved future defaults.
+
+Normal CLI hosts use `CreateOnly`: the same runtime adapter publishes exclusively
+without replacing a destination that appeared concurrently. After creation this
+capability does not allow replacement. Existing invalid/inaccessible files remain
+untouched; `fluzo init` reports replacement unavailable outside a controlled host.
+The existing supported Linux/path/filesystem restrictions remain in effect.
+
+Configuration protocol 3 adds PrepareSetup/ConfirmSetup, an optional redacted
+preview and retained backup reference. Preparation validates a fresh candidate
+independently of an invalid original, reads the bounded original bytes and binds
+confirmation to the service version. It creates no files. Any intervening action
+invalidates preparation; stale confirmation fails. Confirmation consumes the
+preparation before attempting the effect, so failure cannot authorize replay.
+Normal Save still rejects invalid input. Save/setup creation do not apply active
+settings or change CLI overrides. Reload is required after uncertain completion.
+
+Only explicitly coordinated hosts may replace an existing file. Confirmation
+creates an exclusive independent `.fluzo-backup-<pid>-<serial>` copy, mode 0600,
+of its exact bytes, including invalid UTF-8. Content is read back and verified,
+and file/directory synchronization precedes replacement. Backup failure blocks
+replacement; any created backup is retained and exposed by snapshot for recovery.
+The original is rechecked before replacement. Originals above the existing 1 MiB
+limit, unsupported paths and inaccessible originals are rejected. No automatic
+backup removal, restoration, migration or retry is performed. A retained backup
+reference alone is not proof that a failed backup completed successfully.
+
+Headless startup never opens a wizard. It returns failure with a JSON diagnostic
+on stderr and empty stdout: `configuration_required`, `configuration_invalid`,
+`configuration_inaccessible`, `replacement_unavailable`, or `runtime_unavailable`.
+Startup observation has a five-second wait bound; this does not interrupt blocked
+OS I/O. Closing after dispatch does not establish cancellation or undo a write.
+
+Focused checks: `cargo test -p fluzo-runtime --lib --locked --offline setup`,
+`cargo test -p fluzo-tui --locked --offline setup`, and
+`python3 -B -m unittest discover -s scripts -p 'test_setup.py'`.
+Tests cover real exclusive creation, independent backup bytes, backup faults and
+collisions, stale candidate/file confirmation, uncertainty, CLI separation,
+headless discovery, isolated PTY save/cancel/conflict/resize/restoration and a
+registered local endpoint receiving no requests. No application live inference
+or human visual acceptance is implied. New APIs initially caused exhaustive-match
+and snapshot-constructor compilation failures during migration. Clippy required
+moving a test module; a PTY resize case exposed truncated minimum-size guidance,
+then required a wrapped-line assertion. These failures were corrected without
+weakening existing tests. No before-change behavioral failure is claimed for
+previously absent setup APIs.
+
+Local validation of the uncommitted S2 changes based on `1f80956` passed 174
+workspace Rust cases (24 configuration cases, including 5 setup cases, and 90
+TUI cases), 62 Python cases (including 10 setup cases), fmt/check/Clippy/build,
+dependency/skill checks, isolated LSP and the standalone private-network HTTP
+profile. Commands are the AGENTS.md suite and focused commands above. No remote
+CI run or manual setup visual acceptance is implied. Scope remains S2 only;
+S3/C3 and production runtime execution are not implemented by this change.
+
 ## Shared configuration service (UI-03 S1)
 
 [#44](https://github.com/fluzo-labs/fluzo/issues/44), under UI-03 #8, adds
 `fluzo_runtime::configuration::ConfigurationService` implementing core's separate
 `ConfigurationPort`. Design: PRD 26/29.2.2/30 and architecture A06/A07 sections
 5.1/10, with approved D0 revision `53b345e9f1782beef839b42b4c0de4773ed371df`.
-This is a reusable library, not setup, normal settings views or C3 menu wiring.
+This is a reusable library; S2 now uses it for setup. Normal settings views and
+C3 menu wiring remain outside this increment.
 The existing CLI demo remains isolated and does not load or save user settings.
 
 The composition root supplies an absolute workspace path, optional relative or
@@ -86,9 +168,9 @@ directory handles with no-follow opens; parent traversal, directory symlinks,
 non-regular targets and multiply-linked configuration files are rejected.
 Parent identity and target content/metadata are checked before saving.
 
-The host must explicitly select `CoordinatedLocalWriters` only for a trusted,
+For replacement, the host must explicitly select `CoordinatedLocalWriters` only for a trusted,
 stable workspace where all concurrent writers honor the same parent-directory
-exclusive lock. Use `ReadOnly` otherwise. This is an integration precondition,
+exclusive lock. Use `ReadOnly` or S2's exclusive `CreateOnly` otherwise. This is an integration precondition,
 not user consent, an OS sandbox or protection against arbitrary editors or a
 hostile process that ignores locks. The adapter cannot detect that all external
 writers cooperate or certify a network filesystem. No caller may silently opt

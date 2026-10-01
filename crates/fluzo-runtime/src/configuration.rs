@@ -200,7 +200,8 @@ fn validate_request(request: &ConfigurationRequest) -> Result<(), ConfigurationE
         return Err(ConfigurationError::InvalidRequest);
     }
     match &request.action {
-        ConfigurationAction::Edit { edits, .. } => validate_edits(edits),
+        ConfigurationAction::Edit { edits, .. }
+        | ConfigurationAction::PrepareSetup { edits, .. } => validate_edits(edits),
         ConfigurationAction::Save { keys, .. } | ConfigurationAction::Apply { keys, .. } => {
             if keys.len() > MAX_EDITS
                 || keys.iter().any(|key| key.len() > 512)
@@ -285,6 +286,7 @@ struct State {
     pending_restart: Vec<String>,
     changes: VecDeque<ConfigurationChange>,
     dropped_changes: u64,
+    prepared: Option<(crate::configuration_file::RawObservation, String, Settings)>,
 }
 
 impl State {
@@ -328,6 +330,7 @@ impl State {
             pending_restart: Vec::new(),
             changes: VecDeque::new(),
             dropped_changes: 0,
+            prepared: None,
         };
         state.reload()?;
         let effective = update_batch(&state.saved_source, &state.overrides).map_err(invalid)?;
@@ -342,6 +345,7 @@ impl State {
     }
 
     fn reload(&mut self) -> Result<(), ConfigurationError> {
+        self.prepared = None;
         let observation = match self.file.read() {
             Ok(observation) => observation,
             Err(error) => {
@@ -417,7 +421,62 @@ impl State {
         if self.version.revision == u64::MAX {
             return Err(ConfigurationError::Capacity);
         }
+        if !matches!(request.action, ConfigurationAction::ConfirmSetup { .. }) {
+            self.prepared = None;
+        }
         match &request.action {
+            ConfigurationAction::PrepareSetup { expected, edits } => {
+                if *expected != self.version {
+                    return Err(ConfigurationError::Conflict);
+                }
+                if self.problem == Some(ConfigurationError::Uncertain) {
+                    return Err(ConfigurationError::Uncertain);
+                }
+                let observed = self.file.prepare_setup()?;
+                let candidate = update_batch(
+                    &encode_settings(&Settings::default()).map_err(invalid)?,
+                    edits,
+                )
+                .map_err(invalid)?;
+                let settings = parse_settings(&candidate).map_err(invalid)?;
+                let source = encode_settings(&settings).map_err(invalid)?;
+                self.prepared = Some((observed, source, settings));
+                self.bump()?;
+                Ok(ConfigurationOutcome::SetupPrepared)
+            }
+            ConfigurationAction::ConfirmSetup { expected } => {
+                if *expected != self.version {
+                    return Err(ConfigurationError::Conflict);
+                }
+                let (observed, source, settings) = self
+                    .prepared
+                    .take()
+                    .ok_or(ConfigurationError::InvalidRequest)?;
+                self.bump()?;
+                match self.file.commit(&observed, &source, true) {
+                    Ok(observation) => self.observed = Some(observation),
+                    Err(error) => {
+                        if error == ConfigurationError::Uncertain {
+                            self.problem = Some(error.clone());
+                        }
+                        return Err(error);
+                    }
+                }
+                self.saved_source = source.clone();
+                self.draft_source = source;
+                self.saved_has_file = true;
+                self.saved = settings.clone();
+                self.draft = settings;
+                self.saved_keys = self
+                    .saved
+                    .entries()
+                    .into_iter()
+                    .map(|(entry, _)| entry.key)
+                    .collect();
+                self.discovery = Discovery::Valid;
+                self.problem = None;
+                Ok(ConfigurationOutcome::Saved)
+            }
             ConfigurationAction::Reload => {
                 self.reload()?;
                 Ok(ConfigurationOutcome::Reloaded)
@@ -667,6 +726,17 @@ impl State {
             pending_restart: self.pending_restart.clone(),
             changes: self.changes.iter().cloned().collect(),
             dropped_changes: self.dropped_changes,
+            setup: self
+                .prepared
+                .as_ref()
+                .map(|(observed, _, settings)| SetupPreview {
+                    replacing: observed.source.is_some(),
+                    values: crate::config::redacted_values(settings)
+                        .into_iter()
+                        .map(|(key, value)| (key, safe_value(value)))
+                        .collect(),
+                }),
+            backup: self.file.backup.clone(),
         }
     }
 }

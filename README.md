@@ -4,8 +4,8 @@
 
 **Status: development bootstrap.** The four-crate Cargo workspace, bootstrap
 help/version binary, typed configuration, application protocol and deterministic
-scenario driver and initial interactive demo shell are available. Agent execution,
-full TUI workflows, providers and persistence are not implemented. There are no releases or
+scenario driver, interactive demo shell and offline configuration setup are available.
+Agent execution, full TUI workflows, providers and session persistence are not implemented. There are no releases or
 measured runtime performance results yet.
 
 - [Documentation site](https://fluzo-labs.github.io/fluzo-docs/)
@@ -46,8 +46,13 @@ The binary does not execute tasks. Foundation checks cannot establish runtime
 acceptance. See [AGENTS.md](AGENTS.md) for boundaries and verified commands and
 [SKILLS.md](SKILLS.md) for installed skills, LSP setup and deferred adoption.
 See [CONFIGURATION.md](CONFIGURATION.md) for the FND-02 library APIs, shared defaults,
-validation, dependency policy and scope. Configuration file saving, the wizard and
-active runtime application are not implemented. Runtime tests, benchmarks and
+validation, dependency policy and scope. `fluzo` opens offline setup when configuration
+is missing; `fluzo init` explicitly opens setup, and `--config` selects a workspace-scoped
+file. Creation requires review and confirmation. Existing files are not replaced by
+the ordinary CLI host; coordinated replacement is limited to controlled hosts.
+Headless missing-config startup returns structured `configuration_required` on stderr.
+No provider is contacted. Production active runtime application remains unavailable.
+Runtime tests, benchmarks and
 release packaging will be documented when implemented. [APPLICATION.md](APPLICATION.md)
 describes the FND-03 port, snapshot/cursor contracts and effect-free protocol demo;
 it is not an interactive TUI or a production transport.

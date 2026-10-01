@@ -33,9 +33,9 @@ UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
 `fluzo_core::configuration::ConfigurationPort` alongside the task port, without
 changing task protocol version 1 or inventing tasks for configuration edits.
 Its separately versioned requests own typed values and a configuration request
-ID. Configuration protocol 2 preserves typed diagnostic codes and optional UTF-8
+ID. Configuration protocol 3 retains protocol 2's typed diagnostic codes and optional UTF-8
 byte ranges in Invalid outcomes, including syntax, missing-version, size and
-encoding failures. It rejects protocol 1 instead of silently discarding the new
+encoding failures. It rejects protocols 1 and 2 instead of silently discarding new
 error fields; task protocol 1 is unchanged. Codes and ranges contain no source
 values. Runtime's existing ConfigErrorCode import re-exports the core type.
 Versions contain a service instance and revision; an old instance/revision
@@ -47,9 +47,18 @@ spawns one worker; only that worker parses files, validates candidates, writes
 configuration and builds projections. The client methods use bounded nonblocking
 queues and never wait for disk. An initial snapshot may return Busy until the
 worker publishes discovery. There is no view-driven setup, inference or task
-execution. S2/S3 and C3 remain responsible for their own composition/UI wiring.
+execution. S2 wires the setup host; S3 and C3 remain responsible for their
+normal-view and Developer Menu composition/UI wiring.
 
-Requests support Reload, Edit, Cancel, selected Save and selected Apply. Submit
+Requests support Reload, Edit, Cancel, selected Save and selected Apply.
+S2 (#45 R2) adds PrepareSetup with expected version and typed edits, followed by
+ConfirmSetup with the prepared version. Preparation carries a bounded private
+candidate and observed original on the worker, not in a widget. Snapshots expose
+only a redacted SetupPreview and any retained backup basename. Confirm consumes
+preparation; intervening actions invalidate it. Replayed request IDs still return
+the retained outcome. Config protocol 3 is required; task protocol 1 is unchanged.
+See CONFIGURATION.md for CreateOnly versus coordinated replacement and backup
+failure/uncertainty semantics. No new dependencies or transport handles cross core. Submit
 returns accepted identity, not effect completion. Status returns Unknown,
 Accepted, Completed with version/outcome, or Failed with a typed category.
 Identical request-ID retries return the existing record; changed payload reuse
