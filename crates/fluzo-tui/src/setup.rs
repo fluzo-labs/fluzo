@@ -98,7 +98,9 @@ fn value_text(value: &SettingValue) -> String {
         SettingValue::Text(text) => text.clone(),
         SettingValue::Integer(value) => value.to_string(),
         SettingValue::Boolean(value) => value.to_string(),
-        _ => String::new(),
+        SettingValue::Fraction(value) => value.to_string(),
+        SettingValue::TextList(values) => format!("{values:?}"),
+        SettingValue::TextMap(values) => format!("{values:?}"),
     }
 }
 
@@ -150,6 +152,14 @@ impl Setup {
         match port.snapshot() {
             Ok(snapshot) => {
                 if self.snapshot.as_ref() != Some(&snapshot) {
+                    if self
+                        .snapshot
+                        .as_ref()
+                        .is_some_and(|previous| previous.setup.is_some())
+                        && snapshot.setup.is_none()
+                    {
+                        self.scroll = 0;
+                    }
                     self.snapshot = Some(snapshot);
                     changed = true;
                     if self.pending.is_none() {
@@ -273,8 +283,9 @@ impl Setup {
         let coder = changed_model("models.coder.");
         let shadow = values["decision.enabled"] == SettingValue::Boolean(true)
             || changed_model("models.shadow.");
+        let pool = coder || shadow || changed_model("capacity_pools.local.");
         let mut edits = Vec::new();
-        if coder || shadow {
+        if pool {
             edits.push(Edit::AddPool {
                 name: "local".into(),
             });
@@ -309,7 +320,7 @@ impl Setup {
         for (key, value) in values {
             if (key.starts_with("models.coder.") && !coder)
                 || (key.starts_with("models.shadow.") && !shadow)
-                || (key.starts_with("capacity_pools.") && !coder && !shadow)
+                || (key.starts_with("capacity_pools.") && !pool)
             {
                 continue;
             }
@@ -691,6 +702,170 @@ mod tests {
             sent: vec![],
         }
     }
+    #[test]
+    fn review_regression_pool_edits_survive_without_models() {
+        let mut setup = Setup::new("/fixture/.fluzo".into(), false);
+        assert!(
+            !setup
+                .edits()
+                .unwrap()
+                .iter()
+                .any(|edit| matches!(edit, Edit::AddPool { .. }))
+        );
+        for (key, text) in [
+            ("capacity_pools.local.max_in_flight", "3"),
+            ("capacity_pools.local.foreground_reserved_slots", "2"),
+        ] {
+            setup
+                .fields
+                .iter_mut()
+                .find(|field| field.descriptor.key == key)
+                .unwrap()
+                .text = text.into();
+        }
+        let edits = setup.edits().unwrap();
+        assert_eq!(
+            edits
+                .iter()
+                .filter(|edit| matches!(edit, Edit::AddPool { name } if name == "local"))
+                .count(),
+            1
+        );
+        assert!(
+            !edits
+                .iter()
+                .any(|edit| matches!(edit, Edit::AddModel { .. }))
+        );
+        assert!(edits.contains(&Edit::Set {
+            key: "capacity_pools.local.max_in_flight".into(),
+            value: SettingValue::Integer(3),
+        }));
+        assert!(edits.contains(&Edit::Set {
+            key: "capacity_pools.local.foreground_reserved_slots".into(),
+            value: SettingValue::Integer(2),
+        }));
+    }
+
+    #[test]
+    fn review_regression_summary_represents_all_setting_types() {
+        let values = BTreeMap::from([
+            (
+                "context.compaction_threshold".into(),
+                SettingValue::Fraction(0.8),
+            ),
+            (
+                "context.safety_reserve_fraction".into(),
+                SettingValue::Fraction(0.05),
+            ),
+            (
+                "fixture.list".into(),
+                SettingValue::TextList(vec!["first".into(), "second".into()]),
+            ),
+            (
+                "fixture.map".into(),
+                SettingValue::TextMap(BTreeMap::from([("key".into(), "value".into())])),
+            ),
+            ("fixture.enabled".into(), SettingValue::Boolean(false)),
+            ("fixture.count".into(), SettingValue::Integer(3)),
+            (
+                "fixture.text".into(),
+                SettingValue::Text("[redacted]".into()),
+            ),
+        ]);
+        assert_eq!(value_text(&SettingValue::Fraction(0.8)), "0.8");
+        assert_eq!(value_text(&SettingValue::Fraction(0.05)), "0.05");
+        assert_eq!(value_text(&SettingValue::TextList(vec![])), "[]");
+        assert_eq!(value_text(&SettingValue::TextMap(BTreeMap::new())), "{}");
+        assert_eq!(value_text(&SettingValue::Unset), "");
+        let mut port = port(Discovery::Missing);
+        port.snapshot.setup = Some(SetupPreview {
+            replacing: false,
+            values,
+        });
+        let mut setup = Setup::new("/fixture/.fluzo".into(), false);
+        setup.poll(&mut port);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal
+            .draw(|frame| setup.render(frame, false, true))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for expected in [
+            "context.compaction_threshold = 0.8",
+            "context.safety_reserve_fraction = 0.05",
+            "first",
+            "second",
+            "key",
+            "value",
+            "fixture.enabled = false",
+            "fixture.count = 3",
+            "[redacted]",
+        ] {
+            assert!(text.contains(expected), "missing summary value: {expected}");
+        }
+    }
+
+    #[test]
+    fn review_regression_return_from_scrolled_summary_restores_form() {
+        for reload in [false, true] {
+            let mut port = port(Discovery::Missing);
+            let mut setup = Setup::new("/fixture/.fluzo".into(), false);
+            setup.welcome = false;
+            setup.selected = 8;
+            setup.fields[8].text = "3".into();
+            port.snapshot.setup = Some(SetupPreview {
+                replacing: false,
+                values: BTreeMap::new(),
+            });
+            setup.poll(&mut port);
+            for _ in 0..10 {
+                setup.key(
+                    KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+                    &mut port,
+                );
+            }
+            assert!(setup.scroll > 0);
+            let key = if reload {
+                KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)
+            } else {
+                KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+            };
+            setup.key(key, &mut port);
+            assert_eq!(port.sent.len(), 1);
+            assert!(
+                !port.sent.iter().any(|request| matches!(
+                    request.action,
+                    ConfigurationAction::ConfirmSetup { .. }
+                ))
+            );
+            port.snapshot.setup = None;
+            port.snapshot.version.revision += 1;
+            setup.poll(&mut port);
+            assert_eq!(setup.scroll, 0);
+            assert_eq!(setup.selected, 8);
+            assert_eq!(setup.fields[8].text, "3");
+            assert!(!setup.quit);
+            let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+            terminal
+                .draw(|frame| setup.render(frame, false, true))
+                .unwrap();
+            let text: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(text.contains("Target: /fixture/.fluzo"));
+            assert!(text.contains("> capacity_pools.local.max_in_flight = 3"));
+        }
+    }
+
     #[test]
     fn setup_open_paste_cancel_and_valid_file_do_not_write() {
         let mut port = port(Discovery::Missing);
