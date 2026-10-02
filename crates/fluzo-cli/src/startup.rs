@@ -104,8 +104,18 @@ pub fn run(arguments: &[OsString]) -> ExitCode {
             }
         };
     if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        let outcome = fluzo_tui::terminal::run_setup_with_screen_settings(
+        let mut discovery = match fluzo_runtime::model_discovery::ModelDiscoveryService::start() {
+            Ok(service) => service,
+            Err(_) => {
+                return result(
+                    "discovery_unavailable",
+                    "Model discovery worker unavailable; no network request sent.",
+                );
+            }
+        };
+        let outcome = fluzo_tui::terminal::run_configuration(
             &mut service,
+            &mut discovery,
             target.to_string_lossy().into_owned(),
             explicit,
             options.ascii,

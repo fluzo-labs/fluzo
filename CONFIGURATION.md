@@ -54,20 +54,55 @@ entries; All / advanced exposes every registry field. Ordinary setup offers F2
 into this shell after confirmed creation. Explicit init remains setup-only.
 Headless contracts and the explicit demo's isolation remain unchanged.
 
+All categories use the shared centered dialog style, including Limits and Pools.
+Help, replacement inputs, collection-name inputs and F4 advanced setup reuse the
+same frame and title rather than switching to a separate full-screen form. See
+TUI.md for layout, fallback profiles and pending human visual review.
+
 The editor uses owned descriptors from configuration protocol 4. Types, defaults,
 units, privacy, provenance, saved/draft/effective values and CLI locks are shown.
 Fixed schema values have no editable alternative. Models/pools have validated
 names and explicit add/remove operations; related changes validate together.
 Unchanged redacted/sanitized projections are never used as replacement input.
-Text/reference and collection inputs are explicit whole-value replacements,
-initially blank, with Esc retaining the original. Credential inputs are references,
-not credential resolution. Lists use one escaped item per line; maps use escaped
-key=value entries. Supported escapes are backslash, equals, n/r/t and whole-item
-`\\e` for an empty item. Duplicate map keys are rejected; empty input clears a
-list/map or optional value. Enter stages; Shift+Enter adds an input line.
+Fields other than booleans and enumerated choices edit inline in the value column, with a cyan background and
+visible cursor (underlined without color). Typing or pasting initially replaces
+the current input; arrows allow editing it instead. Enter stages a valid value
+and leaves editing; Esc discards the input. Empty edited input restores the shared
+registry default, including nonempty list/map defaults. Enter without changing
+input preserves the original, including redacted values. Private inputs start
+blank and remain masked. Credential inputs are references, not credential
+resolution. Lists use one escaped item per line; maps use escaped key=value entries.
+Supported escapes are backslash, equals, n/r/t and whole-item `\\e` for an empty
+item. Duplicate map keys are rejected; Shift+Enter adds an input line. Long and
+multiline inputs scroll horizontally with the cursor and display escaped controls.
+Save to disk and Apply remain separate explicit operations.
+
+Settings lists use two aligned key/value columns without table borders. The
+focused row has a continuous theme-accent background across its label and value.
+Boolean fields display only true or false while navigating. Enter reveals inline
+true/false choices in the value column, with cyan background and black text on
+the chosen option. Only editing uses cyan; confirmation or cancellation returns
+to the plain value. No-color editing retains explicit x markers. The full key
+remains available in details when the label column clips it. No free-text boolean
+input is required.
+Up/Down selects a field; Enter focuses its choices, Left selects true and Right
+selects false. A second Enter stages the choice; Esc cancels without changing the
+previous draft. Paste, typing and arrows outside edit focus cannot change a
+boolean. F4 advanced setup uses the same control. Full keys remain in setting
+details; Save/Apply selection is separately marked `[save/apply]`. Fixed fields
+such as `storage.auto_expire` show `[fixed]` and cannot enable unsupported behavior.
+
+All enumerated choices, including theme and authorization mode, follow the same
+inline selection contract as booleans. Enter reveals supported options;
+Left/Right selects an option, Enter stages it and Esc cancels. The current value
+alone is shown outside editing; typing, paste and deletion cannot alter a choice.
+Options scroll within the value column to keep the selection visible. Fields
+with fewer than two supported choices remain fixed. Advanced setup uses the same
+selector. Cyan is reserved for the selected option during editing, with textual
+markers without color; Save and Apply remain explicit.
 
 Controls: type to search, Ctrl+U shows all fields, Tab/arrows select, Left/Right
-step numbers or select boolean/enum alternatives, Enter replaces, Space selects
+step numbers outside editing, Enter edits, Space selects
 Save/Apply keys, Ctrl+D restores the selected default in the draft, Ctrl+N adds a
 model, Ctrl+P adds a pool and Delete stages collection removal. F1 explains all
 controls. Ctrl+V validates, Ctrl+S saves selected future values, Ctrl+A applies
@@ -224,12 +259,95 @@ window retained three requested pixel sizes (960x600, 1280x800, 800x500) over
 bounded two-second observation intervals. That does not prove Wayland behavior.
 No terminal preferences or KWin rules were changed.
 
-Local/LAN model discovery would add explicit network operations to the currently
-offline configuration protocol and needs its endpoint, consent, timeout, response
-bounds and dependency contracts reviewed before implementation. It is not supplied
-by the current manual endpoint/model form. GitHub provider integration is deferred
-by user instruction to a later user story. No discovery traffic or inference was
-performed, and none of these changes establishes S3 or parent acceptance.
+At the startup-review checkpoint, discovery remained unimplemented. The subsequent
+user-authorized local/LAN wizard is described below. GitHub provider integration
+remains deferred to a later user story. Neither change establishes S3 acceptance.
+
+### Explicit local/LAN model wizard
+
+F3 opens Add model from setup or ordinary configuration. The ordinary palette also
+contains Add model > Local / LAN. Centered dialogs reuse the shell's rounded frame,
+gradient title, theme and retained background. Steps: Local or Frontier (unavailable
+until its separate story), LM Studio/Ollama/OpenAI Compatible, Authorization yes/no,
+optional environment reference, URL, multiple model selection, alias prefix/review.
+Leaving the URL using Tab, Enter or a mouse click outside the field queries once;
+typing, paste, resize and operating-system window focus never query. Esc goes back
+without querying and cancels pending work. All providers currently use /v1/models.
+
+This initial adapter accepts HTTP with localhost (IPv4 loopback), literal loopback
+or private IPv4/IPv6 addresses, an optional port and optional /v1 suffix. DNS names,
+HTTPS, custom paths, redirects and public/link-local addresses are rejected, not
+downgraded or resolved. Optional Authorization uses a named environment variable
+containing the complete header value (for example Bearer plus a token). The worker
+resolves it only for the user-triggered request; invalid/missing values fail before
+connection. The UI, DTOs and saved configuration contain only the variable name.
+Header values are bounded to 4096 bytes, reject control characters and are marked
+sensitive. HTTP is unencrypted: use only trusted local/LAN destinations and scoped
+credentials. No inherited proxy, LAN scan, redirect, automatic retry or inference.
+
+The multi-select list shows ID, maximum context, output tokens and slots when the
+catalog reports max_context_length/context_length, max_output_tokens and slots.
+Missing or invalid values display ?. These are unverified reported hints, not
+capability discovery. No native provider enrichment is claimed. Space toggles a
+model; selection survives filtering. A single model keeps the chosen alias;
+multiple models receive numbered aliases. All are staged atomically, or none on
+conflict/capacity failure. Registry limits and one-slot admission remain defaults
+until reviewed separately; reported slots are not automatically adopted.
+
+Discovery uses a separate owned core protocol and runtime worker. One request is
+active, the total deadline is five seconds, HTTP headers are bounded to 16 KiB,
+body to 1 MiB, catalog to 256 items and each model ID to 256 bytes. Status is polled
+without network effects. Esc during a query requests cancellation; late results do
+not reopen the wizard or stage data. The worker retains its pending slot until
+completion, supports at most 64 submissions, and is cancelled/joined on shutdown.
+Only the latest result is retained; older IDs become Unknown and cannot replay.
+
+Confirming creates each selected model and an independent single-slot pool with
+its alias in the local draft, never overwriting an existing alias/pool. If used,
+the Authorization variable name is saved as auth=env/api_key_env; its value is never
+persisted. This is a catalog-header reference, not an implemented inference adapter. Setup reserves
+coder/shadow/local for its manual fields and selects the first discovered alias
+when no manual coder is configured. Ordinary settings do not change agent.model;
+select it explicitly there. Save remains separate: setup still requires review
+and confirmation, and existing-file replacement remains unavailable in ordinary
+hosts. The wizard grants no write capability or permission for later inference.
+
+Focused checks: `cargo test -p fluzo-runtime --locked --offline model_discovery`,
+`cargo test -p fluzo-tui --locked --offline model_wizard`, and
+`python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'`. The PTY
+composes actual CLI, discovery and configuration workers with a registered fake
+catalog and independently verifies saved TOML. Runtime tests cover redirects,
+429 without retry, cancellation, timeout, bounds and malformed model IDs.
+Native discovery is not a live agent test or human visual acceptance.
+
+The implementation is original Rust; Crush revision 76cc5c5 was inspected only as
+an interaction reference under its FSL-1.1-MIT license. No source or artwork was
+copied. Cached, already pinned Hyper/Tokio/JSON packages are now allowed on runtime
+production paths and transitively CLI; core/TUI HTTP and direct build edges remain
+forbidden. No dependency was downloaded. This is a user-requested extension beyond
+the original offline S3 baseline, not a published issue/design acceptance.
+
+Validation of the uncommitted wizard on base `2520f22` passed 207 Rust cases,
+71 Python cases, workspace format/check/build/Clippy and dependency-boundary checks.
+The oversized-response fixture initially replied before reading the request and
+failed with Connection/BrokenPipe; synchronizing on request headers fixed the
+fixture. The graph tests were updated to admit only the new runtime HTTP paths,
+while preserving TUI/core prohibitions and rejecting direct build dependencies.
+A separate manual catalog GET was also made to a local endpoint during development;
+that was not isolated simulator evidence and did not run inference. Its returned
+model identifiers are deliberately not recorded here. No human visual acceptance
+of the new wizard, live inference or remote publication is claimed.
+
+The subsequent guided-dialog revision passed 209 Rust cases and 72 Python cases,
+plus format/check/build/Clippy and boundary checks. Its PTYs exercise URL Tab
+queries, optional Authorization from a synthetic environment variable, multiple
+selections and independent verification that only the reference reaches TOML.
+Unit checks cover protocol-1 rejection, missing/invalid header references before
+connection, unknown versus reported metadata, late-result cancellation, atomic
+multi-model rejection and shared dialog frames at 60x16 through 160x50. A clipped
+minimum-size footer was found by the buffer test and shortened without removing
+its back/cancel control. Frontier remains explicitly unavailable; no new live
+catalog query or inference was made for this revision. Human review is pending.
 
 The resulting local working tree passed 200 Rust cases and 69 Python cases,
 including safe-screen file preservation, unchanged setup screen defaults,
@@ -240,6 +358,19 @@ discovery includes the existing simulator and LSP fixtures; no live inference ra
 The old default-disabled developer-menu assertion initially failed after the
 requested default change; it now verifies default-enabled and explicit-disabled
 behavior separately. No fixture assertion was removed to hide the resize report.
+
+## Friendly repository creation
+
+The default setup surface is a centered dialog, not a registry form. It explains
+missing configuration, offers Create, Add models (F3) and Not now (Esc), and uses
+recommended defaults. Create first prepares a candidate; a separate confirmation
+creates the file. The confirmation shows human-readable summaries and the selected
+path, not variable names. F4 retains explicit access to advanced fields and the
+full technical review. No values, writer capabilities or validation rules change.
+Loading has its own title; the welcome action appears only after discovery.
+After successful creation, ordinary Enter/F2 opens Settings; init remains separate.
+Declining, pasting and reopening never authorize creation. Conflicts and uncertain
+outcomes still preserve their explicit diagnostics, without automatic replay.
 
 ## Offline setup (UI-03 S2)
 

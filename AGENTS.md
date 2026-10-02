@@ -28,15 +28,26 @@ version-bound replacement with verified backups. UI-03 S3 (#46 R2) adds the
 normal configuration-only shell and typed basic/advanced editing with protocol 4,
 owned descriptors, operation availability and bounded request reconciliation.
 Ordinary hosts still cannot replace configuration; presentation Apply is separate.
-S3 human-review revisions remove screen questions from setup and restore its full
-relief identity/RGB palette. `fluzo --safe-screen-settings` provides invocation-only
+S3 human-review revisions replace the default setup form with a centered repository
+welcome/create dialog and human summaries. F3 adds models, F4 explicitly exposes
+advanced details, and separate confirmation still precedes file creation.
+Screen questions are removed; shared dialog identity/RGB and fallback modes remain. `fluzo --safe-screen-settings` provides invocation-only
 ASCII/no-color/FPS-0/reduced-motion recovery without saving emergency values.
 The requested MVP devmenu default is true; ordinary Developer menu > Presentation
 settings opens the typed editor, not synthetic actions. Explicit disable is retained.
 Repeated resize PTYs preserve dimensions and prohibit window-resize sequences,
 but the reported Ghostty/Wayland physical resize reset is not yet reproduced.
-Local/LAN discovery needs a reviewed network contract; GitHub provider work was
-deferred to a later story. See CONFIGURATION.md for scope and evidence limitations.
+The F3 model wizard reuses centered dialogs: Local/Frontier, provider, optional
+Authorization environment reference, URL blur query and multiple model selection.
+Core discovery protocol 2 carries only references and optional reported metadata;
+the runtime resolves headers for the selected endpoint. No secret is saved in repo
+configuration. No startup probes, redirects, retries or inference are enabled.
+It supports localhost/private IPs, not DNS/HTTPS; see CONFIGURATION.md for limits.
+Pinned cached Hyper/Tokio/JSON dependencies now have runtime production paths;
+core/TUI remain HTTP-free. Focused checks are `cargo test -p fluzo-runtime --locked
+--offline model_discovery`, `cargo test -p fluzo-tui --locked --offline model_wizard`
+and `python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'`.
+GitHub provider work remains deferred to a later story.
 Full UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The

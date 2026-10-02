@@ -1,6 +1,7 @@
 pub mod config;
 pub mod configuration;
 mod configuration_file;
+pub mod model_discovery;
 pub mod scenario;
 
 #[cfg(test)]

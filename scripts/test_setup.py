@@ -113,18 +113,20 @@ class SetupTests(unittest.TestCase):
                 else:
                     wait_for(b"Welcome to Fluzo")
                     self.assertFalse((root / ".fluzo").exists())
+                    os.write(master, b"\x1bOS")
+                    wait_for(b"Enter configures this workspace offline")
                     os.write(master, b"\r")
                     wait_for(b"models.coder.base_url")
                     if action == "resize":
                         os.write(master, b"\r")
                         wait_for(b"Enter a value")
                         os.write(master, b"\x1b[200~synthetic\x1b[201~")
-                        wait_for(b"private value entered")
+                        wait_for(b"*********")
                         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 10, 40, 0, 0))
                         wait_for(b"Resize or")
                         wait_for(b"Esc to cancel.")
                         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
-                        wait_for(b"private value entered")
+                        wait_for(b"*********")
                         os.write(master, b"\x03")
                     elif action == "invalid":
                         os.write(master, b"\r\x1b[200~not-an-endpoint\x1b[201~\r\x13")
@@ -132,15 +134,19 @@ class SetupTests(unittest.TestCase):
                         self.assertFalse((root / ".fluzo").exists())
                         os.write(master, b"\x03")
                     elif action == "cancel":
-                        os.write(master, b"\r\x1b[200~synthetic\ntext\x1b[201~\x1b")
-                        wait_for(b"private value entered")
+                        os.write(master, b"\r\x1b[200~synthetic\ntext\x1b[201~")
+                        wait_for(b"*********")
+                        os.write(master, b"\x1b")
+                        wait_for(b"Enter edits selected field")
+                        self.assertNotIn(b"*********", screen.text())
+                        self.assertNotIn(b"synthetic", screen.text())
                         os.write(master, b"\x03")
                     elif action == "signal":
                         child.terminate()
                     else:
                         if action == "review":
                             os.write(master, b"\t" * 8 + b"\r\x153\r")
-                            wait_for(b"> capacity_pools.local.max_in_flight = 3")
+                            wait_for(b"> capacity_pools.local.max_in_flight   3")
                         os.write(master, b"\x13")
                         wait_for(b"Review every value")
                         if action == "review":
@@ -150,7 +156,7 @@ class SetupTests(unittest.TestCase):
                             os.write(master, b"\x1b")
                             wait_for(b"Welcome to Fluzo")
                             self.assertIn(b"Target:", screen.text())
-                            self.assertIn(b"> capacity_pools.local.max_in_flight = 3", screen.text())
+                            self.assertIn(b"> capacity_pools.local.max_in_flight   3", screen.text())
                             self.assertFalse((root / ".fluzo").exists())
                             os.write(master, b"\x13")
                             wait_for(b"Review every value")

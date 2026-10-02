@@ -9,7 +9,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 use crate::setup::{diagnostic, safe_text};
@@ -54,10 +54,15 @@ pub struct ConfigurationView {
     staged: BTreeSet<String>,
     unapplied: BTreeSet<String>,
     input: Option<Input>,
+    boolean_input: Option<(String, bool)>,
+    choice_input: Option<(String, usize)>,
     editor: Editor,
+    replace_input: bool,
     pending: Option<Pending>,
     next_id: u64,
     confirm: Option<KeyCode>,
+    close_prompt: Option<usize>,
+    close_after_save: bool,
     detail_scroll: u16,
     base: Option<Version>,
 }
@@ -78,10 +83,15 @@ impl Default for ConfigurationView {
             staged: BTreeSet::new(),
             unapplied: BTreeSet::new(),
             input: None,
+            boolean_input: None,
+            choice_input: None,
             editor: Editor::default(),
+            replace_input: false,
             pending: None,
             next_id: 1,
             confirm: None,
+            close_prompt: None,
+            close_after_save: false,
             detail_scroll: 0,
             base: None,
         }
@@ -127,6 +137,81 @@ impl ConfigurationView {
         Ok(())
     }
 
+    pub fn stage_discovered_models(
+        &mut self,
+        selections: &[crate::model_wizard::Selection],
+    ) -> Result<(), &'static str> {
+        let edits = self.edits.clone();
+        let collections = self.collections.clone();
+        let base = self.base;
+        let filter = self.filter.clone();
+        let selected = self.selected.clone();
+        let open = self.open;
+        let result = (|| {
+            for selection in selections {
+                self.stage_discovered_model(
+                    &selection.alias,
+                    &selection.endpoint,
+                    &selection.model.id,
+                )?;
+                for edit in crate::model_wizard::selection_edits(selection)
+                    .into_iter()
+                    .skip(6)
+                {
+                    self.stage(edit)?;
+                }
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.edits = edits;
+            self.collections = collections;
+            self.base = base;
+            self.filter = filter;
+            self.selected = selected;
+            self.open = open;
+        }
+        result
+    }
+
+    pub fn stage_discovered_model(
+        &mut self,
+        alias: &str,
+        endpoint: &str,
+        model: &str,
+    ) -> Result<(), &'static str> {
+        if self.pending.is_some() {
+            return Err("Configuration request pending.");
+        }
+        if !fluzo_core::settings::valid_identifier(alias) {
+            return Err("Invalid alias.");
+        }
+        for prefix in [format!("models.{alias}"), format!("capacity_pools.{alias}")] {
+            if self
+                .descriptors()
+                .keys()
+                .any(|key| key.starts_with(&format!("{prefix}.")))
+                || self.collections.contains_key(&prefix)
+            {
+                return Err("Alias or pool already exists; choose a new alias.");
+            }
+        }
+        let old_edits = self.edits.clone();
+        let old_collections = self.collections.clone();
+        let old_base = self.base;
+        for edit in crate::model_wizard::model_edits(alias, endpoint, model) {
+            if let Err(error) = self.stage(edit) {
+                self.edits = old_edits;
+                self.collections = old_collections;
+                self.base = old_base;
+                return Err(error);
+            }
+        }
+        self.show(&format!("models.{alias}."));
+        self.status = "Discovered model staged. Confirm suggested limits, then Validate and Save explicitly. No inference started.".into();
+        Ok(())
+    }
+
     pub fn save(&mut self, port: &mut dyn ConfigurationPort) {
         self.request(port, Intent::Save);
     }
@@ -140,10 +225,51 @@ impl ConfigurationView {
         self.pending.is_some()
     }
 
+    pub(crate) fn preview_theme(&self) -> Option<&str> {
+        if !self.open {
+            return None;
+        }
+        let snapshot = self.snapshot.as_ref()?;
+        let current = snapshot.values.get("tui.theme")?;
+        if current.cli_locked {
+            return None;
+        }
+        let value = self
+            .edits
+            .get("tui.theme")
+            .or_else(|| self.staged.contains("tui.theme").then_some(&current.draft))?;
+        match value {
+            SettingValue::Text(theme) if matches!(theme.as_str(), "default" | "high-contrast") => {
+                Some(theme)
+            }
+            _ => None,
+        }
+    }
+
+    fn has_unsaved_changes(&self) -> bool {
+        !self.collections.is_empty()
+            || self.changed_keys(Intent::Save).iter().any(|key| {
+                let Some(value) = self
+                    .snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.values.get(key))
+                else {
+                    return true;
+                };
+                let draft = self.edits.get(key).unwrap_or(&value.draft);
+                if value.descriptor.privacy != Privacy::Public && self.edits.contains_key(key) {
+                    return true;
+                }
+                draft != &value.saved
+            })
+    }
+
     pub fn show(&mut self, filter: &str) {
         self.open = true;
         self.filter = filter.into();
         self.confirm = None;
+        self.close_prompt = None;
+        self.close_after_save = false;
         self.select_first();
     }
 
@@ -498,9 +624,18 @@ impl ConfigurationView {
                         }
                         self.status =
                             format!("Completed: {outcome:?}. Save and Apply are separate.");
+                        if self.close_after_save {
+                            self.close_after_save = false;
+                            if outcome == ConfigurationOutcome::Saved && !self.has_unsaved_changes()
+                            {
+                                self.close_prompt = None;
+                                self.open = false;
+                            }
+                        }
                     }
                 }
                 Ok(ConfigurationRequestStatus::Unknown) => {
+                    self.close_after_save = false;
                     self.status = "Unknown outcome. Do not replay; reconcile explicitly before further writes.".into();
                     self.base = Some(Version {
                         instance: 0,
@@ -509,6 +644,7 @@ impl ConfigurationView {
                     changed = true;
                 }
                 Ok(ConfigurationRequestStatus::Failed(error)) | Err(error) => {
+                    self.close_after_save = false;
                     self.status = format!(
                         "{}; draft retained. No automatic retry.",
                         diagnostic(&error)
@@ -521,8 +657,22 @@ impl ConfigurationView {
     }
 
     pub fn paste(&mut self, text: &str) {
+        if self.close_prompt.is_some() {
+            return;
+        }
+        if self.boolean_input.is_some() || self.choice_input.is_some() {
+            return;
+        }
         if self.input.is_some() {
-            if !self.editor.insert(text) {
+            if self.replace_input {
+                let mut replacement = Editor::default();
+                if !replacement.insert(text) {
+                    self.status = "Input limit reached; paste rejected.".into();
+                    return;
+                }
+                self.editor = replacement;
+                self.replace_input = false;
+            } else if !self.editor.insert(text) {
                 self.status = "Input limit reached; paste rejected.".into();
             }
         } else if self.filter.len().saturating_add(safe_text(text).len()) <= 256 {
@@ -533,12 +683,24 @@ impl ConfigurationView {
     }
 
     fn accept_input(&mut self) {
+        if self.replace_input && matches!(self.input, Some(Input::Field(_))) {
+            self.input = None;
+            self.editor = Editor::default();
+            self.replace_input = false;
+            return;
+        }
         let result = match self.input.as_ref() {
             Some(Input::Field(key)) => self
                 .descriptors()
                 .get(key)
                 .ok_or("Setting no longer exists.")
-                .and_then(|descriptor| parse_value(descriptor, &self.editor.text))
+                .and_then(|descriptor| {
+                    if self.editor.text.is_empty() {
+                        Ok(descriptor.default.clone())
+                    } else {
+                        parse_value(descriptor, &self.editor.text)
+                    }
+                })
                 .map(|value| (Some(key.clone()), value)),
             Some(Input::Model | Input::Pool) => {
                 let name = &self.editor.text;
@@ -552,7 +714,8 @@ impl ConfigurationView {
         };
         match result {
             Ok((Some(key), value)) => {
-                if !self.put(key, value) {
+                if let Err(error) = self.stage(Edit::Set { key, value }) {
+                    self.status = error.into();
                     return;
                 }
                 self.input = None;
@@ -598,6 +761,38 @@ impl ConfigurationView {
             return;
         }
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        if let Some(selection) = self.close_prompt {
+            match key.code {
+                KeyCode::Esc => {
+                    self.close_prompt = None;
+                    self.close_after_save = false;
+                }
+                KeyCode::Left | KeyCode::Up => {
+                    self.close_prompt = Some(selection.saturating_sub(1))
+                }
+                KeyCode::Right | KeyCode::Down | KeyCode::Tab => {
+                    self.close_prompt = Some((selection + 1).min(2))
+                }
+                KeyCode::Enter if key.modifiers.is_empty() && self.pending.is_none() => {
+                    match selection {
+                        0 => {
+                            let checked = std::mem::take(&mut self.checked);
+                            self.request(port, Intent::Save);
+                            self.checked = checked;
+                            self.close_after_save = self.pending.is_some();
+                        }
+                        1 => {
+                            self.close_prompt = None;
+                            self.open = false;
+                            self.status = "Closed without saving; draft retained in memory. Theme preview ended.".into();
+                        }
+                        _ => self.close_prompt = None,
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
         if key.code == KeyCode::F(1) {
             self.help = !self.help;
             self.detail_scroll = 0;
@@ -616,7 +811,80 @@ impl ConfigurationView {
             }
             return;
         }
+        if let Some((field, selection)) = self.choice_input.clone() {
+            let descriptors = self.descriptors();
+            let Some(descriptor) = descriptors.get(&field) else {
+                self.choice_input = None;
+                self.status = "Setting no longer exists.".into();
+                return;
+            };
+            let SettingKind::Choice(options) = &descriptor.kind else {
+                self.choice_input = None;
+                return;
+            };
+            match key.code {
+                KeyCode::Esc => {
+                    self.choice_input = None;
+                    self.status = "Selection cancelled; previous draft retained.".into();
+                }
+                KeyCode::Left => {
+                    self.choice_input = Some((field, selection.saturating_sub(1)));
+                }
+                KeyCode::Right => {
+                    self.choice_input =
+                        Some((field, (selection + 1).min(options.len().saturating_sub(1))));
+                }
+                KeyCode::Enter if key.modifiers.is_empty() => {
+                    if let Some(value) = options.get(selection) {
+                        match self.stage(Edit::Set {
+                            key: field,
+                            value: SettingValue::Text(value.clone()),
+                        }) {
+                            Ok(()) => {
+                                self.choice_input = None;
+                                self.status =
+                                    "Local draft changed; Save and Apply remain explicit.".into();
+                            }
+                            Err(error) => self.status = error.into(),
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if let Some((field, value)) = self.boolean_input.clone() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.boolean_input = None;
+                    self.status = "Selection cancelled; previous draft retained.".into();
+                }
+                KeyCode::Left | KeyCode::Right => {
+                    self.boolean_input = Some((field, key.code == KeyCode::Left));
+                }
+                KeyCode::Enter if key.modifiers.is_empty() => {
+                    match self.stage(Edit::Set {
+                        key: field,
+                        value: SettingValue::Boolean(value),
+                    }) {
+                        Ok(()) => {
+                            self.boolean_input = None;
+                            self.status =
+                                "Local draft changed; Save and Apply remain explicit.".into();
+                        }
+                        Err(error) => self.status = error.into(),
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.input.is_some() {
+            if self.replace_input && matches!(key.code, KeyCode::Backspace | KeyCode::Delete) {
+                self.editor = Editor::default();
+                self.replace_input = false;
+                return;
+            }
             match key.code {
                 KeyCode::Esc => {
                     self.input = None;
@@ -626,15 +894,22 @@ impl ConfigurationView {
                     self.accept_input()
                 }
                 KeyCode::Enter => {
+                    self.replace_input = false;
                     self.editor.insert("\n");
                 }
-                KeyCode::Char('u') if control => self.editor = Editor::default(),
+                KeyCode::Char('u') if control => {
+                    self.editor = Editor::default();
+                    self.replace_input = false;
+                }
                 KeyCode::Char(character)
                     if !control && !key.modifiers.contains(KeyModifiers::ALT) =>
                 {
-                    self.editor.insert(&character.to_string());
+                    self.paste(&character.to_string());
                 }
-                code => self.editor.key(code),
+                code => {
+                    self.replace_input = false;
+                    self.editor.key(code);
+                }
             }
             return;
         }
@@ -663,6 +938,11 @@ impl ConfigurationView {
             return;
         }
         if key.code == KeyCode::Esc {
+            if self.pending.is_none() && self.has_unsaved_changes() {
+                self.close_prompt = Some(2);
+                self.status = "Unsaved changes. Save before leaving settings?".into();
+                return;
+            }
             if let Some(pending) = &mut self.pending
                 && pending.editing
             {
@@ -689,6 +969,7 @@ impl ConfigurationView {
                         Input::Pool
                     });
                     self.editor = Editor::default();
+                    self.replace_input = false;
                 }
                 KeyCode::Char('d') => {
                     if let Some(descriptor) = self.descriptors().get(&self.selected)
@@ -738,20 +1019,16 @@ impl ConfigurationView {
                         })
                         .unwrap_or_else(|| descriptor.default.clone());
                     let next = match (&descriptor.kind, value) {
-                        (SettingKind::Boolean, SettingValue::Boolean(value)) => {
-                            Some(SettingValue::Boolean(!value))
+                        (SettingKind::Boolean, _) => {
+                            self.status =
+                                "Enter edits this choice; Left/Right then choose true/false."
+                                    .into();
+                            None
                         }
-                        (SettingKind::Choice(options), SettingValue::Text(value)) => {
-                            let index = options
-                                .iter()
-                                .position(|option| option == &value)
-                                .unwrap_or(0);
-                            let next = if key.code == KeyCode::Right {
-                                (index + 1) % options.len()
-                            } else {
-                                (index + options.len() - 1) % options.len()
-                            };
-                            Some(SettingValue::Text(options[next].clone()))
+                        (SettingKind::Choice(_), _) => {
+                            self.status =
+                                "Enter edits this choice; Left/Right then choose an option.".into();
+                            None
                         }
                         (SettingKind::Integer, SettingValue::Integer(value)) => {
                             let minimum = u64::from(descriptor.constraint == Constraint::Positive);
@@ -816,18 +1093,31 @@ impl ConfigurationView {
                             .and_then(|snapshot| snapshot.values.get(&self.selected))
                             .map(|value| value.draft.clone())
                     });
-                    if matches!(
-                        descriptor.kind,
-                        SettingKind::Boolean
-                            | SettingKind::Integer
-                            | SettingKind::Fraction
-                            | SettingKind::Choice(_)
-                    ) && let Some(value) = value
-                    {
-                        self.editor.insert(&display(&value));
+                    if descriptor.kind == SettingKind::Boolean {
+                        let value = value.unwrap_or_else(|| descriptor.default.clone());
+                        self.boolean_input =
+                            Some((self.selected.clone(), value == SettingValue::Boolean(true)));
+                        self.status = "Left/Right choose | Enter stages | Esc cancels".into();
+                        return;
+                    }
+                    if let SettingKind::Choice(options) = &descriptor.kind {
+                        let value = value.unwrap_or_else(|| descriptor.default.clone());
+                        let selection = options
+                            .iter()
+                            .position(|option| value == SettingValue::Text(option.clone()))
+                            .unwrap_or(0);
+                        self.choice_input = Some((self.selected.clone(), selection));
+                        self.status = "Left/Right choose | Enter stages | Esc cancels".into();
+                        return;
+                    }
+                    if descriptor.privacy == Privacy::Public {
+                        let value = value.unwrap_or_else(|| descriptor.default.clone());
+                        self.editor.insert(&input_value(&value));
                     }
                     self.input = Some(Input::Field(self.selected.clone()));
-                    self.status = "Explicit replacement input. Esc keeps prior value; Ctrl+U clears input; Enter stages only.".into();
+                    self.replace_input = true;
+                    self.status =
+                        "Enter stages | Esc cancels | Empty restores default | F1 help".into();
                 }
             }
             KeyCode::Char(character) if self.filter.len() < 256 => {
@@ -839,16 +1129,45 @@ impl ConfigurationView {
     }
 
     pub fn render(&self, frame: &mut Frame, color: bool, ascii: bool) {
-        let area = frame.area();
-        let settings = self
+        let mut shell =
+            crate::shell::Shell::configuration_shell().expect("built-in presentation defaults");
+        let mut settings = self
             .snapshot
             .as_ref()
             .map(|snapshot| snapshot.effective_ui.clone())
             .unwrap_or_default();
+        if let Some(theme) = self.preview_theme() {
+            settings.theme = theme.into();
+        }
+        shell.preferences = crate::visual::Preferences::new(crate::visual::VisualOptions {
+            settings,
+            ascii,
+            ..Default::default()
+        })
+        .expect("validated presentation snapshot");
+        self.render_dialog(frame, &shell, color);
+    }
+
+    pub fn render_dialog(&self, frame: &mut Frame, shell: &crate::shell::Shell, color: bool) {
+        let viewport = frame.area();
+        let width = viewport.width.saturating_sub(2).min(100);
+        let height = viewport.height.saturating_sub(2).min(34);
+        let area = Rect::new(
+            viewport.x + (viewport.width - width) / 2,
+            viewport.y + (viewport.height - height) / 2,
+            width,
+            height,
+        );
+        let mut settings = self
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.effective_ui.clone())
+            .unwrap_or_default();
+        if let Some(theme) = self.preview_theme() {
+            settings.theme = theme.into();
+        }
         let theme = Theme::new(&settings, color);
-        frame.render_widget(Clear, area);
-        frame.render_widget(Block::default().style(theme.base), area);
-        if area.width < 60 || area.height < 16 {
+        if viewport.width < 60 || viewport.height < 16 {
             frame.render_widget(
                 Paragraph::new(
                     "Configuration: resize required. Minimum 60x16. Esc returns; Ctrl+C exits.",
@@ -858,17 +1177,91 @@ impl ConfigurationView {
             );
             return;
         }
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(if ascii {
-                ratatui::widgets::BorderType::Plain
-            } else {
-                ratatui::widgets::BorderType::Rounded
-            })
-            .title(" FLUZO / Configuration ")
-            .style(theme.base);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        shell.render_dialog_frame(frame, area, Theme::new(&settings, color));
+        if let Some(selection) = self.close_prompt {
+            shell.render_dialog_title(
+                frame,
+                Rect::new(area.x + 2, area.y + 1, area.width - 4, 1),
+                "Save changes?",
+                color,
+            );
+            let reason = self
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.save_unavailable.as_ref())
+                .map(|error| {
+                    format!(
+                        "Save unavailable: {}. Draft will be retained.",
+                        diagnostic(error)
+                    )
+                })
+                .unwrap_or_else(|| {
+                    "Save writes all unsaved changes. Wait for confirmed completion.".into()
+                });
+            let mut lines = vec![
+                Line::from("You have unsaved configuration changes."),
+                Line::from(reason),
+                Line::from(""),
+            ];
+            for (index, action) in [
+                "Save and leave",
+                "Leave without saving (keep draft)",
+                "Back to editing",
+            ]
+            .iter()
+            .enumerate()
+            {
+                lines.push(Line::styled(
+                    format!("{} {action}", if index == selection { ">" } else { " " }),
+                    if index == selection {
+                        theme.accent
+                    } else {
+                        theme.base
+                    },
+                ));
+            }
+            lines.push(Line::from(safe_text(&self.status)));
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .style(theme.base),
+                Rect::new(area.x + 2, area.y + 3, area.width - 4, area.height - 6),
+            );
+            frame.render_widget(
+                Paragraph::new("Arrows select | Enter confirms | Esc back").style(theme.muted),
+                Rect::new(area.x + 2, area.bottom() - 2, area.width - 4, 1),
+            );
+            crate::visual::terminal_colors(frame.buffer_mut(), color, shell.truecolor);
+            return;
+        }
+        let category = if self.filter.starts_with("harness.") {
+            "Limits"
+        } else if self.filter.starts_with("capacity_pools.") {
+            "Pools"
+        } else if self.filter.starts_with("models.") {
+            "Models"
+        } else if self.filter.starts_with("storage.") {
+            "Storage"
+        } else if self.filter.starts_with("telemetry.") {
+            "Telemetry"
+        } else if self.filter.starts_with("tui.notifications.") {
+            "Notifications"
+        } else if self.filter.starts_with("tui.theme") {
+            "Theme"
+        } else if self.filter.starts_with("tui.dev_menu") {
+            "Developer preferences"
+        } else if self.filter.starts_with("tui.") {
+            "Presentation"
+        } else {
+            "All settings"
+        };
+        shell.render_dialog_title(
+            frame,
+            Rect::new(area.x + 2, area.y + 1, area.width - 4, 1),
+            &format!("FLUZO / Configuration / {category}"),
+            color,
+        );
+        let inner = Rect::new(area.x + 2, area.y + 3, area.width - 4, area.height - 4);
         let available = self
             .snapshot
             .as_ref()
@@ -901,7 +1294,8 @@ impl ConfigurationView {
             Paragraph::new(header).style(theme.muted),
             Rect::new(inner.x, inner.y, inner.width, 2),
         );
-        let list_height = inner.height.saturating_sub(10).max(1);
+        let detail_height = inner.height.saturating_sub(7).min(4);
+        let list_height = inner.height.saturating_sub(6 + detail_height).max(1);
         let keys = self.keys();
         let selected = keys
             .iter()
@@ -931,20 +1325,35 @@ impl ConfigurationView {
                         .map(display)
                         .unwrap_or_else(|| "default".into())
                 };
-                Line::from(Span::styled(
-                    format!(
-                        "{} [{}] {} = {}",
-                        if key == &self.selected { ">" } else { " " },
-                        if self.checked.contains(key) { "x" } else { " " },
-                        safe_text(key),
-                        safe_text(&text)
-                    ),
-                    if key == &self.selected {
-                        theme.accent
-                    } else {
-                        theme.base
-                    },
-                ))
+                let descriptor = descriptors.get(key);
+                let label = if descriptor.is_some_and(|field| field.kind == SettingKind::Boolean) {
+                    safe_text(key.rsplit('.').next().unwrap_or(key)).replace('_', " ")
+                } else {
+                    safe_text(key)
+                };
+                let mut text = safe_text(&text);
+                if descriptor.is_some_and(|field| !mutable(field)) {
+                    text.push_str(" [fixed]");
+                }
+                if self.checked.contains(key) {
+                    text.push_str(" [save/apply]");
+                }
+                let mut row = setting_row(
+                    &label,
+                    &text,
+                    self.boolean_input
+                        .as_ref()
+                        .filter(|(field, _)| field == key)
+                        .map(|(_, value)| *value),
+                    inner.width,
+                    key == &self.selected,
+                    theme,
+                    color,
+                );
+                if descriptor.is_some_and(|field| !mutable(field)) || self.pending.is_some() {
+                    mute_disabled_value(&mut row, color);
+                }
+                row
             })
             .collect();
         frame.render_widget(
@@ -994,11 +1403,24 @@ impl ConfigurationView {
             Paragraph::new(details)
                 .wrap(Wrap { trim: false })
                 .scroll((self.detail_scroll, 0)),
-            Rect::new(inner.x, inner.y + 2 + list_height, inner.width, 4),
+            Rect::new(
+                inner.x,
+                inner.y + 2 + list_height,
+                inner.width,
+                detail_height,
+            ),
         );
         let footer = vec![
             Line::from(safe_text(&self.status)),
-            Line::from("Enter edit | Left/Right change | Space select | F1 help"),
+            Line::from(
+                if self.boolean_input.is_some() || self.choice_input.is_some() {
+                    "Left/Right choose | Enter stages | Esc cancels"
+                } else if matches!(self.input, Some(Input::Field(_))) {
+                    "Enter stages | Esc cancels | Empty restores default"
+                } else {
+                    "Enter edit | Left/Right step | Space select | F1 help"
+                },
+            ),
             Line::from("Ctrl+S save | Ctrl+A apply | Ctrl+V validate | Esc back"),
             Line::from("Ctrl+X cancel | Ctrl+R reload | PgUp/PgDn details"),
         ];
@@ -1007,13 +1429,60 @@ impl ConfigurationView {
             Rect::new(inner.x, inner.bottom().saturating_sub(4), inner.width, 4),
         );
         if self.help {
-            frame.render_widget(Clear, inner);
-            frame.render_widget(Paragraph::new("Configuration help\nType to search; Ctrl+U shows all basic/advanced fields.\nUp/Down/Tab select; Enter replaces; Left/Right toggles or steps.\nSpace selects keys for Save/Apply; otherwise changed keys are used.\nCtrl+D stages the selected default; Delete stages collection removal.\nCtrl+N adds a model; Ctrl+P adds a pool. Update references together.\nCtrl+V validates; Ctrl+S saves future values; Ctrl+A applies presentation.\nCtrl+X twice cancels draft; Ctrl+R twice reloads and discards draft.\nEsc closes retaining draft. Pending writes may still complete.\nInput: Ctrl+U clears; Esc keeps prior value; Shift+Enter inserts newline.\nUnchanged redacted fields remain untouched; inputs replace whole values.\nOrdinary hosts cannot replace files; no confirmation bypasses this.\nAt request exhaustion, reconcile outcomes then explicitly reopen; local drafts are not persisted automatically.\nPgUp/PgDn scroll help. F1 or Esc closes. Ctrl+C exits.").wrap(Wrap { trim: false }).scroll((self.detail_scroll, 0)).style(theme.base), inner);
+            shell.render_dialog_frame(frame, area, Theme::new(&settings, color));
+            shell.render_dialog_title(
+                frame,
+                Rect::new(area.x + 2, area.y + 1, area.width - 4, 1),
+                "Configuration help",
+                color,
+            );
+            frame.render_widget(Paragraph::new("Configuration help\nType to search; Ctrl+U shows all basic/advanced fields.\nUp/Down/Tab select; Enter edits. Booleans and choices: Left/Right choose, Enter stages, Esc cancels. Numbers: Left/Right steps.\nSpace selects keys for Save/Apply; otherwise changed keys are used.\nCtrl+D stages the selected default; Delete stages collection removal.\nCtrl+N adds a model; Ctrl+P adds a pool. Update references together.\nCtrl+V validates; Ctrl+S saves future values; Ctrl+A applies presentation.\nCtrl+X twice cancels draft; Ctrl+R twice reloads and discards draft.\nEsc closes retaining draft. Pending writes may still complete.\nInline input: Enter stages; empty restores the default; Esc cancels. Ctrl+U clears; Shift+Enter inserts newline. Lists: one escaped item per line. Maps: escaped key=value per line. Escapes: \\n \\r \\t \\\\ \\=; \\e is an empty item.\nUnchanged redacted fields remain untouched; inputs replace whole values.\nOrdinary hosts cannot replace files; no confirmation bypasses this.\nAt request exhaustion, reconcile outcomes then explicitly reopen; local drafts are not persisted automatically.\nPgUp/PgDn scroll help. F1 or Esc closes. Ctrl+C exits.").wrap(Wrap { trim: false }).scroll((self.detail_scroll, 0)).style(theme.base), inner);
+            frame.render_widget(
+                Paragraph::new("PgUp/PgDn scroll | F1 / Esc back").style(theme.accent),
+                Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
+            );
+            crate::visual::terminal_colors(frame.buffer_mut(), color, shell.truecolor);
             return;
         }
-        if let Some(input) = &self.input {
-            let popup = Rect::new(area.x + 2, area.y + 2, area.width - 4, area.height - 4);
-            frame.render_widget(Clear, popup);
+        if let Some((key, selection)) = &self.choice_input
+            && let Some(descriptor) = descriptors.get(key)
+            && let SettingKind::Choice(options) = &descriptor.kind
+        {
+            render_choice_input(
+                frame,
+                Rect::new(
+                    inner.x,
+                    inner.y + 2 + (selected - first) as u16,
+                    inner.width,
+                    1,
+                ),
+                options,
+                *selection,
+                theme,
+                color,
+            );
+        }
+        if let Some(Input::Field(key)) = &self.input {
+            let private = descriptors
+                .get(key)
+                .is_some_and(|field| field.privacy != Privacy::Public);
+            render_inline_input(
+                frame,
+                Rect::new(
+                    inner.x,
+                    inner.y + 2 + (selected - first) as u16,
+                    inner.width,
+                    1,
+                ),
+                &self.editor.text,
+                self.editor.cursor,
+                private,
+                color,
+            );
+        }
+        if let Some(input @ (Input::Model | Input::Pool)) = &self.input {
+            let popup = area;
+            shell.render_dialog_frame(frame, popup, Theme::new(&settings, color));
             let title = match input {
                 Input::Field(key) => safe_text(key),
                 Input::Model => "Add model name".into(),
@@ -1041,6 +1510,12 @@ impl ConfigurationView {
                 }).unwrap_or_default(),
                 _ => "Validated collection name; configure related fields before validating.".into(),
             };
+            shell.render_dialog_title(
+                frame,
+                Rect::new(popup.x + 2, popup.y + 1, popup.width - 4, 1),
+                &title,
+                color,
+            );
             frame.render_widget(
                 Paragraph::new(vec![
                     Line::from(hint),
@@ -1054,16 +1529,253 @@ impl ConfigurationView {
                     ),
                 ])
                 .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(title)
-                        .style(theme.base),
-                ),
-                popup,
+                .style(theme.base),
+                inner,
+            );
+            frame.render_widget(
+                Paragraph::new("Enter stages | Ctrl+U clear | Esc keep previous")
+                    .style(theme.accent),
+                Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
             );
         }
+        crate::visual::terminal_colors(frame.buffer_mut(), color, shell.truecolor);
     }
+}
+
+fn input_value(value: &SettingValue) -> String {
+    let escape = |text: &str| {
+        if text.is_empty() {
+            "\\e".into()
+        } else {
+            text.replace('\\', "\\\\")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r")
+                .replace('\t', "\\t")
+                .replace('=', "\\=")
+        }
+    };
+    match value {
+        SettingValue::TextList(items) => items
+            .iter()
+            .map(|item| escape(item))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        SettingValue::TextMap(items) => items
+            .iter()
+            .map(|(key, value)| format!("{}={}", escape(key), escape(value)))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        SettingValue::Unset => String::new(),
+        _ => display(value),
+    }
+}
+
+pub(crate) fn render_choice_input(
+    frame: &mut Frame,
+    row: Rect,
+    options: &[String],
+    selection: usize,
+    theme: Theme,
+    color: bool,
+) {
+    let start = 4 + row.width.saturating_sub(4) / 2;
+    let width = row.width.saturating_sub(start);
+    let selected_style = if color {
+        theme
+            .base
+            .bg(ratatui::style::Color::Cyan)
+            .fg(ratatui::style::Color::Black)
+    } else {
+        theme.accent
+    };
+    let labels: Vec<_> = options
+        .iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let option = safe_text(option);
+            if color {
+                format!(" {option} ")
+            } else {
+                format!("[{} {option}]", if index == selection { "x" } else { " " })
+            }
+        })
+        .collect();
+    use unicode_width::UnicodeWidthStr;
+    let mut first = selection.min(labels.len().saturating_sub(1));
+    let mut used = labels.get(first).map_or(0, |label| label.width());
+    while first > 0 && used + labels[first - 1].width() < usize::from(width) {
+        first -= 1;
+        used += labels[first].width() + 1;
+    }
+    let mut spans = Vec::new();
+    for (index, label) in labels.into_iter().enumerate().skip(first) {
+        if !spans.is_empty() {
+            spans.push(Span::styled(" ", theme.base));
+        }
+        spans.push(Span::styled(
+            label,
+            if index == selection {
+                selected_style
+            } else {
+                theme.muted
+            },
+        ));
+    }
+    let area = Rect::new(row.x + start, row.y, width, 1);
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(Paragraph::new(Line::from(spans)).style(theme.base), area);
+}
+
+pub(crate) fn render_inline_input(
+    frame: &mut Frame,
+    row: Rect,
+    text: &str,
+    cursor: usize,
+    private: bool,
+    color: bool,
+) {
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
+    let start = 4 + row.width.saturating_sub(4) / 2;
+    let width = row.width.saturating_sub(start);
+    if width == 0 {
+        return;
+    }
+    let display = |text: &str| {
+        if private {
+            "*".repeat(text.graphemes(true).count())
+        } else {
+            safe_text(text)
+        }
+    };
+    let before = display(&text[..cursor]);
+    let after = display(&text[cursor..]);
+    let mut visible = Vec::new();
+    let mut cells = 0;
+    for grapheme in before.graphemes(true).rev() {
+        if cells + grapheme.width() >= usize::from(width) {
+            break;
+        }
+        cells += grapheme.width();
+        visible.push(grapheme);
+    }
+    let value = visible.into_iter().rev().collect::<String>() + &after;
+    let style = if color {
+        ratatui::style::Style::default()
+            .bg(ratatui::style::Color::Cyan)
+            .fg(ratatui::style::Color::Black)
+    } else {
+        ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::UNDERLINED)
+    };
+    let input_area = Rect::new(row.x + start, row.y, width, 1);
+    frame.render_widget(ratatui::widgets::Clear, input_area);
+    frame.render_widget(Paragraph::new(value).style(style), input_area);
+    frame.set_cursor_position((row.x + start + cells as u16, row.y));
+}
+
+pub(crate) fn mute_disabled_value(row: &mut Line<'_>, color: bool) {
+    for span in row.spans.iter_mut().skip(1) {
+        if color {
+            span.style = span.style.fg(ratatui::style::Color::Gray);
+        } else {
+            span.style = span.style.add_modifier(ratatui::style::Modifier::DIM);
+        }
+    }
+}
+
+pub(crate) fn setting_row(
+    label: &str,
+    value: &str,
+    editing: Option<bool>,
+    width: u16,
+    focused: bool,
+    theme: Theme,
+    color: bool,
+) -> Line<'static> {
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
+
+    let style = if focused && color {
+        theme
+            .base
+            .bg(theme.accent.fg.unwrap_or(ratatui::style::Color::Magenta))
+            .fg(if theme.base.bg == Some(ratatui::style::Color::Black) {
+                ratatui::style::Color::Black
+            } else {
+                ratatui::style::Color::Rgb(255, 250, 241)
+            })
+    } else if focused {
+        theme.accent
+    } else {
+        theme.base
+    };
+    let key_width = usize::from(width.saturating_sub(4)) / 2;
+    let mut key = String::new();
+    let mut used = 0;
+    for grapheme in label.graphemes(true) {
+        let cells = grapheme.width();
+        if used + cells > key_width {
+            break;
+        }
+        key.push_str(grapheme);
+        used += cells;
+    }
+    key.push_str(&" ".repeat(key_width - used));
+    let mut line = Line::from(vec![Span::styled(
+        format!("{}{}  ", if focused { "> " } else { "  " }, key),
+        style,
+    )])
+    .style(style);
+    if let Some(choice) = editing {
+        let options = boolean_options("", choice, theme, color);
+        if color {
+            line.spans.extend(options.spans.into_iter().skip(1));
+        } else {
+            line.spans.push(Span::styled(
+                boolean_control("", choice).trim_start().to_owned(),
+                style,
+            ));
+        }
+    } else {
+        line.spans.push(Span::styled(value.to_owned(), style));
+    }
+    line.spans.push(Span::styled(
+        " ".repeat(usize::from(width).saturating_sub(line.width())),
+        style,
+    ));
+    line
+}
+
+pub(crate) fn boolean_options(key: &str, value: bool, theme: Theme, color: bool) -> Line<'static> {
+    if !color {
+        return Line::styled(boolean_control(key, value), theme.base);
+    }
+    let selected = theme
+        .base
+        .bg(ratatui::style::Color::Cyan)
+        .fg(ratatui::style::Color::Black);
+    Line::from(vec![
+        Span::styled(
+            format!(
+                "{} ",
+                safe_text(key.rsplit('.').next().unwrap_or(key)).replace('_', " ")
+            ),
+            theme.base,
+        ),
+        Span::styled(" true ", if value { selected } else { theme.muted }),
+        Span::styled(" ", theme.base),
+        Span::styled(" false ", if value { theme.muted } else { selected }),
+    ])
+}
+
+pub(crate) fn boolean_control(key: &str, value: bool) -> String {
+    format!(
+        "{} [{} true] [{} false]",
+        safe_text(key.rsplit('.').next().unwrap_or(key)).replace('_', " "),
+        if value { "x" } else { " " },
+        if value { " " } else { "x" },
+    )
 }
 
 fn mutable(descriptor: &SettingDescriptor) -> bool {
