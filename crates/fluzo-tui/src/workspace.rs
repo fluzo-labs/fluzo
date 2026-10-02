@@ -13,7 +13,7 @@ use crate::{
     visual::{Preferences, Theme, VisualOptions},
 };
 
-const COMMANDS: [(&str, &str); 9] = [
+const COMMANDS: [(&str, &str); 10] = [
     ("Configuration > Models", "models."),
     ("Configuration > Limits", "harness."),
     ("Configuration > Pools", "capacity_pools."),
@@ -23,6 +23,7 @@ const COMMANDS: [(&str, &str); 9] = [
     ("Configuration > Notifications", "tui.notifications."),
     ("Configuration > Developer preferences", "tui.dev_menu"),
     ("Configuration > All / advanced", ""),
+    ("Developer menu > Presentation settings", "tui."),
 ];
 
 pub struct Workspace {
@@ -54,6 +55,9 @@ impl Workspace {
         COMMANDS
             .iter()
             .copied()
+            .filter(|(name, _)| {
+                !name.starts_with("Developer menu") || self.shell.preferences.effective().dev_menu
+            })
             .filter(|(name, _)| name.to_lowercase().contains(&self.query.to_lowercase()))
             .collect()
     }

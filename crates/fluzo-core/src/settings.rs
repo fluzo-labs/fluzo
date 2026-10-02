@@ -325,7 +325,7 @@ group!(TuiSettings {
     theme: String = "default".to_owned() => ("", Any, Public, Presentation, "Presentation theme identifier"),
     animation_fps: u32 = 60 => ("frames/second", Any, Public, Presentation, "Animation cadence; zero never disables input"),
     reduced_motion: bool = false => ("", Any, Public, Presentation, "Reduce animated motion"),
-    dev_menu: bool = false => ("", Any, Public, Presentation, "Development presentation controls without runtime privileges")
+    dev_menu: bool = true => ("", Any, Public, Presentation, "Development presentation controls enabled by default during the MVP, without runtime privileges")
 }, { notifications: NotificationSettings, flags: UiFlags });
 group!(NotificationSettings {
     desktop_enabled: bool = false => ("", Any, Public, Presentation, "Opt-in desktop notifications"),

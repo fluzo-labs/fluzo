@@ -104,11 +104,12 @@ pub fn run(arguments: &[OsString]) -> ExitCode {
             }
         };
     if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        let outcome = fluzo_tui::terminal::run_setup(
+        let outcome = fluzo_tui::terminal::run_setup_with_screen_settings(
             &mut service,
             target.to_string_lossy().into_owned(),
             explicit,
             options.ascii,
+            options.safe_screen_settings,
         );
         service.quiesce();
         return match outcome {

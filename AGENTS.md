@@ -28,7 +28,16 @@ version-bound replacement with verified backups. UI-03 S3 (#46 R2) adds the
 normal configuration-only shell and typed basic/advanced editing with protocol 4,
 owned descriptors, operation availability and bounded request reconciliation.
 Ordinary hosts still cannot replace configuration; presentation Apply is separate.
-UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
+S3 human-review revisions remove screen questions from setup and restore its full
+relief identity/RGB palette. `fluzo --safe-screen-settings` provides invocation-only
+ASCII/no-color/FPS-0/reduced-motion recovery without saving emergency values.
+The requested MVP devmenu default is true; ordinary Developer menu > Presentation
+settings opens the typed editor, not synthetic actions. Explicit disable is retained.
+Repeated resize PTYs preserve dimensions and prohibit window-resize sequences,
+but the reported Ghostty/Wayland physical resize reset is not yet reproduced.
+Local/LAN discovery needs a reviewed network contract; GitHub provider work was
+deferred to a later story. See CONFIGURATION.md for scope and evidence limitations.
+Full UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
