@@ -2274,7 +2274,13 @@ impl Shell {
         self.render_cursor(frame);
     }
 
-    fn render_dialog_title(&self, frame: &mut Frame, area: Rect, title: &str, color: bool) {
+    pub(crate) fn render_dialog_title(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        title: &str,
+        color: bool,
+    ) {
         let theme = Theme::new(self.preferences.effective(), color);
         let accent = theme.accent.remove_modifier(ratatui::style::Modifier::BOLD);
         let mut spans = vec![Span::styled(title.to_owned(), accent), Span::raw(" ")];
@@ -2299,7 +2305,7 @@ impl Shell {
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
-    fn render_dialog_frame(&self, frame: &mut Frame, popup: Rect, theme: Theme) {
+    pub(crate) fn render_dialog_frame(&self, frame: &mut Frame, popup: Rect, theme: Theme) {
         let block = Block::bordered()
             .border_type(ratatui::widgets::BorderType::Rounded)
             .style(theme.base)
@@ -2823,7 +2829,7 @@ impl Shell {
                 Line::from(self.repository.clone()),
                 Line::default(),
                 Line::from("Agent runtime unavailable"),
-                Line::from("No provider contacted"),
+                Line::from("No inference started"),
                 Line::from("No task or session active"),
                 Line::default(),
                 Line::from("Ctrl+P Configuration"),

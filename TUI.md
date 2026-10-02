@@ -5,6 +5,21 @@ terminal shell, multiline composer and searchable command palette. References:
 PRD 29/30/31 and architecture A07, section 12, at baseline
 `60c5b0732fb710cdf705476cee8d9156a5ecd971`.
 
+## Repository welcome dialog
+
+When configuration is missing, startup now shows a centered Welcome to Fluzo
+dialog explaining that this repository has no configuration. Enter prepares
+recommended defaults, F3 opens the model wizard and Esc declines without writing.
+A second, separate Enter confirms file creation. The confirmation uses human labels
+and a model count rather than registry key/value rows; the selected file path
+remains available in the scrollable body. After success, Enter/F2 opens Settings
+in ordinary startup; explicit init closes instead. Loading, existing-file and
+failure states remain distinct, and no existing file is replaced.
+
+F4 explicitly opens the retained advanced setup/details surface and toggles back.
+Technical values are not shown on the default welcome or confirmation screens.
+The dialog reuses the shared rounded frame, gradient title and terminal fallbacks.
+
 ## S3 human-review revisions
 
 Setup uses built-in screen defaults without asking for theme, FPS, motion or
@@ -19,8 +34,164 @@ Explicit `--no-dev-menu` remains supported for fallback and regression checks.
 Resize is driven by the current terminal dimensions, never a configured default.
 Repeated PTYs check dimensions and absence of window-resize control sequences;
 the reported physical Ghostty/Wayland resize reset remains unverified. These
-checks do not substitute for human review. Model discovery is not implemented;
+checks do not substitute for human review. F3 now opens the explicit local/LAN
+model wizard in setup and ordinary settings; the normal palette also offers
+Add model > Local / LAN. The wizard uses the existing centered rounded dialogs and
+gradient titles. It asks Local/Frontier, provider, Authorization yes/no and optional
+environment reference, then URL. Tab/Enter or clicking outside URL fetches models;
+window-focus changes and paste do not. Space selects multiple IDs without losing
+selection during filtering. Context/output/slot columns show reported values or ?.
+Alias/review stages atomically stage all selections, never save. Esc cancels
+pending discovery. HTTP localhost/private-IP catalogs support scoped Authorization
+headers from environment references; DNS/HTTPS/native enrichment remain unavailable.
 GitHub provider work is deferred to a later story.
+
+## Theme preview and unsaved changes
+
+Confirming a new theme immediately previews it across the ordinary settings
+workspace. This is a reversible presentation preview, not a runtime Apply or a
+file write. CLI theme locks remain authoritative. Leaving settings ends the
+preview unless that theme was separately applied; reopening retained edits shows
+it again. Other settings still require their existing explicit Apply operation.
+
+Esc outside an input now asks about unsaved changes: Save and leave, Leave without
+saving (keep draft), or Back to editing. The default is Back to editing. Saving
+covers all unsaved keys rather than only checked keys, and waits for confirmed
+save completion before closing. Rejection and unknown outcomes retain the dialog
+and draft without automatic replay. Ordinary CreateOnly hosts still cannot replace
+an existing file; the dialog explains ReadOnly rather than bypassing it. Input Esc
+still cancels only the input. Pending requests retain the existing reconciliation
+behavior; this prompt does not intercept emergency Ctrl+C/Ctrl+Q shutdown.
+
+This revision passed 225 Rust tests (127 TUI), five configuration PTYs, formatting,
+Clippy and build. Tests cover preview/CLI locks, dialog sizes, retained drafts,
+read-only rejection and confirmed save versus failure. Human review is pending.
+
+## Hierarchical command menu
+
+In ordinary startup Ctrl+P opens only Models, Developer Menu, Quit, Plugins,
+Providers and Configuration, in that order. Explicitly disabling the developer
+menu still hides its entry. Configuration opens a second level with Models,
+Limits, Pools, Storage, Telemetry, Theme, Notifications, Developer preferences,
+Presentation and All / advanced. Search is scoped to the current level.
+
+Models offers configured models and the existing explicit local/LAN wizard;
+Developer Menu offers real presentation settings. Plugins and Providers open
+honest unavailable views, not loaders, network probes or new runtime adapters.
+Quit exits. Esc from settings returns to its menu; Esc from a submenu restores
+the root search and selection, and Esc at the root closes the menu. Dialog style,
+composer retention and Save/Apply behavior are unchanged. The explicit demo is
+not altered by this ordinary-workspace navigation revision.
+
+Local checks passed 217 Rust tests (119 TUI), five configuration PTYs, formatting,
+Clippy and build. Tests cover all root routes, unavailable entries, return state
+and supported sizes. Human review of the new hierarchy remains pending.
+
+## Normal command palette correction
+
+Ctrl+P reuses the shared centered dialog frame and gradient title, with the
+reviewed 70x20 maximum geometry, highlighted selection, search cursor and a
+viewport-bounded list. The normal configuration actions remain separate from demo
+actions. A buffer regression reproduced the previous square-border rendering and
+now verifies rounded/ASCII frames and the last selected item at 60x16, 80x24,
+120x40 and 160x50. The 113 TUI tests, five settings PTYs, Clippy and build passed;
+human appearance still requires review.
+
+## Enumerated choice controls
+
+All settings with a registry-defined option list, including Theme, use the same
+interaction as booleans: Enter edits, Left/Right chooses, Enter confirms into the
+draft and Esc cancels. Outside editing only the current value appears; the focused
+row remains magenta in the default theme. During editing the selected option is
+cyan, or explicitly marked without color. Long option lists scroll inside the
+value column to keep the selected option visible. Typing, paste and deletion do
+not turn these controls into text fields. Single-option fields remain fixed.
+The same interaction applies to the retained advanced setup form.
+
+Registry-wide and setup regressions cover selection, cancellation, ignored input,
+fixed fields and supported sizes. This revision passed 222 Rust tests (124 TUI),
+five configuration PTYs and twelve setup PTYs, formatting, Clippy and build.
+Human visual review remains pending; no Save/Apply or runtime capabilities change.
+
+## Inline value editing
+
+Settings other than booleans and enumerated choices edit inside the value column
+rather than a replacement popup. Only that cell becomes cyan with black text; the surrounding row retains
+its focus style. Typing/paste replaces the initial input, Enter stages the value
+and exits editing, and Esc discards the input. An explicitly cleared input restores
+the registry default. Enter on untouched input leaves the original intact. Invalid
+typed values keep the normal editor open without staging them. Private input is
+masked; long/escaped multiline input keeps the cursor visible after resizing.
+Lists/maps retain their whole-value escaped format in F1 help. Collection-name
+creation still uses its own dialog. Advanced setup also supports cyan inline
+input, cancellation and empty-to-default behavior; its complete candidate remains
+validated during preparation. No Enter action implicitly saves to disk or applies
+presentation changes.
+
+This revision passed 219 Rust tests (121 TUI), five configuration PTYs and twelve
+setup PTYs, formatting, Clippy and build. Regressions cover replacement, cancellation,
+default restoration, invalid input, masked input and resizing. Visual acceptance
+of this revision remains pending.
+
+## Boolean choice controls
+
+Normal settings and advanced setup use a borderless two-column key/value list.
+Values align at a shared column at each viewport width; long keys are clipped by
+terminal-cell width and their full identity remains in details. While navigating,
+a boolean shows only true or false, without cyan or choice buttons. The focused
+row's theme accent background (magenta by default) covers the label, value and
+remaining row width. Enter opens inline choices in the value column: the selected
+option uses cyan with black text. No-color editing retains `[x true] [  false]`
+or `[  true] [x false]`. Confirmation or cancellation returns to the plain value.
+Up/Down navigates fields; Enter
+focuses the inline choice, Left/Right selects true/false and Enter confirms only
+into the local draft. Esc cancels that choice; typing and paste cannot replace it.
+The settings detail pane retains the full registry key. Save/Apply selection is
+separate from the boolean value, and fixed fields such as `storage.auto_expire`
+remain visibly fixed at false rather than offering an unsupported operation.
+
+Registry-wide boolean regressions and advanced-setup buffers cover confirmation,
+cancellation, ignored paste, retained field focus and 60x16 through 160x50 layouts.
+The subsequent table-layout check passed 216 Rust tests (118 TUI), five configuration PTYs
+and twelve setup PTYs, plus formatting, Clippy, build and diff checks. Physical
+terminal review of these new controls is still pending.
+
+## Shared configuration dialogs
+
+The subsequent all-settings revision uses the same centered frame and gradient
+title as the palette and model wizard for Limits, Pools, Models, Storage,
+Telemetry, Theme, Notifications, Developer preferences, Presentation and All
+settings. The typed editor, F1 help, field replacement, model/pool name inputs and
+F4 advanced setup no longer use separate full-screen configuration frames.
+Settings dialogs keep the shell visible around their edges, with rounded borders
+or the shared ASCII fallback, terminal color reduction and highlighted selection.
+The editor and advanced setup are capped at 100x34 inside the current viewport.
+
+At 60x16, the settings list/details split retains the selected row and controls;
+help and replacement inputs pin their back/cancel hints. Advanced setup prioritizes
+the selected field over introductory text when space is tight, retains the full
+relief wordmark and exposes F4 back and Esc exit. Save, Apply, validation, draft
+retention and the ordinary host's CreateOnly restriction are unchanged.
+
+Buffer regressions cover ten category filters, four supported sizes and three
+color/ASCII profiles across settings, help and replacement inputs. A separate
+advanced-setup regression first reproduced the missing selected field at 60x16,
+then passed after the compact-layout correction. The earlier help regression also
+caught a clipped Esc hint before its footer was pinned. These checks do not prove
+physical terminal appearance or resolve the reported Ghostty/Wayland resize reset.
+Human review of this all-settings revision in Ghostty/Alacritty remains pending;
+previously opened application windows retain their earlier binary.
+
+Final local verification of the uncommitted revision based on `2520f22` passed
+213 Rust tests (115 TUI) and 72 Python tests in 95.661 seconds. Commands run from
+the repository root were `cargo test --workspace --locked --offline --quiet`,
+`python3 -B -m unittest discover -s scripts -p 'test_*.py'`,
+`cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets --locked --offline -- -D warnings`,
+`cargo check --workspace --all-targets --locked --offline`,
+`cargo build --workspace --locked --offline`,
+`python3 -B scripts/check_dev_setup.py` and `git diff --check`.
+No live inference, commit or publication was performed for this revision.
 
 ## S3 normal configuration
 

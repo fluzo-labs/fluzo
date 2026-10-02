@@ -1,5 +1,6 @@
 pub mod application;
 pub mod configuration;
+pub mod model_discovery;
 pub mod settings;
 mod settings_validation;
 

@@ -88,8 +88,106 @@ fn mvp_developer_entry_opens_real_presentation_settings_without_demo_actions() {
         );
     }
     workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
+    assert!(!workspace.configuration.open);
+    workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
     assert!(workspace.configuration.open);
     assert_eq!(workspace.configuration.filter, "tui.");
+    assert!(port.requests.is_empty());
+}
+
+#[test]
+fn discovered_model_staging_is_atomic_and_rejects_existing_aliases() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    view.stage_discovered_model("fixture", "http://127.0.0.1:1234/v1", "synthetic")
+        .unwrap();
+    let batch = view.batch();
+    assert_eq!(batch.len(), 6);
+    assert!(
+        view.stage_discovered_model("fixture", "http://127.0.0.1:1234/v1", "other")
+            .is_err()
+    );
+    assert_eq!(view.batch(), batch);
+    let selection = |alias: &str| crate::model_wizard::Selection {
+        alias: alias.into(),
+        endpoint: "http://127.0.0.1:1234/v1".into(),
+        model: "synthetic".into(),
+        authorization_env: Some("FIXTURE_AUTH".into()),
+    };
+    assert!(
+        view.stage_discovered_models(&[selection("newmodel"), selection("fixture")])
+            .is_err()
+    );
+    assert_eq!(view.batch(), batch);
+    assert!(port.requests.is_empty());
+    view.collections.clear();
+    view.edits.clear();
+    for index in 0..MAX_EDITS - 2 {
+        view.edits
+            .insert(format!("fixture.{index}"), SettingValue::Integer(1));
+    }
+    let before = view.batch();
+    assert!(
+        view.stage_discovered_model("another", "http://127.0.0.1:1234/v1", "synthetic")
+            .is_err()
+    );
+    assert_eq!(view.batch(), before);
+}
+
+#[test]
+fn every_configuration_surface_uses_shared_dialogs_and_preserves_background() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    for filter in [
+        "harness.",
+        "capacity_pools.",
+        "models.",
+        "storage.",
+        "telemetry.",
+        "tui.theme",
+        "tui.notifications.",
+        "tui.dev_menu",
+        "tui.",
+        "",
+    ] {
+        view.show(filter);
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            for (color, ascii) in [(true, false), (false, false), (false, true)] {
+                let mut shell = crate::shell::Shell::configuration_shell().unwrap();
+                shell.preferences.ascii = ascii;
+                shell.truecolor = color;
+                let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                for mode in 0..4 {
+                    view.help = mode == 1;
+                    view.input = match mode {
+                        2 => Some(Input::Pool),
+                        3 => Some(Input::Field("tui.theme".into())),
+                        _ => None,
+                    };
+                    terminal
+                        .draw(|frame| {
+                            frame
+                                .render_widget(Paragraph::new("retained background"), frame.area());
+                            view.render_dialog(frame, &shell, color);
+                        })
+                        .unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let left = (width - (width - 2).min(100)) / 2;
+                    let top = (height - (height - 2).min(34)) / 2;
+                    assert_eq!(buffer[(left, top)].symbol(), if ascii { "+" } else { "╭" });
+                    let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                    assert!(text.contains("retained background"));
+                    assert!(text.contains(if ascii { "/" } else { "╱" }));
+                    assert!(text.contains(match mode {
+                        1 => "Configuration help",
+                        2 => "Add pool name",
+                        _ => "FLUZO / Configuration",
+                    }));
+                    assert!(text.contains("Esc"));
+                }
+            }
+        }
+    }
     assert!(port.requests.is_empty());
 }
 
@@ -292,11 +390,511 @@ fn registry_coverage_and_typed_inputs_include_collections_optional_and_escaped_m
 }
 
 #[test]
+fn enumerated_choices_require_focus_and_keep_selected_option_visible() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    for descriptor in view.descriptors().values() {
+        let SettingKind::Choice(options) = &descriptor.kind else {
+            continue;
+        };
+        view.show(&descriptor.key);
+        view.selected = descriptor.key.clone();
+        let before = view.batch();
+        press(&mut view, &mut port, KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(view.batch(), before);
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        if !mutable(descriptor) {
+            assert!(view.choice_input.is_none());
+            continue;
+        }
+        let original = view.choice_input.clone();
+        view.paste("invalid");
+        press(&mut view, &mut port, KeyCode::Backspace, KeyModifiers::NONE);
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+        );
+        assert_eq!(view.choice_input, original);
+        for _ in 0..options.len() {
+            press(&mut view, &mut port, KeyCode::Left, KeyModifiers::NONE);
+        }
+        for (selection, option) in options.iter().enumerate() {
+            assert_eq!(view.choice_input, Some((descriptor.key.clone(), selection)));
+            for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+                for color in [false, true] {
+                    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                    terminal
+                        .draw(|frame| view.render(frame, color, !color))
+                        .unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let output: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                    assert!(output.contains(option));
+                    if color {
+                        assert!(
+                            buffer
+                                .content
+                                .iter()
+                                .any(|cell| cell.bg == ratatui::style::Color::Cyan)
+                        );
+                    } else {
+                        assert!(output.contains(&format!("[x {option}]")));
+                    }
+                }
+            }
+            press(&mut view, &mut port, KeyCode::Right, KeyModifiers::NONE);
+        }
+        assert_eq!(view.batch(), before);
+        press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(view.batch(), before);
+        assert!(view.open && view.choice_input.is_none());
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        for _ in 0..options.len() {
+            press(&mut view, &mut port, KeyCode::Right, KeyModifiers::NONE);
+        }
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(view.choice_input.is_none());
+        assert_eq!(
+            view.edits[&descriptor.key],
+            SettingValue::Text(options.last().unwrap().clone())
+        );
+    }
+    assert!(port.requests.is_empty());
+}
+
+#[test]
+fn theme_preview_and_exit_prompt_preserve_authority_and_drafts() {
+    for locked in [false, true] {
+        let mut port = Port::new();
+        port.snapshot
+            .values
+            .get_mut("tui.theme")
+            .unwrap()
+            .cli_locked = locked;
+        let mut workspace = crate::workspace::Workspace::new("fixture", false).unwrap();
+        workspace.poll(&mut port);
+        workspace.configuration.show("tui.theme");
+        for code in [KeyCode::Enter, KeyCode::Right, KeyCode::Enter] {
+            workspace.key(KeyEvent::new(code, KeyModifiers::NONE), &mut port);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| workspace.render(frame, true))
+            .unwrap();
+        assert_eq!(
+            workspace.shell.preferences.effective().theme,
+            if locked { "default" } else { "high-contrast" }
+        );
+        assert_eq!(workspace.shell.preferences.applied().theme, "default");
+        assert!(port.requests.is_empty());
+        workspace.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut port);
+        assert!(workspace.configuration.open);
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| workspace.render(frame, false))
+                .unwrap();
+            let output: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(output.contains("Save changes?"));
+            assert!(output.contains("Back to editing"));
+        }
+        workspace.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut port);
+        assert!(workspace.configuration.open && workspace.configuration.close_prompt.is_none());
+        workspace.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut port);
+        workspace.key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &mut port);
+        workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
+        assert!(!workspace.configuration.open);
+        terminal
+            .draw(|frame| workspace.render(frame, true))
+            .unwrap();
+        assert_eq!(workspace.shell.preferences.effective().theme, "default");
+        assert!(workspace.configuration.has_unsaved_changes());
+        assert!(port.requests.is_empty());
+    }
+}
+
+#[test]
+fn exit_save_waits_for_completion_and_retains_draft_on_rejection() {
+    for failure in [false, true] {
+        let mut port = Port::new();
+        let mut view = view(&mut port);
+        view.stage(Edit::Set {
+            key: "tui.theme".into(),
+            value: SettingValue::Text("high-contrast".into()),
+        })
+        .unwrap();
+        view.checked.insert("tui.animation_fps".into());
+        press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
+        view.close_prompt = Some(0);
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(view.open && view.close_after_save);
+        port.snapshot.values.get_mut("tui.theme").unwrap().draft =
+            SettingValue::Text("high-contrast".into());
+        port.outcome = ConfigurationRequestStatus::Completed {
+            version: port.snapshot.version,
+            outcome: ConfigurationOutcome::DraftUpdated,
+        };
+        view.poll(&mut port);
+        assert!(
+            matches!(&port.requests[1].action, ConfigurationAction::Save { keys, .. } if keys == &vec!["tui.theme".to_owned()])
+        );
+        assert!(view.open);
+        port.outcome = if failure {
+            ConfigurationRequestStatus::Failed(ConfigurationError::ReadOnly)
+        } else {
+            ConfigurationRequestStatus::Completed {
+                version: port.snapshot.version,
+                outcome: ConfigurationOutcome::Saved,
+            }
+        };
+        view.poll(&mut port);
+        assert_eq!(view.open, failure);
+        assert_eq!(view.has_unsaved_changes(), failure);
+        assert!(!view.close_after_save);
+    }
+    let mut port = Port::new();
+    port.snapshot.save_unavailable = Some(ConfigurationError::ReadOnly);
+    let mut view = view(&mut port);
+    view.stage(Edit::Set {
+        key: "tui.theme".into(),
+        value: SettingValue::Text("high-contrast".into()),
+    })
+    .unwrap();
+    press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
+    view.close_prompt = Some(0);
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(view.open && view.has_unsaved_changes());
+    assert!(view.status.contains("ReadOnly"));
+    assert!(port.requests.is_empty());
+}
+
+#[test]
+fn disabled_values_are_gray_without_losing_focus_or_fixed_markers() {
+    for theme_name in ["default", "high-contrast"] {
+        let mut port = Port::new();
+        port.snapshot.effective_ui.theme = theme_name.into();
+        let mut view = view(&mut port);
+        for key in ["storage.auto_expire", "schema_version"] {
+            view.show(key);
+            view.selected = key.into();
+            for color in [false, true] {
+                let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+                terminal
+                    .draw(|frame| view.render(frame, color, !color))
+                    .unwrap();
+                let buffer = terminal.backend().buffer();
+                let value = &buffer[(42, 6)];
+                if color {
+                    assert_eq!(value.fg, ratatui::style::Color::Gray);
+                    assert_eq!(value.bg, buffer[(3, 6)].bg);
+                } else {
+                    assert!(value.modifier.contains(ratatui::style::Modifier::DIM));
+                }
+                let output: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                assert!(output.contains("[fixed]"));
+            }
+            press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+            assert!(
+                view.input.is_none() && view.boolean_input.is_none() && view.choice_input.is_none()
+            );
+        }
+        assert!(port.requests.is_empty());
+    }
+}
+
+#[test]
+fn inline_deletion_clears_old_value_from_the_screen() {
+    for deletion in [KeyCode::Backspace, KeyCode::Delete] {
+        for color in [false, true] {
+            let mut port = Port::new();
+            let mut view = view(&mut port);
+            view.show("tui.animation_fps");
+            view.stage(Edit::Set {
+                key: "tui.animation_fps".into(),
+                value: SettingValue::Integer(123),
+            })
+            .unwrap();
+            press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+            press(&mut view, &mut port, deletion, KeyModifiers::NONE);
+            assert!(view.editor.text.is_empty());
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+            terminal
+                .draw(|frame| view.render(frame, color, false))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            for column in 42..77 {
+                assert_eq!(buffer[(column, 6)].symbol(), " ");
+            }
+            view.paste("9");
+            terminal
+                .draw(|frame| view.render(frame, color, false))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            assert_eq!(buffer[(42, 6)].symbol(), "9");
+            assert_eq!(buffer[(43, 6)].symbol(), " ");
+            assert_eq!(buffer[(44, 6)].symbol(), " ");
+            press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
+            assert_eq!(view.edits["tui.animation_fps"], SettingValue::Integer(123));
+            assert!(port.requests.is_empty());
+        }
+    }
+}
+
+#[test]
+fn inline_values_replace_cancel_validate_and_restore_defaults() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    for (key, replacement) in [
+        ("tui.animation_fps", "17"),
+        ("context.compaction_threshold", "0.7"),
+        ("agent.model", "fixture"),
+        ("tools.shell.inherit_env", "LANG\nTERM"),
+        ("tools.shell.env", "KEY=value"),
+    ] {
+        view.show(key);
+        view.selected = key.into();
+        let before = view.batch();
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        view.paste(replacement);
+        assert_eq!(view.editor.text, replacement);
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| view.render(frame, true, false))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            assert!(
+                buffer
+                    .content
+                    .iter()
+                    .any(|cell| cell.bg == ratatui::style::Color::Cyan)
+            );
+            let output: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+            assert!(output.contains("FLUZO / Configuration"));
+            assert!(output.contains("Empty restores default"));
+        }
+        press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(view.batch(), before);
+        assert!(view.open && view.input.is_none());
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        view.paste(replacement);
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(view.input.is_none());
+        let expected = parse_value(&view.descriptors()[key], replacement).unwrap();
+        assert_eq!(view.edits[key], expected);
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+        );
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(view.edits[key], view.descriptors()[key].default);
+        assert!(view.input.is_none());
+    }
+    view.show("tui.animation_fps");
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+    view.paste("invalid");
+    let before = view.batch();
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(view.input.is_some());
+    assert_eq!(view.batch(), before);
+    assert!(port.requests.is_empty());
+}
+
+#[test]
+fn settings_rows_align_values_and_only_show_cyan_while_editing() {
+    for width in [54, 74, 96] {
+        for theme_name in ["default", "high-contrast"] {
+            let mut settings = Settings::default();
+            settings.tui.theme = theme_name.into();
+            let theme = Theme::new(&settings.tui, true);
+            for color in [false, true] {
+                let theme = if color {
+                    theme
+                } else {
+                    Theme::new(&settings.tui, false)
+                };
+                for editing in [None, Some(true), Some(false)] {
+                    let mut terminal = Terminal::new(TestBackend::new(width, 3)).unwrap();
+                    terminal
+                        .draw(|frame| {
+                            frame.render_widget(
+                                Paragraph::new(vec![
+                                    setting_row(
+                                        "auto expire",
+                                        "false",
+                                        editing,
+                                        width,
+                                        true,
+                                        theme,
+                                        color,
+                                    ),
+                                    setting_row(
+                                        "storage.min_free_bytes",
+                                        "123",
+                                        None,
+                                        width,
+                                        false,
+                                        theme,
+                                        color,
+                                    ),
+                                    setting_row(
+                                        "wide 界 e\u{301}",
+                                        "456",
+                                        None,
+                                        width,
+                                        false,
+                                        theme,
+                                        color,
+                                    ),
+                                ]),
+                                frame.area(),
+                            );
+                        })
+                        .unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let value_x = 4 + (width - 4) / 2;
+                    assert_eq!(buffer[(value_x, 1)].symbol(), "1");
+                    assert_eq!(buffer[(value_x, 2)].symbol(), "4");
+                    if editing.is_none() {
+                        assert_eq!(buffer[(value_x, 0)].symbol(), "f");
+                        let background = buffer[(0, 0)].bg;
+                        for column in 0..width {
+                            assert_eq!(buffer[(column, 0)].bg, background);
+                        }
+                        assert!(
+                            !buffer
+                                .content
+                                .iter()
+                                .any(|cell| cell.bg == ratatui::style::Color::Cyan)
+                        );
+                    } else if color {
+                        let selected_x = value_x + if editing == Some(true) { 1 } else { 8 };
+                        assert_eq!(buffer[(selected_x, 0)].bg, ratatui::style::Color::Cyan);
+                        assert_ne!(buffer[(0, 0)].bg, ratatui::style::Color::Cyan);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn boolean_controls_require_edit_focus_and_explicit_confirmation() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    let descriptors = view.descriptors();
+    for descriptor in descriptors
+        .values()
+        .filter(|field| field.kind == SettingKind::Boolean)
+    {
+        view.show(&descriptor.key);
+        view.selected = descriptor.key.clone();
+        let original = view.snapshot.as_ref().unwrap().values[&descriptor.key]
+            .draft
+            .clone();
+        press(&mut view, &mut port, KeyCode::Left, KeyModifiers::NONE);
+        assert!(!view.edits.contains_key(&descriptor.key));
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        if !mutable(descriptor) {
+            assert!(view.boolean_input.is_none());
+            assert!(text(&view, 80, 24, false).contains("[fixed]"));
+            continue;
+        }
+        let initial = original == SettingValue::Boolean(true);
+        assert_eq!(view.boolean_input, Some((descriptor.key.clone(), initial)));
+        view.paste("not a boolean\n");
+        press(
+            &mut view,
+            &mut port,
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+        );
+        assert_eq!(view.boolean_input, Some((descriptor.key.clone(), initial)));
+        let arrow = if initial {
+            KeyCode::Right
+        } else {
+            KeyCode::Left
+        };
+        press(&mut view, &mut port, arrow, KeyModifiers::NONE);
+        press(&mut view, &mut port, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(view.selected, descriptor.key);
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            for (color, ascii) in [(true, false), (false, false), (false, true)] {
+                let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                terminal
+                    .draw(|frame| view.render(frame, color, ascii))
+                    .unwrap();
+                let rendered: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect();
+                if color {
+                    assert!(rendered.contains(" true   false "));
+                    assert!(!rendered.contains("[x true]") && !rendered.contains("[x false]"));
+                    let buffer = terminal.backend().buffer();
+                    let start = buffer
+                        .content
+                        .windows(14)
+                        .position(|cells| {
+                            cells.iter().map(|cell| cell.symbol()).collect::<String>()
+                                == " true   false "
+                        })
+                        .unwrap();
+                    let true_bg = buffer.content[start + 1].bg;
+                    let false_bg = buffer.content[start + 8].bg;
+                    assert_ne!(true_bg, false_bg);
+                    assert_eq!(
+                        if initial { false_bg } else { true_bg },
+                        ratatui::style::Color::Cyan
+                    );
+                    let label_bg = buffer.content[start - 1].bg;
+                    assert_ne!(label_bg, ratatui::style::Color::Cyan);
+                    assert_ne!(label_bg, buffer.content[start + 6].bg);
+                    assert_eq!(
+                        if initial { true_bg } else { false_bg },
+                        buffer.content[start + 6].bg
+                    );
+                } else {
+                    assert!(rendered.contains(boolean_control("", !initial).trim_start()));
+                }
+                assert!(rendered.contains("Esc cancels"));
+            }
+        }
+        assert!(!view.edits.contains_key(&descriptor.key));
+        press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(view.open && view.boolean_input.is_none());
+        assert!(!view.edits.contains_key(&descriptor.key));
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        press(&mut view, &mut port, arrow, KeyModifiers::NONE);
+        press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(view.edits[&descriptor.key], SettingValue::Boolean(!initial));
+        assert!(view.boolean_input.is_none());
+        view.edits.clear();
+    }
+    assert!(port.requests.is_empty());
+}
+
+#[test]
 fn typing_is_local_and_late_validation_after_close_never_dispatches_save() {
     let mut port = Port::new();
     let mut view = view(&mut port);
     view.show("tui.theme");
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
     press(&mut view, &mut port, KeyCode::Right, KeyModifiers::NONE);
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
     assert!(port.requests.is_empty());
     view.save(&mut port);
     assert_eq!(port.requests.len(), 1);
@@ -323,7 +921,9 @@ fn reopen_before_late_validation_does_not_restore_save_intent() {
     let mut port = Port::new();
     let mut view = view(&mut port);
     view.show("tui.theme");
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
     press(&mut view, &mut port, KeyCode::Right, KeyModifiers::NONE);
+    press(&mut view, &mut port, KeyCode::Enter, KeyModifiers::NONE);
     view.save(&mut port);
     press(&mut view, &mut port, KeyCode::Esc, KeyModifiers::NONE);
     view.show("tui.theme");
@@ -495,6 +1095,80 @@ fn layouts_keyboard_and_hostile_text_remain_bounded() {
 }
 
 #[test]
+fn command_menu_routes_each_root_without_implicit_effects() {
+    for root in [
+        "Models",
+        "Developer Menu",
+        "Quit",
+        "Plugins",
+        "Providers",
+        "Configuration",
+    ] {
+        let mut port = Port::new();
+        let mut workspace = crate::workspace::Workspace::new("fixture", false).unwrap();
+        workspace.poll(&mut port);
+        workspace.key(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &mut port,
+        );
+        for character in root.chars() {
+            workspace.key(
+                KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
+                &mut port,
+            );
+        }
+        workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
+        assert_eq!(workspace.shell.quit, root == "Quit");
+        assert!(!workspace.configuration.open);
+        assert!(!workspace.model_wizard.open);
+        if root == "Quit" {
+            continue;
+        }
+        for (width, height) in [(60, 16), (80, 24), (120, 40), (160, 50)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| workspace.render(frame, false))
+                .unwrap();
+            let text: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(text.contains(&format!("Commands / {root}")));
+            assert!(text.contains(match root {
+                "Configuration" => "Limits",
+                "Models" => "Configured models",
+                "Developer Menu" => "Presentation settings",
+                "Plugins" => "Plugins are not implemented",
+                _ => "Provider management is not implemented",
+            }));
+            assert!(text.contains("Esc returns"));
+        }
+        if matches!(root, "Plugins" | "Providers") {
+            workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
+            assert!(!workspace.configuration.open && !workspace.model_wizard.open);
+        }
+        workspace.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut port);
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| workspace.render(frame, false))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains(&format!("Search: {root}")));
+        assert!(!text.contains(&format!("Commands / {root}")));
+        assert!(port.requests.is_empty());
+    }
+}
+
+#[test]
 fn workspace_has_no_synthetic_tasks_and_preserves_composer_across_settings() {
     let mut port = Port::new();
     let mut workspace = crate::workspace::Workspace::new("fixture", false).unwrap();
@@ -504,6 +1178,8 @@ fn workspace_has_no_synthetic_tasks_and_preserves_composer_across_settings() {
         KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
         &mut port,
     );
+    workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
+    assert!(!workspace.configuration.open);
     workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
     assert!(workspace.configuration.open);
     workspace.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &mut port);

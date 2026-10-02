@@ -27,6 +27,24 @@ that API. `fluzo_tui::inspection::inspect_task` consumes only the core port; its
 pure fixture rejects every mutation/lifecycle call. The CLI supplies the concrete
 scenario adapter. No production runtime dependency is added to TUI.
 
+## Explicit model-catalog discovery
+
+The user-requested local/LAN wizard uses `fluzo_core::model_discovery` protocol 2,
+separate from configuration protocol 4 and task protocol 1. Requests own an ID,
+endpoint and optional Authorization environment reference, never the secret value.
+Status owns Pending or bounded model IDs plus optional reported context/output/slot
+metadata. Protocol 1 is rejected. Leaving the URL field triggers one catalog GET
+with the disclosed header policy, not an inference grant.
+Status does no I/O; cancel requests termination without freeing the occupied slot
+until a terminal result is collected. Old IDs cannot be resubmitted as new work.
+
+CLI supplies a runtime-owned single worker and bounded channels to TUI. No HTTP,
+channel, socket or cancellation token crosses the protocol. Closing the host
+cancels and joins the worker; total request time is bounded to five seconds.
+The wizard stages confirmed values through the existing configuration owner,
+keeping Save/Apply, conflicts and writer policy unchanged. Headless and demo paths
+do not start discovery. See CONFIGURATION.md for endpoint restrictions and tests.
+
 ## Configuration port (UI-03 S1)
 
 UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces

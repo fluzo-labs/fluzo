@@ -75,6 +75,10 @@ SIMULATOR_PACKAGES = {
 }
 REVIEWED_PACKAGES.update(SIMULATOR_PACKAGES)
 SIMULATOR_DIRECT = {"serde", "serde_json", "hyper", "hyper-util", "http-body-util", "tokio"}
+DISCOVERY_PACKAGES = set(SIMULATOR_PACKAGES) | {"log"}
+EXTERNAL["fluzo-runtime"] |= DISCOVERY_PACKAGES
+EXTERNAL["fluzo-cli"] |= DISCOVERY_PACKAGES
+DIRECT_EXTERNAL["fluzo-runtime"] |= {"serde_json", "hyper", "hyper-util", "http-body-util", "tokio"}
 TUI_PACKAGES = {
     ("allocator-api2", "0.2.21"): {"alloc"},
     ("bitflags", "2.13.2"): {"std"},
@@ -163,6 +167,8 @@ def validate_graph(metadata):
         if package["features"] or any(dependency["optional"] for dependency in package["dependencies"]):
             raise ValueError(f"New feature declarations require an explicit graph policy review: {package['name']}")
         for dependency in nodes[identity]["deps"]:
+            if any(kind["kind"] == "build" for kind in dependency["dep_kinds"]):
+                raise ValueError(f"Forbidden production path: direct build dependency in {package['name']}")
             if any(kind["kind"] == "dev" for kind in dependency["dep_kinds"]):
                 name = packages[dependency["pkg"]]["name"]
                 if package["name"] != "fluzo-runtime" or name not in SIMULATOR_DIRECT:

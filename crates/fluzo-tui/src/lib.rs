@@ -1,6 +1,7 @@
 pub mod configuration;
 pub mod identity;
 pub mod inspection;
+pub mod model_wizard;
 mod notification;
 pub mod notification_stack;
 pub mod presentation;

@@ -36,9 +36,9 @@ class BoundaryTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Forbidden production path"):
                     validate_graph(metadata)
 
-    def test_simulator_dependencies_cannot_become_production_or_tui_edges(self):
+    def test_discovery_dependencies_remain_runtime_only_without_build_edges(self):
         for source, target, kind in [
-            ("fluzo-runtime", "hyper", None),
+            ("fluzo-tui", "hyper", None),
             ("fluzo-runtime", "tokio", "build"),
             ("fluzo-tui", "hyper", "dev"),
             ("fluzo-core", "serde_json", "dev"),
