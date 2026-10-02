@@ -4548,6 +4548,9 @@ mod tests {
     #[test]
     fn developer_menu_is_conditional_searchable_and_bounded() {
         let mut state = shell();
+        assert!(state.actions().contains(&6));
+        state.preferences =
+            Preferences::new(VisualOptions::parse(&["--no-dev-menu".into()]).unwrap()).unwrap();
         assert!(!state.actions().contains(&6));
         state.action(6);
         assert!(state.overlay.is_none());

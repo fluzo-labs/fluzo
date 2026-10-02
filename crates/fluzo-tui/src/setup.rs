@@ -23,10 +23,6 @@ const KEYS: &[&str] = &[
     "models.coder.max_in_flight",
     "capacity_pools.local.max_in_flight",
     "capacity_pools.local.foreground_reserved_slots",
-    "tui.theme",
-    "tui.animation_fps",
-    "tui.reduced_motion",
-    "tui.dev_menu",
     "decision.enabled",
     "models.shadow.endpoint",
     "models.shadow.model",
@@ -144,7 +140,7 @@ impl Setup {
     }
 
     fn visible(&self) -> usize {
-        if self.advanced { self.fields.len() } else { 14 }
+        if self.advanced { self.fields.len() } else { 10 }
     }
 
     pub fn poll(&mut self, port: &mut dyn ConfigurationPort) -> bool {
@@ -470,6 +466,10 @@ impl Setup {
     }
 
     pub fn render(&self, frame: &mut Frame, color: bool, ascii: bool) {
+        self.render_with_capabilities(frame, color, ascii, false);
+    }
+
+    pub fn render_with_capabilities(&self, frame: &mut Frame, color: bool, ascii: bool, rgb: bool) {
         let area = frame.area();
         if area.width < 60 || area.height < 16 {
             frame.render_widget(
@@ -498,19 +498,26 @@ impl Setup {
             .title(" Configuration setup ");
         let inner = block.inner(area);
         frame.render_widget(block, area);
+        let identity_height = if ascii { 1 } else { 3 };
         frame.render_widget(
-            Paragraph::new(crate::identity::compact_wordmark(
+            Paragraph::new(crate::identity::wordmark(
                 std::time::Duration::ZERO,
                 color,
-                false,
+                rgb,
+                ascii,
             )),
-            Rect::new(inner.x, inner.y, inner.width, 1),
+            Rect::new(
+                inner.x + 1,
+                inner.y,
+                inner.width.saturating_sub(2),
+                identity_height,
+            ),
         );
         let body = Rect::new(
             inner.x + 1,
-            inner.y + 2,
+            inner.y + identity_height + 1,
             inner.width.saturating_sub(2),
-            inner.height.saturating_sub(7),
+            inner.height.saturating_sub(identity_height + 6),
         );
         let mut lines = vec![
             Line::from(format!("Target: {}", self.target)),
@@ -650,7 +657,7 @@ impl Setup {
                 1,
             ),
         );
-        crate::visual::terminal_colors(frame.buffer_mut(), color, false);
+        crate::visual::terminal_colors(frame.buffer_mut(), color, rgb);
     }
 }
 
@@ -922,8 +929,59 @@ mod tests {
         assert_eq!(port.sent.len(), 1);
         for field in &setup.fields {
             assert_eq!(field.text, value_text(&field.descriptor.default));
+            assert!(!field.descriptor.key.starts_with("tui."));
+        }
+        assert!(
+            setup
+                .edits()
+                .unwrap()
+                .iter()
+                .all(|edit| { !matches!(edit, Edit::Set { key, .. } if key.starts_with("tui.")) })
+        );
+    }
+    #[test]
+    fn setup_uses_shared_relief_identity_and_preserves_rgb_shadows() {
+        for (color, ascii, rgb) in [
+            (true, false, true),
+            (true, false, false),
+            (false, true, false),
+        ] {
+            let setup = Setup::new("/fixture/.fluzo".into(), false);
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+            terminal
+                .draw(|frame| setup.render_with_capabilities(frame, color, ascii, rgb))
+                .unwrap();
+            let mut expected = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 30, 3));
+            use ratatui::widgets::Widget;
+            Paragraph::new(crate::identity::wordmark(
+                std::time::Duration::ZERO,
+                color,
+                rgb,
+                ascii,
+            ))
+            .render(Rect::new(0, 0, 30, 3), &mut expected);
+            for row in 0..if ascii { 1 } else { 3 } {
+                for column in 0..30 {
+                    assert_eq!(
+                        terminal.backend().buffer()[(column + 2, row + 1)].symbol(),
+                        expected[(column, row)].symbol()
+                    );
+                }
+            }
+            if color && rgb {
+                assert!(terminal.backend().buffer().content.iter().any(|cell| {
+                    matches!(
+                        (cell.fg, cell.bg),
+                        (
+                            ratatui::style::Color::Rgb(..),
+                            ratatui::style::Color::Rgb(..)
+                        )
+                    ) && cell.fg != cell.bg
+                }));
+            }
         }
     }
+
     #[test]
     fn setup_buffers_resize_redact_and_preserve_fields() {
         let mut port = port(Discovery::Missing);

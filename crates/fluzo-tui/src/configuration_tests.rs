@@ -71,6 +71,28 @@ impl ConfigurationPort for Port {
         Ok(id)
     }
 }
+#[test]
+fn mvp_developer_entry_opens_real_presentation_settings_without_demo_actions() {
+    let mut port = Port::new();
+    assert!(port.snapshot.effective_ui.dev_menu);
+    let mut workspace = crate::workspace::Workspace::new("/fixture", false).unwrap();
+    workspace.poll(&mut port);
+    workspace.key(
+        KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+        &mut port,
+    );
+    for character in "Developer menu".chars() {
+        workspace.key(
+            KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
+            &mut port,
+        );
+    }
+    workspace.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut port);
+    assert!(workspace.configuration.open);
+    assert_eq!(workspace.configuration.filter, "tui.");
+    assert!(port.requests.is_empty());
+}
+
 fn press(view: &mut ConfigurationView, port: &mut Port, code: KeyCode, modifiers: KeyModifiers) {
     view.key(KeyEvent::new(code, modifiers), port);
 }

@@ -159,6 +159,7 @@ pub fn run_demo(
     options: VisualOptions,
     scenes: &[Snapshot],
 ) -> io::Result<()> {
+    let safe_screen_settings = options.safe_screen_settings;
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(io::Error::other(
             "Interactive demo requires terminal stdin and stdout; use 'fluzo demo' for plain output.",
@@ -199,7 +200,9 @@ pub fn run_demo(
             .push(signal_hook::flag::register(signal, stop.clone())?);
     }
     let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
-    let color = !limited && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+    let color = !limited
+        && !safe_screen_settings
+        && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
     shell.preferences.ascii |= limited;
     shell.truecolor = !limited
         && (std::env::var("COLORTERM")
@@ -382,6 +385,16 @@ pub fn run_setup(
     explicit: bool,
     ascii: bool,
 ) -> io::Result<bool> {
+    run_setup_with_screen_settings(port, target, explicit, ascii, false)
+}
+
+pub fn run_setup_with_screen_settings(
+    port: &mut dyn fluzo_core::configuration::ConfigurationPort,
+    target: String,
+    explicit: bool,
+    ascii: bool,
+    safe_screen_settings: bool,
+) -> io::Result<bool> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(io::Error::other(
             "Setup requires terminal stdin and stdout.",
@@ -390,6 +403,10 @@ pub fn run_setup(
     let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
     let mut workspace =
         crate::workspace::Workspace::new(&target, ascii || limited).map_err(io::Error::other)?;
+    workspace.shell.truecolor = !limited
+        && (std::env::var("COLORTERM")
+            .is_ok_and(|value| matches!(value.as_str(), "truecolor" | "24bit"))
+            || std::env::var("TERM").is_ok_and(|value| value == "xterm-ghostty"));
     let mut normal = false;
     let mut setup = crate::setup::Setup::new(target, explicit);
     let stop = Arc::new(AtomicBool::new(false));
@@ -404,7 +421,9 @@ pub fn run_setup(
             .push(signal_hook::flag::register(signal, stop.clone())?);
     }
     let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
-    let color = !limited && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+    let color = !limited
+        && !safe_screen_settings
+        && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
     let mut output = io::stdout();
     let mut guard = TerminalGuard::enter(&mut output)?;
     let previous_hook = std::panic::take_hook();
@@ -451,7 +470,12 @@ pub fn run_setup(
                     if normal {
                         workspace.render(frame, color);
                     } else {
-                        setup.render(frame, color, ascii || limited);
+                        setup.render_with_capabilities(
+                            frame,
+                            color,
+                            ascii || limited,
+                            workspace.shell.truecolor,
+                        );
                     }
                 })?;
                 dirty = false;

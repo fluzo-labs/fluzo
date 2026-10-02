@@ -177,7 +177,74 @@ No new dependencies, protocol changes or write capabilities are introduced.
 Human visual/parent acceptance and correction publication remain separate; live
 inference is not_run. These fixes do not accept or close #46/#8.
 
+### S3 visual color correction
+
+Human review of `1705ddb` in Ghostty found a gray normal shell and a flattened
+wordmark. Normal startup left the shell's truecolor capability disabled, unlike
+the explicit demo. It now uses the same TERM/COLORTERM detection, preserving
+NO_COLOR and limited-terminal behavior without changing the artwork or FPS policy.
+This is a scoped #46 correction under the S3 design sections cited above.
+
+The actual-binary settings PTY regression failed before the fix for Ghostty,
+COLORTERM=truecolor and COLORTERM=24bit because RGB output was absent. All now
+pass, along with non-RGB, NO_COLOR and Linux-console profiles and the setup F2
+handoff. These checks retain file preservation, CLI-lock/Apply, resize, terminal
+restoration and zero requests to the fixture listener. The workspace's 197 Rust
+cases, 67 Python cases, fmt, Clippy and dependency-boundary checks passed; the
+added RGB setup-handoff subcase also passed in the focused settings suite.
+Corrected human appearance remains pending review; no visual acceptance or issue
+closure is implied. Live inference is not_run.
+
+### Requested startup and setup revisions
+
+The S3 human review requested screen defaults instead of setup questions, a
+conservative startup option and an enabled MVP developer-menu default. The setup
+form no longer submits TUI edits; future screen preferences come from the registry.
+The full shared relief wordmark and RGB palette now appear in setup as well as the
+normal shell, with ASCII and limited-color fallbacks. Presentation settings remain
+available through ordinary Configuration and Developer menu > Presentation settings.
+The latter is a typed-editor entry, not the synthetic demo or complete C3 delivery.
+
+`fluzo --safe-screen-settings` selects ASCII, no color, FPS 0, reduced motion,
+no render diagnostics and no desktop notifications for this invocation. It takes
+precedence over conflicting valid visual flags regardless of order. Emergency
+values are CLI-locked and are not written by setup; files are not reset or repaired.
+Reopen without the option to use normal presentation. Existing-file Save still
+requires the supported coordinated host; this option does not bypass that policy.
+The shared `tui.dev_menu` default is true for the MVP; explicit configuration and
+CLI disable remain respected. The review launchers must not disable it implicitly.
+These requested changes are local review work, not a published design revision.
+
+Repeated PTY resize checks preserve 80x24, 120x40 and 160x50 dimensions and reject
+window-resize escape sequences. Inspection of Ratatui 0.29 confirms `resize` only
+updates buffers and clears the viewport. The reported Ghostty/Wayland window-size
+reset has not been reproduced or fixed; compositor/emulator behavior needs an
+actual-window reproduction on Wayland. A disposable, owned Ghostty 1.3.1 X11
+window retained three requested pixel sizes (960x600, 1280x800, 800x500) over
+bounded two-second observation intervals. That does not prove Wayland behavior.
+No terminal preferences or KWin rules were changed.
+
+Local/LAN model discovery would add explicit network operations to the currently
+offline configuration protocol and needs its endpoint, consent, timeout, response
+bounds and dependency contracts reviewed before implementation. It is not supplied
+by the current manual endpoint/model form. GitHub provider integration is deferred
+by user instruction to a later user story. No discovery traffic or inference was
+performed, and none of these changes establishes S3 or parent acceptance.
+
+The resulting local working tree passed 200 Rust cases and 69 Python cases,
+including safe-screen file preservation, unchanged setup screen defaults,
+MVP developer-entry navigation, setup relief buffers and repeated-resize PTYs.
+`cargo fmt --all -- --check`, workspace check/build/Clippy with locked offline
+resolution and `python3 -B scripts/check_dev_setup.py` passed. Python unittest
+discovery includes the existing simulator and LSP fixtures; no live inference ran.
+The old default-disabled developer-menu assertion initially failed after the
+requested default change; it now verifies default-enabled and explicit-disabled
+behavior separately. No fixture assertion was removed to hide the resize report.
+
 ## Offline setup (UI-03 S2)
+
+The following describes the S2 baseline; the S3 review revisions above remove
+screen questions while retaining its offline and write-capability boundaries.
 
 S2 (#45, refinement R2) uses the write-capability decision in fluzo-docs #11,
 revision `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, PRD 26.1 and architecture
@@ -420,8 +487,10 @@ The table describes the current implementation, not a separate schema.
 | `tui.flags.render_diagnostics` | Show aggregate rendering diagnostics | Boolean | Off | Live presentation |
 | `tui.notifications.desktop_enabled` | Explicit desktop opt-in | Boolean | Off | Session Apply; Ghostty only |
 
-The Developer Menu is disabled by default. Start the demo with `--dev-menu` and
-open it through the command palette; `--no-dev-menu` wins if both are supplied.
+The Developer Menu is enabled by default during the MVP, as requested during
+S3 human review. Open it through the command palette; an explicit `--no-dev-menu`
+still wins over `--dev-menu`. Ordinary startup offers Developer menu > Presentation
+settings through the shared typed editor, without synthetic runtime actions.
 The theme picker exposes only `tui.theme`. The Developer Menu exposes these five
 controls, a separate synthetic notification-text editor and an in-app preview.
 Neither synthetic action is a persistent setting.

@@ -22,7 +22,7 @@ class ConfigurationTests(unittest.TestCase):
         test_setup.SetupTests.setUpClass()
         cls.binary = test_setup.SetupTests.binary
 
-    def exercise(self, missing=False, terminate=False):
+    def exercise(self, missing=False, terminate=False, terminal_environment=None, expect_rgb=False, safe_screen=False):
         with tempfile.TemporaryDirectory(prefix="fluzo-s3-pty-") as directory, socket.socket() as listener:
             root = Path(directory)
             listener.bind(("127.0.0.1", 0))
@@ -35,8 +35,12 @@ class ConfigurationTests(unittest.TestCase):
             master, slave = pty.openpty()
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
             before = termios.tcgetattr(slave)
-            child = subprocess.Popen([self.binary, "--animation-fps", "0", "--no-dev-menu"], cwd=root,
-                env={"HOME": directory, "XDG_CONFIG_HOME": directory, "TERM": "xterm-256color", "NO_COLOR": "1"},
+            environment = {"TERM": "xterm-256color", "NO_COLOR": "1"} if terminal_environment is None else terminal_environment
+            arguments = [self.binary, "--animation-fps", "0", "--no-dev-menu"]
+            if safe_screen:
+                arguments.append("--safe-screen-settings")
+            child = subprocess.Popen(arguments, cwd=root,
+                env={"HOME": directory, "XDG_CONFIG_HOME": directory, **environment},
                 stdin=slave, stdout=slave, stderr=slave)
             screen = Screen()
             output = bytearray()
@@ -61,12 +65,27 @@ class ConfigurationTests(unittest.TestCase):
                     original = (root / ".fluzo").read_text()
                     os.write(master, b"\x1bOQ")
                 wait(b"Configuration workspace")
+                if expect_rgb:
+                    self.assertRegex(bytes(output), rb"\x1b\[(?:\d+;)*38;2;\d+;\d+;\d+[;m]")
+                    self.assertRegex(bytes(output), rb"\x1b\[(?:\d+;)*48;2;\d+;\d+;\d+[;m]")
+                else:
+                    self.assertNotRegex(bytes(output), rb"\x1b\[(?:\d+;)*(?:38|48);2;")
                 os.write(master, b"\x1b[200~preserved composer\x1b[201~\x10")
                 wait(b"Commands / configuration only")
                 self.assertNotIn(b"Play synthetic", screen.text())
                 os.write(master, b"Theme\r")
                 wait(b"tui.theme = default")
                 wait(b"ReadOnly")
+                if safe_screen:
+                    os.write(master, b"\x15tui.animation_fps")
+                    wait(b"Effective 0")
+                    os.write(master, b"\x03")
+                    child.wait(timeout=8)
+                    self.assertEqual(child.returncode, 0)
+                    self.assertEqual(termios.tcgetattr(slave), before)
+                    self.assertEqual((root / ".fluzo").read_text(), original)
+                    self.assertNotRegex(bytes(output), rb"\x1b\[(?:\d+;)*(?:38|48);2;")
+                    return
                 os.write(master, b"\x1b[C\x01")
                 wait(b"Completed: Applied")
                 wait(b"Effective high-contrast")
@@ -107,6 +126,14 @@ class ConfigurationTests(unittest.TestCase):
                 wait(b"resize required")
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
                 wait(b"FLUZO / Configuration")
+                for rows, columns in [(50, 160), (40, 120), (24, 80)]:
+                    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+                    os.write(master, b"\x15tui.theme")
+                    wait(b"Search: tui.theme")
+                    self.assertEqual(struct.unpack("HHHH", fcntl.ioctl(slave, termios.TIOCGWINSZ, b"\0" * 8))[:2], (rows, columns))
+                    os.write(master, b"\x15tui.animation_fps")
+                    wait(b"Search: tui.animation_fps")
+                self.assertNotRegex(bytes(output), rb"\x1b\[(?:4|8);\d+;\d+t|\x1b\[\?3[hl]")
                 if terminate:
                     child.send_signal(signal.SIGTERM)
                 else:
@@ -135,3 +162,22 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_settings_signal_restores_terminal(self):
         self.exercise(terminate=True)
+
+    def test_normal_shell_honors_terminal_color_capabilities(self):
+        profiles = [
+            ({"TERM": "xterm-ghostty"}, True),
+            ({"TERM": "xterm-256color", "COLORTERM": "truecolor"}, True),
+            ({"TERM": "xterm-256color", "COLORTERM": "24bit"}, True),
+            ({"TERM": "xterm-256color"}, False),
+            ({"TERM": "xterm-ghostty", "NO_COLOR": "1"}, False),
+            ({"TERM": "linux", "COLORTERM": "truecolor"}, False),
+            ({"TERM": "dumb", "COLORTERM": "truecolor"}, False),
+        ]
+        for environment, expect_rgb in profiles:
+            with self.subTest(environment=environment):
+                self.exercise(terminal_environment=environment, expect_rgb=expect_rgb)
+        with self.subTest(entry="setup handoff"):
+            self.exercise(missing=True, terminal_environment={"TERM": "xterm-ghostty"}, expect_rgb=True)
+
+    def test_safe_screen_keeps_existing_configuration(self):
+        self.exercise(terminal_environment={"TERM": "xterm-ghostty"}, safe_screen=True)

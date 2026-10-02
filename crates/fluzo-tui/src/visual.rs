@@ -19,6 +19,7 @@ pub struct VisualOptions {
     pub settings: TuiSettings,
     pub locked: BTreeSet<String>,
     pub ascii: bool,
+    pub safe_screen_settings: bool,
     pub repository: String,
 }
 
@@ -64,12 +65,25 @@ impl VisualOptions {
                     options.ascii = true;
                     continue;
                 }
+                "--safe-screen-settings" => {
+                    options.safe_screen_settings = true;
+                    continue;
+                }
                 _ => return Err("Unknown visual option; use --help for supported demo options."),
             };
             options.locked.insert(key.to_owned());
         }
         if disable_menu {
             options.settings.dev_menu = false;
+        }
+        if options.safe_screen_settings {
+            options.ascii = true;
+            options.settings.theme = "high-contrast".into();
+            options.settings.animation_fps = 0;
+            options.settings.reduced_motion = true;
+            options.settings.notifications.desktop_enabled = false;
+            options.settings.flags.render_diagnostics = false;
+            options.locked.extend(VISUAL_KEYS.map(str::to_owned));
         }
         validate(&options.settings)?;
         Ok(options)
@@ -543,6 +557,35 @@ mod tests {
                     Duration::from_millis(50)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn safe_screen_settings_override_visual_flags_without_disabling_devmenu() {
+        for arguments in [
+            vec![
+                "--safe-screen-settings",
+                "--animation-fps",
+                "60",
+                "--desktop-notifications",
+            ],
+            vec![
+                "--animation-fps",
+                "60",
+                "--desktop-notifications",
+                "--safe-screen-settings",
+            ],
+        ] {
+            let arguments = arguments.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let options = VisualOptions::parse(&arguments).unwrap();
+            assert!(options.safe_screen_settings && options.ascii);
+            assert_eq!(options.settings.animation_fps, 0);
+            assert_eq!(options.settings.theme, "high-contrast");
+            assert!(options.settings.reduced_motion);
+            assert!(!options.settings.notifications.desktop_enabled);
+            assert!(!options.settings.flags.render_diagnostics);
+            assert_eq!(options.settings.dev_menu, TuiSettings::default().dev_menu);
+            assert!(VISUAL_KEYS.iter().all(|key| options.locked.contains(*key)));
         }
     }
 

@@ -5,6 +5,23 @@ terminal shell, multiline composer and searchable command palette. References:
 PRD 29/30/31 and architecture A07, section 12, at baseline
 `60c5b0732fb710cdf705476cee8d9156a5ecd971`.
 
+## S3 human-review revisions
+
+Setup uses built-in screen defaults without asking for theme, FPS, motion or
+Developer Menu values. It shares the full FLUZO relief identity and honors RGB,
+ASCII and no-color capabilities. `fluzo --safe-screen-settings` starts with ASCII,
+no color, FPS 0, reduced motion and no desktop notifications or render diagnostics.
+It does not rewrite saved preferences; reopen without the flag for normal display.
+The MVP developer menu is enabled by default. In the ordinary palette its
+Presentation settings entry opens the real typed editor, not synthetic playback.
+Explicit `--no-dev-menu` remains supported for fallback and regression checks.
+
+Resize is driven by the current terminal dimensions, never a configured default.
+Repeated PTYs check dimensions and absence of window-resize control sequences;
+the reported physical Ghostty/Wayland resize reset remains unverified. These
+checks do not substitute for human review. Model discovery is not implemented;
+GitHub provider work is deferred to a later story.
+
 ## S3 normal configuration
 
 S3 (#46 R2) exposes Configuration through Ctrl+P in ordinary interactive startup
@@ -1049,7 +1066,7 @@ cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo --interactive --an
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo --interactive --theme high-contrast --reduced-motion
 ```
 
-The CLI accepts visual options only after `demo --interactive`. Animation FPS
+The CLI accepts visual options in ordinary startup and after `demo --interactive`. Animation FPS
 accepts every integer 0 through 60, default 60; 30 and 15 reduce scheduling work,
 0 disables motion. Reduced motion takes precedence. `--no-dev-menu` wins over
 `--dev-menu` regardless of ordering. Unknown options, invalid rates and unknown
