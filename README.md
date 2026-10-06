@@ -49,13 +49,15 @@ acceptance. See [AGENTS.md](AGENTS.md) for boundaries and verified commands and
 See [CONFIGURATION.md](CONFIGURATION.md) for the FND-02 library APIs, shared defaults,
 validation, dependency policy and scope. `fluzo` opens offline setup when configuration
 is missing; `fluzo init` explicitly opens setup, and `--config` selects a workspace-scoped
-file. Creation requires review and confirmation. Existing files are not replaced by
-the ordinary CLI host; coordinated replacement is limited to controlled hosts.
+file. Creation requires review and confirmation. Fluzo owns `.fluzo` and replaces
+it when you save, trusting Git instead of a backup copy; when the file changes
+outside Fluzo a banner offers Ctrl+R reload or Ctrl+K keep-ours.
 Headless missing-config startup returns structured `configuration_required` on stderr.
 With valid configuration, interactive startup opens the normal configuration-only
 shell: Ctrl+P opens settings without devmenu, F1 shows editing help. After ordinary
 setup creation, F2 explicitly enters that shell. Presentation Apply is available;
-Save replacement remains restricted to controlled hosts. The explicit demo remains
+Save writes the file directly and rebases onto any outside version so unrelated
+keys survive. The explicit demo remains
 isolated. No provider is contacted. Production active runtime application remains unavailable.
 Runtime tests, benchmarks and
 release packaging will be documented when implemented. [APPLICATION.md](APPLICATION.md)

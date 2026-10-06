@@ -93,16 +93,20 @@ pub fn run(arguments: &[OsString]) -> ExitCode {
             value,
         })
         .collect();
-    let mut service =
-        match ConfigurationService::start(workspace, config, overrides, WritePolicy::CreateOnly) {
-            Ok(service) => service,
-            Err(error) => {
-                return result(
-                    "configuration_unavailable",
-                    &fluzo_tui::setup::diagnostic(&error),
-                );
-            }
-        };
+    let mut service = match ConfigurationService::start(
+        workspace,
+        config,
+        overrides,
+        WritePolicy::LocalWorkspace,
+    ) {
+        Ok(service) => service,
+        Err(error) => {
+            return result(
+                "configuration_unavailable",
+                &fluzo_tui::setup::diagnostic(&error),
+            );
+        }
+    };
     if io::stdin().is_terminal() && io::stdout().is_terminal() {
         let mut discovery = match fluzo_runtime::model_discovery::ModelDiscoveryService::start() {
             Ok(service) => service,

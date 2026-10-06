@@ -42,6 +42,8 @@ impl Port {
                 dropped_changes: 0,
                 setup: None,
                 backup: None,
+                external_change: None,
+                external_sequence: 0,
                 save_unavailable: None,
                 apply_unavailable: None,
                 remaining_requests: MAX_REQUESTS,
@@ -1198,4 +1200,79 @@ fn workspace_has_no_synthetic_tasks_and_preserves_composer_across_settings() {
     assert!(!output.contains("Demo session"));
     assert!(!output.contains("synthetic"));
     assert!(port.requests.is_empty());
+}
+
+#[test]
+fn outside_change_shows_a_banner_until_keep_ours_is_pressed() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    assert!(view.external_notice().is_none());
+    port.snapshot.external_change = Some(ExternalChange::Modified);
+    view.poll(&mut port);
+    assert!(
+        view.external_notice()
+            .is_some_and(|notice| notice.contains("changed outside Fluzo"))
+    );
+    let rendered = text(&view, 120, 40, true);
+    assert!(rendered.contains("changed outside Fluzo"), "{rendered}");
+    port.snapshot.external_change = Some(ExternalChange::Removed);
+    port.snapshot.external_sequence = 2;
+    view.poll(&mut port);
+    assert!(
+        view.external_notice()
+            .is_some_and(|notice| notice.contains("deleted outside Fluzo"))
+    );
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    );
+    assert!(view.external_notice().is_none());
+    assert!(view.status.contains("Keeping our draft"));
+    port.snapshot.external_sequence = 3;
+    view.poll(&mut port);
+    assert!(
+        view.external_notice()
+            .is_some_and(|notice| notice.contains("deleted outside Fluzo")),
+        "a second outside edit of the same kind must surface again after acknowledgement"
+    );
+}
+
+#[test]
+fn keep_ours_needs_an_outside_change_and_waits_for_pending_writes() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    );
+    assert!(view.status.contains("No outside change to acknowledge"));
+    assert!(!view.external_ack);
+    port.snapshot.external_change = Some(ExternalChange::Appeared);
+    view.poll(&mut port);
+    view.pending = Some(Pending {
+        id: ConfigurationRequestId(7),
+        intent: Intent::Save,
+        editing: false,
+        keys: vec![],
+    });
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    );
+    assert!(!view.external_ack);
+    assert!(view.status.contains("Wait for pending completion"));
+    view.pending = None;
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('k'),
+        KeyModifiers::CONTROL,
+    );
+    assert!(view.external_ack);
 }

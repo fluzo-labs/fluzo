@@ -1170,6 +1170,8 @@ mod tests {
                 dropped_changes: 0,
                 setup: None,
                 backup: None,
+                external_change: None,
+                external_sequence: 0,
             },
             sent: vec![],
         }

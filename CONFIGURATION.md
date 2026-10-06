@@ -59,7 +59,7 @@ Help, replacement inputs, collection-name inputs and F4 advanced setup reuse the
 same frame and title rather than switching to a separate full-screen form. See
 TUI.md for layout, fallback profiles and pending human visual review.
 
-The editor uses owned descriptors from configuration protocol 4. Types, defaults,
+The editor uses owned descriptors from configuration protocol 5. Types, defaults,
 units, privacy, provenance, saved/draft/effective values and CLI locks are shown.
 Fixed schema values have no editable alternative. Models/pools have validated
 names and explicit add/remove operations; related changes validate together.
@@ -117,12 +117,11 @@ Closing during validation prevents the chained Save/Apply; dispatched effects
 still reconcile by request identity and are never automatically replayed.
 
 The runtime projects Save/Apply unavailability and remaining request capacity.
-Ordinary hosts remain CreateOnly: replacement is unavailable even after setup
-created the file. Session presentation Apply is independent of that restriction.
-Real replacement tests run only through the controlled coordinated host. No CLI
-flag, confirmation or config data grants this capability. Operational Apply stays
-unavailable; restart state is pending only. CLI overrides govern active settings,
-not the separately saved future defaults.
+The normal host runs with `LocalWorkspace`, so Save replaces the existing `.fluzo`
+with the user's edits. No CLI flag, confirmation or config data grants this
+capability; the host wiring does. Session presentation Apply stays independent.
+Operational Apply stays unavailable; restart state is pending only. CLI overrides
+govern active settings, not the separately saved future defaults.
 
 The service retains 64 request records without eviction. Keystrokes remain local;
 a Validate/Edit consumes one record, chained Save/Apply needs a second. Exhaustion
@@ -312,8 +311,8 @@ persisted. This is a catalog-header reference, not an implemented inference adap
 coder/shadow/local for its manual fields and selects the first discovered alias
 when no manual coder is configured. Ordinary settings do not change agent.model;
 select it explicitly there. Save remains separate: setup still requires review
-and confirmation, and existing-file replacement remains unavailable in ordinary
-hosts. The wizard grants no write capability or permission for later inference.
+and confirmation. The wizard grants no permission for later inference and sends
+no request beyond the catalog query the user triggered.
 
 Focused checks: `cargo test -p fluzo-runtime --locked --offline model_discovery`,
 `cargo test -p fluzo-tui --locked --offline model_wizard`, and
@@ -361,6 +360,57 @@ discovery includes the existing simulator and LSP fixtures; no live inference ra
 The old default-disabled developer-menu assertion initially failed after the
 requested default change; it now verifies default-enabled and explicit-disabled
 behavior separately. No fixture assertion was removed to hide the resize report.
+
+## Local writes and outside changes
+
+The operator decision for this workspace is that Fluzo owns `.fluzo`: the tool
+may replace the file whenever the user saves, and outside edits are information
+to surface rather than a write barrier. `fluzo-cli` starts the configuration
+service with `WritePolicy::LocalWorkspace`, so no Save path returns `ReadOnly`
+for an existing file. Replacement stays atomic: new bytes go to a temporary file
+in the same directory and move into place with a directory rename, so a crash
+cannot leave a truncated configuration.
+
+No backup is created. The workspace relies on Git to recover a bad save. The
+existing backup machinery stays available to hosts that ask for it; the normal
+Save path passes `backup: false`.
+
+Because the file can now change underneath the writer, the worker polls it. Every
+two seconds it stats the target and compares a fingerprint (device, inode,
+length, mtime, ctime, mode, link count) against the last identity this writer
+owned. A mismatch is classified as `Appeared`, `Modified` or `Removed`, recorded
+on the snapshot as `external_change`, and counted by `external_sequence` so a
+notice the user already acknowledged resurfaces when the file moves again. A
+failed probe is not evidence of an edit: the last known state is kept and the
+next poll retries. Detection adds no dependency; `notify`/`inotify` stay out of
+the lockfile.
+
+The settings view shows a banner naming the kind of change and offers two
+answers. `Ctrl+R` reloads, adopting the outside bytes and discarding the local
+draft. `Ctrl+K` keeps our draft and hides the banner. Neither touches the file.
+
+Save is deliberately the "our edits win" path. When a Save arrives while an
+outside change is pending, the service first rebases onto the file actually on
+disk: the outside bytes become the saved baseline, then only the keys the user
+touched are applied on top. Unrelated keys the outside edit introduced survive,
+and the user's intent is not lost to a conflict error. For this to work the
+polling check must not bump the snapshot version; bumping it would make the view's
+own stale-draft guard reject the Save instead of performing it.
+
+Focused checks: `cargo test -p fluzo-runtime --lib --locked --offline
+configuration` covers classification without version changes, the rebase merge
+that preserves an unrelated outside key, recreation of a file removed outside
+Fluzo, reload adoption and a real two-second worker poll. `cargo test -p
+fluzo-tui --locked --offline configuration` covers banner rendering,
+acknowledgement, resurfacing on a later change and the pending-write guard.
+The PTY case `test_outside_change_banner_offers_keep_ours_then_reload` in
+`scripts/test_configuration.py` drives the real binary through banner,
+keep-ours, Save merge and reload.
+
+This relaxes the read-only-for-replacement boundary previously described for
+ordinary hosts. It changes a default with security relevance, so the project
+documentation baseline (PRD 26.1 and architecture 10.2) needs a matching
+amendment in `fluzo-docs` before this is treated as accepted policy.
 
 ## Friendly repository creation
 
@@ -523,9 +573,10 @@ directory handles with no-follow opens; parent traversal, directory symlinks,
 non-regular targets and multiply-linked configuration files are rejected.
 Parent identity and target content/metadata are checked before saving.
 
-For replacement, the host must explicitly select `CoordinatedLocalWriters` only for a trusted,
-stable workspace where all concurrent writers honor the same parent-directory
-exclusive lock. Use `ReadOnly` or S2's exclusive `CreateOnly` otherwise. This is an integration precondition,
+For replacement, the host must explicitly select `LocalWorkspace` (renamed from
+`CoordinatedLocalWriters`) for a trusted, stable workspace where all concurrent
+writers honor the same parent-directory exclusive lock. Use `ReadOnly` or
+`CreateOnly` otherwise. This is an integration precondition,
 not user consent, an OS sandbox or protection against arbitrary editors or a
 hostile process that ignores locks. The adapter cannot detect that all external
 writers cooperate or certify a network filesystem. No caller may silently opt

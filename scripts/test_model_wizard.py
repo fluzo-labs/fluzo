@@ -103,16 +103,27 @@ class ModelWizardTests(unittest.TestCase):
                 os.write(master, b"\r")
                 wait(b"Discovered model staged" if existing else b"Models ready to add:")
                 if existing:
-                    wait(b"ReadOnly")
+                    wait(b"Save: available")
                     os.write(master, b"\x16")
                     wait(b"Draft validated")
                     os.write(master, b"\x13")
-                    wait(b"ReadOnly")
+                    wait(b"Completed: Saved")
                     os.write(master, b"\x03")
                     child.wait(timeout=8)
                     self.assertEqual(child.returncode, 0)
                     self.assertEqual(termios.tcgetattr(slave), before)
-                    self.assertEqual((root / ".fluzo").read_bytes(), baseline)
+                    document = tomllib.loads((root / ".fluzo").read_text())
+                    models = document.get("models", {})
+                    pools = document.get("capacity_pools", {})
+                    expected = (
+                        ["reviewmodel"]
+                        if not multiple
+                        else ["reviewmodel_1", "reviewmodel_2"]
+                    )
+                    for alias in expected:
+                        self.assertIn(alias, models)
+                        self.assertIn(alias, pools)
+                        self.assertEqual(models[alias]["base_url"], endpoint + "/v1")
                     self.assertEqual(select.select([listener], [], [], 0)[0], [])
                     return
                 os.write(master, b"\r")

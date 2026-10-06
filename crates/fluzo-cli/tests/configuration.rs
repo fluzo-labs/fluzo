@@ -69,7 +69,7 @@ fn review_regression_removed_collection_does_not_poison_later_saves() {
         "schema_version = 1\n[capacity_pools.old]\n",
     )
     .unwrap();
-    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut service = root.service(WritePolicy::LocalWorkspace);
     let mut view = view(&mut service);
     view.stage(Edit::RemovePool { name: "old".into() }).unwrap();
     view.save(&mut service);
@@ -97,7 +97,7 @@ fn review_regression_removed_collection_does_not_poison_later_saves() {
 #[test]
 fn review_regression_operational_save_does_not_poison_presentation_apply() {
     let root = Root::new();
-    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut service = root.service(WritePolicy::LocalWorkspace);
     let mut view = view(&mut service);
     set(&mut view, "harness.max_turns", SettingValue::Integer(45));
     view.save(&mut service);
@@ -132,7 +132,7 @@ fn normal_view_real_save_apply_preserves_redacted_values_and_comments() {
     let root = Root::new();
     let original = "schema_version = 1\n# retain this comment\n[project]\nname = 'private-fixture'\n[tools.shell.env]\nORIGINAL = 'unchanged'\n";
     fs::write(root.0.join(".fluzo"), original).unwrap();
-    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut service = root.service(WritePolicy::LocalWorkspace);
     let mut view = view(&mut service);
     set(
         &mut view,
@@ -160,7 +160,7 @@ fn normal_view_real_save_apply_preserves_redacted_values_and_comments() {
 }
 
 #[test]
-fn ordinary_host_refuses_replacement_but_applies_presentation() {
+fn create_only_policy_refuses_replacement_but_applies_presentation() {
     let root = Root::new();
     fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
     let mut service = root.service(WritePolicy::CreateOnly);
@@ -196,7 +196,7 @@ fn ordinary_host_refuses_replacement_but_applies_presentation() {
 #[test]
 fn collection_batch_and_all_value_types_round_trip_without_partial_save() {
     let root = Root::new();
-    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut service = root.service(WritePolicy::LocalWorkspace);
     let mut view = view(&mut service);
     view.stage(Edit::AddPool {
         name: "local".into(),
@@ -272,7 +272,7 @@ fn conflict_and_operational_apply_do_not_change_effective_or_replay() {
         encode_settings(&Settings::default()).unwrap(),
     )
     .unwrap();
-    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut service = root.service(WritePolicy::LocalWorkspace);
     let mut view = view(&mut service);
     set(&mut view, "harness.max_turns", SettingValue::Integer(45));
     view.apply(&mut service);
@@ -296,7 +296,7 @@ fn conflict_and_operational_apply_do_not_change_effective_or_replay() {
 fn editor_reconciles_real_write_failure_without_partial_file_changes() {
     let root = Root::new();
     fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
-    let mut service = root.service(WritePolicy::CoordinatedLocalWriters);
+    let mut service = root.service(WritePolicy::LocalWorkspace);
     let mut view = view(&mut service);
     let collision = root.0.join(format!(".fluzo-save-{}-1", std::process::id()));
     fs::write(&collision, "independent collision").unwrap();

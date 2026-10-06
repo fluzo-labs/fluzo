@@ -15,14 +15,7 @@ impl Root {
         Self(path)
     }
     fn state(&self) -> State {
-        State::open(
-            &self.0,
-            None,
-            vec![],
-            WritePolicy::CoordinatedLocalWriters,
-            99,
-        )
-        .unwrap()
+        State::open(&self.0, None, vec![], WritePolicy::LocalWorkspace, 99).unwrap()
     }
 }
 impl Drop for Root {
@@ -66,7 +59,7 @@ fn s3_capabilities_metadata_and_protocol_follow_runtime_policy() {
     for policy in [
         WritePolicy::ReadOnly,
         WritePolicy::CreateOnly,
-        WritePolicy::CoordinatedLocalWriters,
+        WritePolicy::LocalWorkspace,
     ] {
         let mut state = State::open(&root.0, None, vec![], policy, 1).unwrap();
         assert_eq!(
@@ -162,7 +155,7 @@ fn selected_save_apply_cancel_and_cli_are_independent() {
         &root.0,
         None,
         vec![set("tui.animation_fps", SettingValue::Integer(15))],
-        WritePolicy::CoordinatedLocalWriters,
+        WritePolicy::LocalWorkspace,
         99,
     )
     .unwrap();
@@ -230,6 +223,166 @@ fn selected_save_apply_cancel_and_cli_are_independent() {
         view.values["tui.theme"].saved_origin,
         SettingOrigin::SavedFuture
     );
+}
+
+#[test]
+fn outside_edits_are_classified_without_bumping_the_version() {
+    let root = Root::new();
+    let mut state = root.state();
+    assert!(state.file.probe().unwrap().is_empty());
+    fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
+    let version = state.version;
+    assert!(state.check_external().unwrap());
+    assert_eq!(state.external, Some(ExternalChange::Appeared));
+    assert_eq!(state.version, version);
+    assert_eq!(
+        state.snapshot().external_change,
+        Some(ExternalChange::Appeared)
+    );
+    assert!(!state.check_external().unwrap());
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n[tui]\nanimation_fps = 30\n",
+    )
+    .unwrap();
+    assert!(state.check_external().unwrap());
+    assert_eq!(state.external, Some(ExternalChange::Modified));
+    assert_eq!(state.external_sequence, 2);
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n[tui]\nanimation_fps = 45\n",
+    )
+    .unwrap();
+    assert!(state.check_external().unwrap());
+    assert_eq!(state.external, Some(ExternalChange::Modified));
+    assert_eq!(
+        state.external_sequence, 3,
+        "a repeat outside edit of the same kind must still advance the sequence"
+    );
+    fs::remove_file(root.0.join(".fluzo")).unwrap();
+    assert!(state.check_external().unwrap());
+    assert_eq!(state.external, Some(ExternalChange::Removed));
+    assert!(!state.check_external().unwrap());
+    assert_eq!(state.version, version);
+}
+
+#[test]
+fn save_after_an_outside_edit_keeps_unrelated_outside_keys() {
+    let root = Root::new();
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n# ours\n[tui]\ntheme = 'default'\n",
+    )
+    .unwrap();
+    let mut state = root.state();
+    edit(
+        &mut state,
+        vec![set("tui.theme", SettingValue::Text("high-contrast".into()))],
+    );
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n# theirs\n[tui]\ntheme = 'default'\nanimation_fps = 30\n",
+    )
+    .unwrap();
+    assert!(state.check_external().unwrap());
+    let version = state.version;
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::Save {
+                expected: version,
+                keys: keys(&["tui.theme"])
+            }
+        ),
+        Ok(ConfigurationOutcome::Saved)
+    );
+    assert_eq!(state.external, None);
+    let saved = fs::read_to_string(root.0.join(".fluzo")).unwrap();
+    let settings = parse_settings(&saved).unwrap();
+    assert_eq!(settings.tui.theme, "high-contrast");
+    assert_eq!(settings.tui.animation_fps, 30);
+    assert!(saved.contains("# theirs"));
+    assert_eq!(state.saved.tui.theme, "high-contrast");
+    assert_eq!(state.saved.tui.animation_fps, 30);
+    assert_eq!(state.snapshot().external_change, None);
+}
+
+#[test]
+fn save_recreates_a_file_removed_outside_fluzo() {
+    let root = Root::new();
+    fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
+    let mut state = root.state();
+    edit(
+        &mut state,
+        vec![set("tui.theme", SettingValue::Text("high-contrast".into()))],
+    );
+    fs::remove_file(root.0.join(".fluzo")).unwrap();
+    assert!(state.check_external().unwrap());
+    assert_eq!(state.external, Some(ExternalChange::Removed));
+    let version = state.version;
+    assert_eq!(
+        execute(
+            &mut state,
+            ConfigurationAction::Save {
+                expected: version,
+                keys: keys(&["tui.theme"])
+            }
+        ),
+        Ok(ConfigurationOutcome::Saved)
+    );
+    let saved = fs::read_to_string(root.0.join(".fluzo")).unwrap();
+    assert_eq!(parse_settings(&saved).unwrap().tui.theme, "high-contrast");
+    assert_eq!(state.external, None);
+    assert_eq!(state.discovery, Discovery::Valid);
+}
+
+#[test]
+fn reload_adopts_the_outside_version_and_clears_the_notice() {
+    let root = Root::new();
+    fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
+    let mut state = root.state();
+    edit(
+        &mut state,
+        vec![set("tui.theme", SettingValue::Text("high-contrast".into()))],
+    );
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n[tui]\nanimation_fps = 30\n",
+    )
+    .unwrap();
+    assert!(state.check_external().unwrap());
+    assert_eq!(
+        state.snapshot().external_change,
+        Some(ExternalChange::Modified)
+    );
+    execute(&mut state, ConfigurationAction::Reload).unwrap();
+    assert_eq!(state.external, None);
+    assert_eq!(state.draft.tui.animation_fps, 30);
+    assert_eq!(state.draft.tui.theme, "default");
+    assert_eq!(state.snapshot().external_change, None);
+}
+
+#[test]
+fn worker_polling_surfaces_an_outside_edit_without_a_request() {
+    let root = Root::new();
+    let mut service =
+        ConfigurationService::start(root.0.clone(), None, vec![], WritePolicy::LocalWorkspace)
+            .unwrap();
+    assert_eq!(ready(&mut service).external_change, None);
+    fs::write(root.0.join(".fluzo"), "schema_version = 1\n").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(EXTERNAL_POLL_SECONDS + 6);
+    loop {
+        let snapshot = ready(&mut service);
+        if snapshot.external_change == Some(ExternalChange::Appeared) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "outside edit never reached the projection"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    service.quiesce();
 }
 
 #[test]
@@ -441,13 +594,9 @@ fn completed(
 #[test]
 fn worker_port_bounds_replay_and_quiesce_preserve_completion() {
     let root = Root::new();
-    let mut service = ConfigurationService::start(
-        root.0.clone(),
-        None,
-        vec![],
-        WritePolicy::CoordinatedLocalWriters,
-    )
-    .unwrap();
+    let mut service =
+        ConfigurationService::start(root.0.clone(), None, vec![], WritePolicy::LocalWorkspace)
+            .unwrap();
     let snapshot = ready(&mut service);
     let request = ConfigurationRequest {
         protocol: CONFIGURATION_PROTOCOL,
@@ -725,13 +874,9 @@ fn queue_saturation_is_nonblocking_and_acknowledgement_is_not_completion() {
 #[test]
 fn lost_acknowledgement_and_worker_disconnect_never_replay_effects() {
     let root = Root::new();
-    let mut service = ConfigurationService::start(
-        root.0.clone(),
-        None,
-        vec![],
-        WritePolicy::CoordinatedLocalWriters,
-    )
-    .unwrap();
+    let mut service =
+        ConfigurationService::start(root.0.clone(), None, vec![], WritePolicy::LocalWorkspace)
+            .unwrap();
     let snapshot = ready(&mut service);
     let request = ConfigurationRequest {
         protocol: CONFIGURATION_PROTOCOL,

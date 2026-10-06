@@ -30,7 +30,7 @@ scenario adapter. No production runtime dependency is added to TUI.
 ## Explicit model-catalog discovery
 
 The user-requested local/LAN wizard uses `fluzo_core::model_discovery` protocol 2,
-separate from configuration protocol 4 and task protocol 1. Requests own an ID,
+separate from configuration protocol 5 and task protocol 1. Requests own an ID,
 endpoint and optional Authorization environment reference, never the secret value.
 Status owns Pending or bounded model IDs plus optional reported context/output/slot
 metadata. Protocol 1 is rejected. Leaving the URL field triggers one catalog GET
@@ -51,7 +51,7 @@ UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
 `fluzo_core::configuration::ConfigurationPort` alongside the task port, without
 changing task protocol version 1 or inventing tasks for configuration edits.
 Its separately versioned requests own typed values and a configuration request
-ID. Configuration protocol 4 retains protocol 2's typed diagnostic codes and optional UTF-8
+ID. Configuration protocol 5 retains protocol 2's typed diagnostic codes and optional UTF-8
 byte ranges in Invalid outcomes, including syntax, missing-version, size and
 encoding failures. It rejects protocols 1 and 2 instead of silently discarding new
 error fields; protocol 3 is also rejected by the S3 capability/descriptor extension.
@@ -75,9 +75,9 @@ ConfirmSetup with the prepared version. Preparation carries a bounded private
 candidate and observed original on the worker, not in a widget. Snapshots expose
 only a redacted SetupPreview and any retained backup basename. Confirm consumes
 preparation; intervening actions invalidate it. Replayed request IDs still return
-the retained outcome. Config protocol 4 is required; task protocol 1 is unchanged.
-See CONFIGURATION.md for CreateOnly versus coordinated replacement and backup
-failure/uncertainty semantics. No new dependencies or transport handles cross core. Submit
+the retained outcome. Config protocol 5 is required; task protocol 1 is unchanged.
+See CONFIGURATION.md for the LocalWorkspace write policy, outside-change polling
+and backup failure/uncertainty semantics. No new dependencies or transport handles cross core. Submit
 returns accepted identity, not effect completion. Status returns Unknown,
 Accepted, Completed with version/outcome, or Failed with a typed category.
 Identical request-ID retries return the existing record; changed payload reuse

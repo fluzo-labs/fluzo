@@ -65,6 +65,9 @@ pub struct ConfigurationView {
     close_after_save: bool,
     detail_scroll: u16,
     base: Option<Version>,
+    external_seen: Option<ExternalChange>,
+    external_sequence: u64,
+    external_ack: bool,
 }
 
 impl Default for ConfigurationView {
@@ -94,6 +97,9 @@ impl Default for ConfigurationView {
             close_after_save: false,
             detail_scroll: 0,
             base: None,
+            external_seen: None,
+            external_sequence: 0,
+            external_ack: false,
         }
     }
 }
@@ -528,11 +534,39 @@ impl ConfigurationView {
         self.send(port, action, intent, false, keys);
     }
 
+    /// Banner text for a configuration file touched by someone other than this
+    /// writer. Hidden once the operator acknowledges it; a new change shows it
+    /// again.
+    fn external_notice(&self) -> Option<&'static str> {
+        if self.external_ack {
+            return None;
+        }
+        match self.external_seen? {
+            ExternalChange::Appeared => Some(
+                "A .fluzo file appeared outside Fluzo. Ctrl+R reloads it and discards this draft; Ctrl+K keeps our edits and writes them over the new file on Save.",
+            ),
+            ExternalChange::Modified => Some(
+                ".fluzo changed outside Fluzo. Ctrl+R reloads it and discards this draft; Ctrl+K keeps our edits and writes them over the new file on Save.",
+            ),
+            ExternalChange::Removed => Some(
+                ".fluzo was deleted outside Fluzo. Ctrl+R reloads and discards this draft; Ctrl+K keeps our edits and recreates the file on Save.",
+            ),
+        }
+    }
+
     pub fn poll(&mut self, port: &mut dyn ConfigurationPort) -> bool {
         let mut changed = false;
         match port.snapshot() {
             Ok(snapshot) => {
                 self.next_id = self.next_id.max(snapshot.next_request_id.0);
+                if snapshot.external_change != self.external_seen
+                    || snapshot.external_sequence != self.external_sequence
+                {
+                    self.external_seen = snapshot.external_change;
+                    self.external_sequence = snapshot.external_sequence;
+                    self.external_ack = false;
+                    changed = true;
+                }
                 if self.snapshot.as_ref() != Some(&snapshot) {
                     self.snapshot = Some(snapshot);
                     self.select_first();
@@ -913,6 +947,21 @@ impl ConfigurationView {
             }
             return;
         }
+        if control && key.code == KeyCode::Char('k') {
+            if self.pending.is_some() {
+                self.status =
+                    "Wait for pending completion; no replay or implicit cancellation.".into();
+                return;
+            }
+            if self.external_seen.is_none() {
+                self.status = "No outside change to acknowledge.".into();
+                return;
+            }
+            self.external_ack = true;
+            self.status =
+                "Keeping our draft. Save writes our edited keys over the outside version; other outside keys are preserved.".into();
+            return;
+        }
         if control && matches!(key.code, KeyCode::Char('r' | 'x')) {
             if self.pending.is_some() {
                 self.status =
@@ -1282,7 +1331,9 @@ impl ConfigurationView {
                 )
             })
             .unwrap_or_else(|| "Loading...".into());
-        let header = vec![
+        let notice = self.external_notice();
+        let header_height = 2 + u16::from(notice.is_some());
+        let mut header = vec![
             Line::from(format!(
                 "Search: {} | Target: {}",
                 safe_text(&self.filter),
@@ -1290,12 +1341,18 @@ impl ConfigurationView {
             )),
             Line::from(available),
         ];
+        if let Some(notice) = notice {
+            header.push(Line::styled(safe_text(notice), theme.warning));
+        }
         frame.render_widget(
             Paragraph::new(header).style(theme.muted),
-            Rect::new(inner.x, inner.y, inner.width, 2),
+            Rect::new(inner.x, inner.y, inner.width, header_height),
         );
         let detail_height = inner.height.saturating_sub(7).min(4);
-        let list_height = inner.height.saturating_sub(6 + detail_height).max(1);
+        let list_height = inner
+            .height
+            .saturating_sub(4 + header_height + detail_height)
+            .max(1);
         let keys = self.keys();
         let selected = keys
             .iter()
@@ -1358,7 +1415,7 @@ impl ConfigurationView {
             .collect();
         frame.render_widget(
             Paragraph::new(lines),
-            Rect::new(inner.x, inner.y + 2, inner.width, list_height),
+            Rect::new(inner.x, inner.y + header_height, inner.width, list_height),
         );
         let mut details = Vec::new();
         if let Some(descriptor) = self.descriptors().get(&self.selected) {
@@ -1405,7 +1462,7 @@ impl ConfigurationView {
                 .scroll((self.detail_scroll, 0)),
             Rect::new(
                 inner.x,
-                inner.y + 2 + list_height,
+                inner.y + header_height + list_height,
                 inner.width,
                 detail_height,
             ),
@@ -1422,7 +1479,7 @@ impl ConfigurationView {
                 },
             ),
             Line::from("Ctrl+S save | Ctrl+A apply | Ctrl+V validate | Esc back"),
-            Line::from("Ctrl+X cancel | Ctrl+R reload | PgUp/PgDn details"),
+            Line::from("Ctrl+X cancel | Ctrl+R reload | Ctrl+K keep ours | PgUp details"),
         ];
         frame.render_widget(
             Paragraph::new(footer).style(theme.muted),
@@ -1436,7 +1493,7 @@ impl ConfigurationView {
                 "Configuration help",
                 color,
             );
-            frame.render_widget(Paragraph::new("Configuration help\nType to search; Ctrl+U shows all basic/advanced fields.\nUp/Down/Tab select; Enter edits. Booleans and choices: Left/Right choose, Enter stages, Esc cancels. Numbers: Left/Right steps.\nSpace selects keys for Save/Apply; otherwise changed keys are used.\nCtrl+D stages the selected default; Delete stages collection removal.\nCtrl+N adds a model; Ctrl+P adds a pool. Update references together.\nCtrl+V validates; Ctrl+S saves future values; Ctrl+A applies presentation.\nCtrl+X twice cancels draft; Ctrl+R twice reloads and discards draft.\nEsc closes retaining draft. Pending writes may still complete.\nInline input: Enter stages; empty restores the default; Esc cancels. Ctrl+U clears; Shift+Enter inserts newline. Lists: one escaped item per line. Maps: escaped key=value per line. Escapes: \\n \\r \\t \\\\ \\=; \\e is an empty item.\nUnchanged redacted fields remain untouched; inputs replace whole values.\nOrdinary hosts cannot replace files; no confirmation bypasses this.\nAt request exhaustion, reconcile outcomes then explicitly reopen; local drafts are not persisted automatically.\nPgUp/PgDn scroll help. F1 or Esc closes. Ctrl+C exits.").wrap(Wrap { trim: false }).scroll((self.detail_scroll, 0)).style(theme.base), inner);
+            frame.render_widget(Paragraph::new("Configuration help\nType to search; Ctrl+U shows all basic/advanced fields.\nUp/Down/Tab select; Enter edits. Booleans and choices: Left/Right choose, Enter stages, Esc cancels. Numbers: Left/Right steps.\nSpace selects keys for Save/Apply; otherwise changed keys are used.\nCtrl+D stages the selected default; Delete stages collection removal.\nCtrl+N adds a model; Ctrl+P adds a pool. Update references together.\nCtrl+V validates; Ctrl+S saves future values; Ctrl+A applies presentation.\nCtrl+X twice cancels draft; Ctrl+R twice reloads and discards draft.\nEsc closes retaining draft. Pending writes may still complete.\nInline input: Enter stages; empty restores the default; Esc cancels. Ctrl+U clears; Shift+Enter inserts newline. Lists: one escaped item per line. Maps: escaped key=value per line. Escapes: \\n \\r \\t \\\\ \\=; \\e is an empty item.\nUnchanged redacted fields remain untouched; inputs replace whole values.\nThis workspace writes .fluzo itself, replacing an existing file when needed. When the file changes outside Fluzo a banner appears: Ctrl+R adopts the outside version and discards the draft; Ctrl+K keeps our edits, and Save then writes only the keys you edited over the outside file so unrelated outside keys survive.\nAt request exhaustion, reconcile outcomes then explicitly reopen; local drafts are not persisted automatically.\nPgUp/PgDn scroll help. F1 or Esc closes. Ctrl+C exits.").wrap(Wrap { trim: false }).scroll((self.detail_scroll, 0)).style(theme.base), inner);
             frame.render_widget(
                 Paragraph::new("PgUp/PgDn scroll | F1 / Esc back").style(theme.accent),
                 Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
