@@ -1,4 +1,3 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -145,7 +144,15 @@ impl Drop for ModelDiscoveryService {
     }
 }
 
-fn endpoint(value: &str) -> Result<(SocketAddr, String, String), Error> {
+#[derive(Debug, PartialEq)]
+struct Target {
+    host: String,
+    port: u16,
+    authority: String,
+    path: String,
+}
+
+fn endpoint(value: &str) -> Result<Target, Error> {
     if value.len() > 2048 || !value.is_ascii() || value.bytes().any(|byte| byte.is_ascii_control())
     {
         return Err(Error::InvalidEndpoint);
@@ -156,34 +163,23 @@ fn endpoint(value: &str) -> Result<(SocketAddr, String, String), Error> {
         return Err(Error::InvalidEndpoint);
     }
     let host = uri.host().ok_or(Error::InvalidEndpoint)?;
-    let address: IpAddr = if host == "localhost" {
-        Ipv4Addr::LOCALHOST.into()
-    } else {
-        host.trim_matches(['[', ']'])
-            .parse()
-            .map_err(|_| Error::InvalidEndpoint)?
-    };
-    let allowed = match address {
-        IpAddr::V4(address) => address.is_loopback() || address.is_private(),
-        IpAddr::V6(address) => address.is_loopback() || address.is_unique_local(),
-    };
-    if !allowed || uri.port_u16() == Some(0) {
+    if host.trim_matches(['[', ']']).is_empty() || uri.port_u16() == Some(0) {
         return Err(Error::InvalidEndpoint);
     }
     let base = uri.path().trim_end_matches('/');
     if !base.is_empty() && base != "/v1" {
         return Err(Error::InvalidEndpoint);
     }
-    let path = "/v1/models".to_owned();
-    Ok((
-        SocketAddr::new(address, uri.port_u16().unwrap_or(80)),
-        uri.authority().ok_or(Error::InvalidEndpoint)?.to_string(),
-        path,
-    ))
+    Ok(Target {
+        host: host.trim_matches(['[', ']']).to_owned(),
+        port: uri.port_u16().unwrap_or(80),
+        authority: uri.authority().ok_or(Error::InvalidEndpoint)?.to_string(),
+        path: "/v1/models".to_owned(),
+    })
 }
 
 async fn discover(value: &str, authorization_env: Option<&str>) -> Result<Vec<Model>, Error> {
-    let (address, authority, path) = endpoint(value)?;
+    let target = endpoint(value)?;
     let authorization = authorization_env
         .map(|name| {
             let value = std::env::var(name).map_err(|_| Error::AuthorizationUnavailable)?;
@@ -199,7 +195,7 @@ async fn discover(value: &str, authorization_env: Option<&str>) -> Result<Vec<Mo
             Ok(header)
         })
         .transpose()?;
-    let stream = tokio::net::TcpStream::connect(address)
+    let stream = tokio::net::TcpStream::connect((target.host.as_str(), target.port))
         .await
         .map_err(|_| Error::Connection)?;
     let (mut sender, connection) = hyper::client::conn::http1::Builder::new()
@@ -214,8 +210,8 @@ async fn discover(value: &str, authorization_env: Option<&str>) -> Result<Vec<Mo
         }
         let request = builder
             .method("GET")
-            .uri(path)
-            .header("Host", authority)
+            .uri(target.path)
+            .header("Host", target.authority)
             .header("Accept", "application/json")
             .header("Connection", "close")
             .body(Empty::<Bytes>::new())
@@ -287,29 +283,113 @@ fn parse_models(bytes: &[u8]) -> Result<Vec<Model>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
 
     #[test]
-    fn endpoint_policy_rejects_external_ambiguous_and_credential_urls() {
+    fn endpoint_policy_allows_dns_names_and_rejects_ambiguous_or_credential_urls() {
         for value in [
             "http://localhost:8080",
             "http://192.168.1.2:8080/v1/",
             "http://[::1]:8080/v1",
+            "http://server.local/v1",
+            "http://halo.totoshome.duckdns.org/",
+            "http://8.8.8.8/v1",
+            "http://[::ffff:127.0.0.1]/",
         ] {
             assert!(endpoint(value).is_ok(), "{value}");
         }
         for value in [
             "https://localhost/v1",
-            "http://8.8.8.8/v1",
-            "http://169.254.169.254/",
-            "http://server.local/v1",
             "http://user:secret@localhost",
             "http://localhost/v1?key=x",
             "http://localhost:0",
             "http://localhost/other",
             "http://localhost/#fragment",
-            "http://[::ffff:127.0.0.1]/",
+            "http:///v1",
+            "http://%/v1",
         ] {
             assert_eq!(endpoint(value), Err(Error::InvalidEndpoint), "{value}");
+        }
+    }
+
+    #[test]
+    fn endpoint_keeps_hostname_and_authority_for_virtual_host_routing() {
+        let target = endpoint("http://halo.totoshome.duckdns.org/").unwrap();
+        assert_eq!(target.host, "halo.totoshome.duckdns.org");
+        assert_eq!(target.authority, "halo.totoshome.duckdns.org");
+        assert_eq!(target.port, 80);
+        assert_eq!(target.path, "/v1/models");
+        let target = endpoint("http://llm.internal:8080/v1").unwrap();
+        assert_eq!(target.host, "llm.internal");
+        assert_eq!(target.authority, "llm.internal:8080");
+        assert_eq!(target.port, 8080);
+        let target = endpoint("http://[::1]:8080/v1").unwrap();
+        assert_eq!(target.host, "::1");
+        assert_eq!(target.authority, "[::1]:8080");
+        assert_eq!(target.port, 8080);
+    }
+
+    #[test]
+    fn real_http_catalog_through_hostname_sends_hostname_authority() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let worker = std::thread::spawn(move || {
+            let mut stream = accept(&listener);
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+                assert!(request.len() < 8192);
+            }
+            let request = String::from_utf8(request).unwrap();
+            assert!(request.starts_with("GET /v1/models HTTP/1.1\r\n"));
+            assert!(
+                request.contains(&format!("host: localhost:{port}\r\n").to_lowercase()),
+                "{request}"
+            );
+            let body = r#"{"data":[{"id":"hostname-model"}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        let mut service = ModelDiscoveryService::start().unwrap();
+        service
+            .submit(Request {
+                protocol: PROTOCOL,
+                id: 1,
+                endpoint: format!("http://localhost:{port}/v1"),
+                authorization_env: None,
+            })
+            .unwrap();
+        assert_eq!(
+            wait(&mut service, 1),
+            Status::Complete(Ok(vec!["hostname-model".into()]))
+        );
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn unresolvable_hostname_fails_closed_without_hanging() {
+        let mut service = ModelDiscoveryService::start().unwrap();
+        service
+            .submit(Request {
+                protocol: PROTOCOL,
+                id: 1,
+                endpoint: "http://fluzo-unresolvable.invalid/v1".into(),
+                authorization_env: None,
+            })
+            .unwrap();
+        match wait(&mut service, 1) {
+            Status::Complete(Err(_)) => {}
+            other => panic!("expected a failed lookup, got {other:?}"),
         }
     }
 

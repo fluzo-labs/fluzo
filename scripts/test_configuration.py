@@ -63,7 +63,9 @@ class ConfigurationTests(unittest.TestCase):
                     os.write(master, b"\r")
                     wait(b"Your repository configuration is ready.")
                     original = (root / ".fluzo").read_text()
-                    os.write(master, b"\x1bOQ")
+                    os.write(master, b"\x10")
+                    wait(b"Limits")
+                    os.write(master, b"\x1b")
                 wait(b"Configuration workspace")
                 if expect_rgb:
                     self.assertRegex(bytes(output), rb"\x1b\[(?:\d+;)*38;2;\d+;\d+;\d+[;m]")

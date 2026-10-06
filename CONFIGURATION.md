@@ -274,10 +274,13 @@ Leaving the URL using Tab, Enter or a mouse click outside the field queries once
 typing, paste, resize and operating-system window focus never query. Esc goes back
 without querying and cancels pending work. All providers currently use /v1/models.
 
-This initial adapter accepts HTTP with localhost (IPv4 loopback), literal loopback
-or private IPv4/IPv6 addresses, an optional port and optional /v1 suffix. DNS names,
-HTTPS, custom paths, redirects and public/link-local addresses are rejected, not
-downgraded or resolved. Optional Authorization uses a named environment variable
+This initial adapter accepts HTTP with a localhost, literal IPv4/IPv6 or DNS host,
+an optional port and optional /v1 suffix. The worker resolves DNS names itself and
+keeps the original authority in the Host header, so virtual-host and dynamic-DNS
+catalogs route correctly. The resolved address class is not restricted: locality is
+the operator's responsibility. HTTPS, custom paths, redirects, userinfo,
+query/fragment and percent escapes are rejected without downgrade. Optional
+Authorization uses a named environment variable
 containing the complete header value (for example Bearer plus a token). The worker
 resolves it only for the user-triggered request; invalid/missing values fail before
 connection. The UI, DTOs and saved configuration contain only the variable name.

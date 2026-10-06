@@ -256,7 +256,7 @@ impl Setup {
                         ConfigurationOutcome::SetupPrepared => "Review every value and target. Ctrl+S confirms creation; Esc returns without saving.".into(),
                         ConfigurationOutcome::Saved => {
                             self.saved = true;
-                            if self.explicit { "Configuration saved offline. Agent runtime is not implemented; no execution started." } else { "Configuration saved offline. F2 opens settings; Esc exits. Agent runtime is not implemented." }.into()
+                            if self.explicit { "Configuration saved offline. Agent runtime is not implemented; no execution started." } else { "Configuration saved offline. Ctrl+P opens settings; Esc exits. Agent runtime is not implemented." }.into()
                         }
                         _ => self.discovery_text(),
                     };
@@ -833,7 +833,7 @@ impl Setup {
             if self.explicit {
                 "Enter / Esc Close"
             } else {
-                "Enter / F2 Open settings | Esc Close"
+                "Enter / Ctrl+P Open settings | Esc Close"
             }
         } else if preview.is_some() {
             "Enter Create file | Esc Back"

@@ -112,6 +112,14 @@ impl Workspace {
         changed
     }
 
+    pub fn open_configuration_menu(&mut self) {
+        self.palette = true;
+        self.menu = Menu::Configuration;
+        self.parent = None;
+        self.query.clear();
+        self.selection = 0;
+    }
+
     pub fn key(&mut self, key: KeyEvent, port: &mut dyn ConfigurationPort) {
         if key.kind != KeyEventKind::Press {
             return;
@@ -361,6 +369,39 @@ mod tests {
                 );
                 assert!(!text.contains("Play synthetic"));
             }
+        }
+    }
+
+    #[test]
+    fn open_configuration_menu_lands_on_configuration_commands() {
+        for ascii in [false, true] {
+            let mut workspace = Workspace::new("/fixture", ascii).unwrap();
+            workspace.query = "zzz".into();
+            workspace.selection = 5;
+            workspace.open_configuration_menu();
+            assert!(workspace.query.is_empty());
+            assert_eq!(workspace.selection, 0);
+            let filters: Vec<&str> = workspace
+                .actions()
+                .iter()
+                .map(|(_, filter)| *filter)
+                .collect();
+            assert!(filters.contains(&"harness."), "{filters:?}");
+            assert!(filters.contains(&"tui.theme"), "{filters:?}");
+            assert!(!filters.contains(&"@models"), "{filters:?}");
+            let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+            terminal
+                .draw(|frame| workspace.render(frame, true))
+                .unwrap();
+            let text: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            assert!(text.contains("Limits"), "{text}");
+            assert!(text.contains("Pools"), "{text}");
         }
     }
 }

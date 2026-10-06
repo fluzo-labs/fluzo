@@ -544,9 +544,12 @@ pub fn run_configuration(
                             workspace.key(key, port);
                         } else if !explicit
                             && setup.saved
-                            && matches!(key.code, event::KeyCode::F(2) | event::KeyCode::Enter)
+                            && (key.code == event::KeyCode::Enter
+                                || (key.modifiers.contains(event::KeyModifiers::CONTROL)
+                                    && key.code == event::KeyCode::Char('p')))
                         {
                             normal = true;
+                            workspace.open_configuration_menu();
                         } else if key.code == event::KeyCode::F(4) {
                             advanced_setup = !advanced_setup;
                         } else if advanced_setup {

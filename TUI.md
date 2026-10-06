@@ -42,8 +42,9 @@ environment reference, then URL. Tab/Enter or clicking outside URL fetches model
 window-focus changes and paste do not. Space selects multiple IDs without losing
 selection during filtering. Context/output/slot columns show reported values or ?.
 Alias/review stages atomically stage all selections, never save. Esc cancels
-pending discovery. HTTP localhost/private-IP catalogs support scoped Authorization
-headers from environment references; DNS/HTTPS/native enrichment remain unavailable.
+pending discovery. HTTP localhost, private-IP and DNS catalogs support scoped
+Authorization headers from environment references; HTTPS and native enrichment
+remain unavailable.
 GitHub provider work is deferred to a later story.
 
 ## Theme preview and unsaved changes
@@ -74,6 +75,12 @@ Providers and Configuration, in that order. Explicitly disabling the developer
 menu still hides its entry. Configuration opens a second level with Models,
 Limits, Pools, Storage, Telemetry, Theme, Notifications, Developer preferences,
 Presentation and All / advanced. Search is scoped to the current level.
+
+After ordinary setup creation, the saved dialog advertises Enter / Ctrl+P Open
+settings. Either key hands off to the ordinary shell with the Configuration level
+already open, so settings are one keystroke away. Before the file exists the welcome
+dialog does not advertise or handle this handoff; it offers Enter Create, F3 Add
+models and Esc Not now.
 
 Models offers configured models and the existing explicit local/LAN wizard;
 Developer Menu offers real presentation settings. Plugins and Providers open

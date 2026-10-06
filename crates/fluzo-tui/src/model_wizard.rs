@@ -436,7 +436,9 @@ impl ModelWizard {
                 ));
             }
             Step::Endpoint => {
-                lines.push(Line::from("Server URL (HTTP, localhost or private IP)"));
+                lines.push(Line::from(
+                    "Server URL (HTTP, localhost, private IP or DNS name)",
+                ));
                 lines.push(Line::styled(
                     format!("> {}", safe_text(&self.endpoint)),
                     theme.accent,
