@@ -12,6 +12,10 @@ use crate::configuration_file::{ConfigurationFile, Observation};
 
 static NEXT_INSTANCE: AtomicU64 = AtomicU64::new(1);
 
+/// How often the configuration worker stats the file to notice edits made by
+/// something other than this writer (a `git pull`, an editor, another shell).
+const EXTERNAL_POLL_SECONDS: u64 = 2;
+
 type Completion = (
     ConfigurationRequestId,
     ConfigurationRequestStatus,
@@ -63,7 +67,33 @@ impl ConfigurationService {
                 {
                     return;
                 }
-                while let Ok(request) = requests.recv() {
+                loop {
+                    let request = match requests
+                        .recv_timeout(std::time::Duration::from_secs(EXTERNAL_POLL_SECONDS))
+                    {
+                        Ok(request) => request,
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            match state.check_external() {
+                                Ok(true) => {}
+                                Ok(false) => continue,
+                                // A failed probe is not proof of an external edit;
+                                // keep the last known state and try again later.
+                                Err(_) => continue,
+                            }
+                            if results
+                                .send(Ok((
+                                    ConfigurationRequestId(0),
+                                    ConfigurationRequestStatus::Unknown,
+                                    state.snapshot(),
+                                )))
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    };
                     let status = match state.execute(&request) {
                         Ok(outcome) => {
                             state.record(request.id, outcome.clone());
@@ -290,6 +320,7 @@ struct State {
     file: ConfigurationFile,
     policy: WritePolicy,
     observed: Option<Observation>,
+    polled: Vec<u64>,
     discovery: Discovery,
     problem: Option<ConfigurationError>,
     saved_source: String,
@@ -307,6 +338,8 @@ struct State {
     changes: VecDeque<ConfigurationChange>,
     dropped_changes: u64,
     prepared: Option<(crate::configuration_file::RawObservation, String, Settings)>,
+    external: Option<ExternalChange>,
+    external_sequence: u64,
 }
 
 impl State {
@@ -328,6 +361,7 @@ impl State {
             file: ConfigurationFile::open(root, explicit, policy)?,
             policy,
             observed: None,
+            polled: Vec::new(),
             discovery: Discovery::Missing,
             problem: None,
             saved_source: defaults.clone(),
@@ -352,6 +386,8 @@ impl State {
             changes: VecDeque::new(),
             dropped_changes: 0,
             prepared: None,
+            external: None,
+            external_sequence: 0,
         };
         state.reload()?;
         let effective = update_batch(&state.saved_source, &state.overrides).map_err(invalid)?;
@@ -370,7 +406,7 @@ impl State {
         let observation = match self.file.read() {
             Ok(observation) => observation,
             Err(error) => {
-                self.observed = None;
+                self.set_observed(None);
                 self.discovery = if matches!(
                     error,
                     ConfigurationError::Invalid { .. } | ConfigurationError::Capacity
@@ -391,7 +427,7 @@ impl State {
         let settings = match parse_settings(&source) {
             Ok(settings) => settings,
             Err(error) => {
-                self.observed = Some(observation);
+                self.set_observed(Some(observation));
                 self.discovery = Discovery::Invalid;
                 self.problem = Some(invalid(error));
                 self.bump()?;
@@ -404,14 +440,73 @@ impl State {
             Discovery::Missing
         };
         self.saved_has_file = observation.source.is_some();
-        self.observed = Some(observation);
+        self.set_observed(Some(observation));
         self.problem = None;
         self.saved_source = source.clone();
         self.draft_source = source;
         self.saved = settings.clone();
         self.draft = settings;
         self.saved_keys.clear();
+        self.external = None;
         self.bump()?;
+        Ok(())
+    }
+
+    /// Adopts new file bytes as this writer's baseline and moves the polling
+    /// identity with them, so our own writes never look like an outside change.
+    fn set_observed(&mut self, observation: Option<Observation>) {
+        self.polled = observation
+            .as_ref()
+            .map(|observation| observation.identity.clone())
+            .unwrap_or_default();
+        self.observed = observation;
+    }
+
+    /// Compares the file on disk against the last identity this writer owned and
+    /// records the kind of change when something outside touched it. The baseline
+    /// advances on every observation so a later outside edit is still noticed,
+    /// and the sequence lets an acknowledged notice resurface for it.
+    fn check_external(&mut self) -> Result<bool, ConfigurationError> {
+        let current = self.file.probe()?;
+        if current == self.polled {
+            return Ok(false);
+        }
+        let kind = if current.is_empty() {
+            ExternalChange::Removed
+        } else if self.polled.is_empty() {
+            ExternalChange::Appeared
+        } else {
+            ExternalChange::Modified
+        };
+        self.polled = current;
+        self.external_sequence += 1;
+        self.external = Some(kind);
+        Ok(true)
+    }
+
+    /// Adopts whatever is currently on disk as the saved baseline while keeping
+    /// the local draft, so a deliberate overwrite lands our edits on top of the
+    /// external content instead of failing the identity check. Keys the external
+    /// document carries come from the file, not from this session.
+    fn rebase(&mut self) -> Result<(), ConfigurationError> {
+        let observation = self.file.read()?;
+        let source = match &observation.source {
+            Some(source) => source.clone(),
+            None => encode_settings(&Settings::default()).map_err(invalid)?,
+        };
+        let settings = parse_settings(&source).map_err(invalid)?;
+        let present = observation.source.is_some();
+        self.saved_has_file = present;
+        self.discovery = if present {
+            Discovery::Valid
+        } else {
+            Discovery::Missing
+        };
+        self.set_observed(Some(observation));
+        self.saved_source = source;
+        self.saved = settings;
+        self.saved_keys.clear();
+        self.external = None;
         Ok(())
     }
 
@@ -475,7 +570,7 @@ impl State {
                     .ok_or(ConfigurationError::InvalidRequest)?;
                 self.bump()?;
                 match self.file.commit(&observed, &source, true) {
-                    Ok(observation) => self.observed = Some(observation),
+                    Ok(observation) => self.set_observed(Some(observation)),
                     Err(error) => {
                         if error == ConfigurationError::Uncertain {
                             self.problem = Some(error.clone());
@@ -521,6 +616,9 @@ impl State {
             }
             ConfigurationAction::Save { expected, keys } => {
                 self.check(*expected)?;
+                if self.external.is_some() {
+                    self.rebase()?;
+                }
                 let edits = selected(&self.saved, &self.draft, keys)?;
                 let source = update_batch(&self.saved_source, &edits).map_err(invalid)?;
                 let settings = parse_settings(&source).map_err(invalid)?;
@@ -529,7 +627,7 @@ impl State {
                     .as_ref()
                     .ok_or(ConfigurationError::Unavailable)?;
                 match self.file.save(observed, &source) {
-                    Ok(observation) => self.observed = Some(observation),
+                    Ok(observation) => self.set_observed(Some(observation)),
                     Err(error) => {
                         if error == ConfigurationError::Uncertain {
                             self.problem = Some(error.clone());
@@ -742,7 +840,7 @@ impl State {
         ConfigurationSnapshot {
             save_unavailable: self.problem.clone().or_else(|| {
                 (self.policy == WritePolicy::ReadOnly
-                    || (self.saved_has_file && self.policy != WritePolicy::CoordinatedLocalWriters))
+                    || (self.saved_has_file && self.policy != WritePolicy::LocalWorkspace))
                     .then_some(ConfigurationError::ReadOnly)
             }),
             apply_unavailable: self.problem.clone(),
@@ -767,6 +865,8 @@ impl State {
                         .collect(),
                 }),
             backup: self.file.backup.clone(),
+            external_change: self.external,
+            external_sequence: self.external_sequence,
         }
     }
 }

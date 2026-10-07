@@ -23,12 +23,37 @@ see CONFIGURATION.md for its explicit coordinated-writer filesystem contract.
 UI-03 S2 adds offline welcome/setup and headless configuration discovery using
 configuration protocol 3. Under #45 R2 and fluzo-docs revision
 `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, ordinary CLI hosts may exclusively
-create missing files but cannot replace existing files. Controlled hosts test
-version-bound replacement with verified backups. UI-03 S3 (#46 R2) adds the
-normal configuration-only shell and typed basic/advanced editing with protocol 4,
-owned descriptors, operation availability and bounded request reconciliation.
-Ordinary hosts still cannot replace configuration; presentation Apply is separate.
-UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
+create missing files. The operator has since overridden the
+read-only-for-replacement boundary here: configuration is local, the CLI runs
+`LocalWorkspace`, Fluzo replaces `.fluzo` on Save and trusts Git instead of a
+backup copy. Outside edits are polled and surfaced as a banner offering reload or
+keep-ours. UI-03 S3 (#46 R2) adds the normal configuration-only shell and typed
+basic/advanced editing with protocol 5, owned descriptors, operation
+availability and bounded request reconciliation. Presentation Apply is separate.
+S3 human-review revisions replace the default setup form with a centered repository
+welcome/create dialog and human summaries. F3 adds models, F4 explicitly exposes
+advanced details, and separate confirmation still precedes file creation.
+Screen questions are removed; shared dialog identity/RGB and fallback modes remain. `fluzo --safe-screen-settings` provides invocation-only
+ASCII/no-color/FPS-0/reduced-motion recovery without saving emergency values.
+The requested MVP devmenu default is true; ordinary Developer menu > Presentation
+settings opens the typed editor, not synthetic actions. Explicit disable is retained.
+Repeated resize PTYs preserve dimensions and prohibit window-resize sequences,
+but the reported Ghostty/Wayland physical resize reset is not yet reproduced.
+The F3 model wizard reuses centered dialogs: Local/Frontier, provider, optional
+Authorization environment reference, URL blur query and multiple model selection.
+Core discovery protocol 2 carries only references and optional reported metadata;
+the runtime resolves headers for the selected endpoint. No secret is saved in repo
+configuration. No startup probes, redirects, retries or inference are enabled.
+It accepts localhost, private IPs and DNS names over HTTP, not HTTPS. The worker
+resolves names itself and keeps the original authority in the Host header for
+virtual-host routing; the resolved address class is unrestricted and locality is
+the operator's responsibility. See CONFIGURATION.md for limits.
+Pinned cached Hyper/Tokio/JSON dependencies now have runtime production paths;
+core/TUI remain HTTP-free. Focused checks are `cargo test -p fluzo-runtime --locked
+--offline model_discovery`, `cargo test -p fluzo-tui --locked --offline model_wizard`
+and `python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'`.
+GitHub provider work remains deferred to a later story.
+Full UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
@@ -338,10 +363,16 @@ S2 setup checks use
 `python3 -B -m unittest discover -s scripts -p 'test_setup.py'`.
 The service uses a separate core configuration port and one bounded runtime
 worker; it does not extend task IDs or wire the demo to user configuration.
-Replacement requires an explicitly supplied coordinated-local-writer policy;
-exclusive creation uses CreateOnly and never upgrades itself to replacement.
-Arbitrary external editors and network filesystems are not covered by the
-coordinated replacement contract. Setup visual acceptance remains a human gate.
+Replacement requires an explicitly supplied LocalWorkspace policy; exclusive
+creation uses CreateOnly and never upgrades itself to replacement. Arbitrary
+external editors and network filesystems are not covered by the coordinated
+replacement contract, which is why the worker polls for outside changes and Save
+rebases onto the file actually on disk. Setup visual acceptance remains a human
+gate. Outside-change checks use
+`cargo test -p fluzo-runtime --lib --locked --offline configuration`,
+`cargo test -p fluzo-tui --locked --offline configuration` and the PTY case
+`test_outside_change_banner_offers_keep_ours_then_reload` in
+`scripts/test_configuration.py`.
 
 Run the narrowest relevant tests after a change, then the applicable workspace
 checks. Define supported feature combinations explicitly rather than assuming

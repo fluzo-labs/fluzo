@@ -10,13 +10,13 @@ use crate::config::MAX_CONFIG_BYTES;
 pub enum WritePolicy {
     ReadOnly,
     CreateOnly,
-    CoordinatedLocalWriters,
+    LocalWorkspace,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Observation {
     pub source: Option<String>,
-    identity: Vec<u64>,
+    pub(crate) identity: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -209,6 +209,34 @@ impl ConfigurationFile {
         })
     }
 
+    /// Cheap existence-plus-identity check without reading contents, for polling
+    /// whether something other than this writer touched the file.
+    pub(crate) fn probe(&self) -> Result<Vec<u64>, ConfigurationError> {
+        self.verify_parent()?;
+        let path = self.anchored(&self.name);
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            const NO_FOLLOW: i32 = 0x20000;
+            const NONBLOCK: i32 = 0x800;
+            options.custom_flags(NO_FOLLOW | NONBLOCK);
+        }
+        let file = match options.open(&path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(_) => return Err(ConfigurationError::Inaccessible),
+        };
+        let metadata = file
+            .metadata()
+            .map_err(|_| ConfigurationError::Inaccessible)?;
+        if !metadata.is_file() {
+            return Err(ConfigurationError::UnsupportedPath);
+        }
+        Ok(identity(&metadata))
+    }
+
     pub(crate) fn save(
         &mut self,
         expected: &Observation,
@@ -235,7 +263,7 @@ impl ConfigurationFile {
 
     fn check_policy(&self, replacing: bool) -> Result<(), ConfigurationError> {
         if self.policy == WritePolicy::ReadOnly
-            || (replacing && self.policy != WritePolicy::CoordinatedLocalWriters)
+            || (replacing && self.policy != WritePolicy::LocalWorkspace)
         {
             return Err(ConfigurationError::ReadOnly);
         }

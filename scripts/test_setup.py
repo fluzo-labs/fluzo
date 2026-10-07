@@ -87,7 +87,8 @@ class SetupTests(unittest.TestCase):
             original = b"schema_version = 1\n# external\n"
             if action == "valid":
                 (root / ".fluzo").write_bytes(original)
-            child = subprocess.Popen([self.binary, "--animation-fps", "0"], cwd=root,
+            arguments = [self.binary, "--safe-screen-settings"] if action == "safe" else [self.binary, "--animation-fps", "0"]
+            child = subprocess.Popen(arguments, cwd=root,
                 env={"HOME": directory, "XDG_CONFIG_HOME": directory, "TERM": "xterm-256color", "NO_COLOR": "1"},
                 stdin=slave, stdout=slave, stderr=slave)
             screen = Screen()
@@ -112,18 +113,20 @@ class SetupTests(unittest.TestCase):
                 else:
                     wait_for(b"Welcome to Fluzo")
                     self.assertFalse((root / ".fluzo").exists())
+                    os.write(master, b"\x1bOS")
+                    wait_for(b"Enter configures this workspace offline")
                     os.write(master, b"\r")
                     wait_for(b"models.coder.base_url")
                     if action == "resize":
                         os.write(master, b"\r")
                         wait_for(b"Enter a value")
                         os.write(master, b"\x1b[200~synthetic\x1b[201~")
-                        wait_for(b"private value entered")
+                        wait_for(b"*********")
                         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 10, 40, 0, 0))
                         wait_for(b"Resize or")
                         wait_for(b"Esc to cancel.")
                         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
-                        wait_for(b"private value entered")
+                        wait_for(b"*********")
                         os.write(master, b"\x03")
                     elif action == "invalid":
                         os.write(master, b"\r\x1b[200~not-an-endpoint\x1b[201~\r\x13")
@@ -131,15 +134,19 @@ class SetupTests(unittest.TestCase):
                         self.assertFalse((root / ".fluzo").exists())
                         os.write(master, b"\x03")
                     elif action == "cancel":
-                        os.write(master, b"\r\x1b[200~synthetic\ntext\x1b[201~\x1b")
-                        wait_for(b"private value entered")
+                        os.write(master, b"\r\x1b[200~synthetic\ntext\x1b[201~")
+                        wait_for(b"*********")
+                        os.write(master, b"\x1b")
+                        wait_for(b"Enter edits selected field")
+                        self.assertNotIn(b"*********", screen.text())
+                        self.assertNotIn(b"synthetic", screen.text())
                         os.write(master, b"\x03")
                     elif action == "signal":
                         child.terminate()
                     else:
                         if action == "review":
                             os.write(master, b"\t" * 8 + b"\r\x153\r")
-                            wait_for(b"> capacity_pools.local.max_in_flight = 3")
+                            wait_for(b"> capacity_pools.local.max_in_flight   3")
                         os.write(master, b"\x13")
                         wait_for(b"Review every value")
                         if action == "review":
@@ -149,7 +156,7 @@ class SetupTests(unittest.TestCase):
                             os.write(master, b"\x1b")
                             wait_for(b"Welcome to Fluzo")
                             self.assertIn(b"Target:", screen.text())
-                            self.assertIn(b"> capacity_pools.local.max_in_flight = 3", screen.text())
+                            self.assertIn(b"> capacity_pools.local.max_in_flight   3", screen.text())
                             self.assertFalse((root / ".fluzo").exists())
                             os.write(master, b"\x13")
                             wait_for(b"Review every value")
@@ -163,7 +170,8 @@ class SetupTests(unittest.TestCase):
                 self.assertEqual(termios.tcgetattr(slave), before)
                 self.assertNotIn(b"\x1b]777;", output)
                 self.assertNotIn(b"\x1b]52;", output)
-                if action in ("save", "review"):
+                self.assertNotRegex(bytes(output), rb"\x1b\[(?:4|8);\d+;\d+t|\x1b\[\?3[hl]")
+                if action in ("save", "review", "safe"):
                     settings = tomllib.loads((root / ".fluzo").read_text())
                     if action == "review":
                         self.assertEqual(settings["capacity_pools"]["local"]["max_in_flight"], 3)
@@ -172,6 +180,9 @@ class SetupTests(unittest.TestCase):
                         self.assertEqual(settings["context"]["compaction_threshold"], 0.8)
                         self.assertEqual(settings["context"]["safety_reserve_fraction"], 0.05)
                     self.assertEqual(settings["tui"]["animation_fps"], 60)
+                    self.assertEqual(settings["tui"]["theme"], "default")
+                    self.assertFalse(settings["tui"]["reduced_motion"])
+                    self.assertTrue(settings["tui"]["dev_menu"])
                     self.assertFalse(settings["telemetry"]["export_enabled"])
                     self.assertEqual(sorted(path.name for path in root.iterdir()), [".fluzo"])
                     self.assertEqual(child.returncode, 0)
@@ -191,6 +202,9 @@ class SetupTests(unittest.TestCase):
 
     def test_setup_save_requires_two_explicit_steps(self):
         self.exercise("save")
+
+    def test_safe_screen_does_not_save_emergency_overrides(self):
+        self.exercise("safe")
 
     def test_setup_conflict_after_confirmation_does_not_clobber(self):
         self.exercise("conflict")

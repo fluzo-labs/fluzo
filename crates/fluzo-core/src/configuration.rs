@@ -6,7 +6,7 @@ use crate::settings::{
     SettingDescriptor, SettingOrigin, SettingValue, TuiSettings, ValidationError,
 };
 
-pub const CONFIGURATION_PROTOCOL: u32 = 4;
+pub const CONFIGURATION_PROTOCOL: u32 = 5;
 pub const MAX_EDITS: usize = 256;
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_REQUESTS: usize = 64;
@@ -149,6 +149,15 @@ pub struct ConfigurationChange {
     pub outcome: ConfigurationOutcome,
 }
 
+/// A change to the configuration file made outside this writer since the last
+/// observation. Surfaced so the operator can reload or deliberately overwrite it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ExternalChange {
+    Appeared,
+    Modified,
+    Removed,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationSnapshot {
     pub save_unavailable: Option<ConfigurationError>,
@@ -165,6 +174,10 @@ pub struct ConfigurationSnapshot {
     pub dropped_changes: u64,
     pub setup: Option<SetupPreview>,
     pub backup: Option<String>,
+    pub external_change: Option<ExternalChange>,
+    /// Counts the outside changes this writer has noticed, so an acknowledged
+    /// notice resurfaces when the file moves again even in the same way.
+    pub external_sequence: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

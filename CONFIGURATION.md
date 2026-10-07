@@ -54,20 +54,55 @@ entries; All / advanced exposes every registry field. Ordinary setup offers F2
 into this shell after confirmed creation. Explicit init remains setup-only.
 Headless contracts and the explicit demo's isolation remain unchanged.
 
-The editor uses owned descriptors from configuration protocol 4. Types, defaults,
+All categories use the shared centered dialog style, including Limits and Pools.
+Help, replacement inputs, collection-name inputs and F4 advanced setup reuse the
+same frame and title rather than switching to a separate full-screen form. See
+TUI.md for layout, fallback profiles and pending human visual review.
+
+The editor uses owned descriptors from configuration protocol 5. Types, defaults,
 units, privacy, provenance, saved/draft/effective values and CLI locks are shown.
 Fixed schema values have no editable alternative. Models/pools have validated
 names and explicit add/remove operations; related changes validate together.
 Unchanged redacted/sanitized projections are never used as replacement input.
-Text/reference and collection inputs are explicit whole-value replacements,
-initially blank, with Esc retaining the original. Credential inputs are references,
-not credential resolution. Lists use one escaped item per line; maps use escaped
-key=value entries. Supported escapes are backslash, equals, n/r/t and whole-item
-`\\e` for an empty item. Duplicate map keys are rejected; empty input clears a
-list/map or optional value. Enter stages; Shift+Enter adds an input line.
+Fields other than booleans and enumerated choices edit inline in the value column, with a cyan background and
+visible cursor (underlined without color). Typing or pasting initially replaces
+the current input; arrows allow editing it instead. Enter stages a valid value
+and leaves editing; Esc discards the input. Empty edited input restores the shared
+registry default, including nonempty list/map defaults. Enter without changing
+input preserves the original, including redacted values. Private inputs start
+blank and remain masked. Credential inputs are references, not credential
+resolution. Lists use one escaped item per line; maps use escaped key=value entries.
+Supported escapes are backslash, equals, n/r/t and whole-item `\\e` for an empty
+item. Duplicate map keys are rejected; Shift+Enter adds an input line. Long and
+multiline inputs scroll horizontally with the cursor and display escaped controls.
+Save to disk and Apply remain separate explicit operations.
+
+Settings lists use two aligned key/value columns without table borders. The
+focused row has a continuous theme-accent background across its label and value.
+Boolean fields display only true or false while navigating. Enter reveals inline
+true/false choices in the value column, with cyan background and black text on
+the chosen option. Only editing uses cyan; confirmation or cancellation returns
+to the plain value. No-color editing retains explicit x markers. The full key
+remains available in details when the label column clips it. No free-text boolean
+input is required.
+Up/Down selects a field; Enter focuses its choices, Left selects true and Right
+selects false. A second Enter stages the choice; Esc cancels without changing the
+previous draft. Paste, typing and arrows outside edit focus cannot change a
+boolean. F4 advanced setup uses the same control. Full keys remain in setting
+details; Save/Apply selection is separately marked `[save/apply]`. Fixed fields
+such as `storage.auto_expire` show `[fixed]` and cannot enable unsupported behavior.
+
+All enumerated choices, including theme and authorization mode, follow the same
+inline selection contract as booleans. Enter reveals supported options;
+Left/Right selects an option, Enter stages it and Esc cancels. The current value
+alone is shown outside editing; typing, paste and deletion cannot alter a choice.
+Options scroll within the value column to keep the selection visible. Fields
+with fewer than two supported choices remain fixed. Advanced setup uses the same
+selector. Cyan is reserved for the selected option during editing, with textual
+markers without color; Save and Apply remain explicit.
 
 Controls: type to search, Ctrl+U shows all fields, Tab/arrows select, Left/Right
-step numbers or select boolean/enum alternatives, Enter replaces, Space selects
+step numbers outside editing, Enter edits, Space selects
 Save/Apply keys, Ctrl+D restores the selected default in the draft, Ctrl+N adds a
 model, Ctrl+P adds a pool and Delete stages collection removal. F1 explains all
 controls. Ctrl+V validates, Ctrl+S saves selected future values, Ctrl+A applies
@@ -82,12 +117,11 @@ Closing during validation prevents the chained Save/Apply; dispatched effects
 still reconcile by request identity and are never automatically replayed.
 
 The runtime projects Save/Apply unavailability and remaining request capacity.
-Ordinary hosts remain CreateOnly: replacement is unavailable even after setup
-created the file. Session presentation Apply is independent of that restriction.
-Real replacement tests run only through the controlled coordinated host. No CLI
-flag, confirmation or config data grants this capability. Operational Apply stays
-unavailable; restart state is pending only. CLI overrides govern active settings,
-not the separately saved future defaults.
+The normal host runs with `LocalWorkspace`, so Save replaces the existing `.fluzo`
+with the user's edits. No CLI flag, confirmation or config data grants this
+capability; the host wiring does. Session presentation Apply stays independent.
+Operational Apply stays unavailable; restart state is pending only. CLI overrides
+govern active settings, not the separately saved future defaults.
 
 The service retains 64 request records without eviction. Keystrokes remain local;
 a Validate/Edit consumes one record, chained Save/Apply needs a second. Exhaustion
@@ -177,7 +211,224 @@ No new dependencies, protocol changes or write capabilities are introduced.
 Human visual/parent acceptance and correction publication remain separate; live
 inference is not_run. These fixes do not accept or close #46/#8.
 
+### S3 visual color correction
+
+Human review of `1705ddb` in Ghostty found a gray normal shell and a flattened
+wordmark. Normal startup left the shell's truecolor capability disabled, unlike
+the explicit demo. It now uses the same TERM/COLORTERM detection, preserving
+NO_COLOR and limited-terminal behavior without changing the artwork or FPS policy.
+This is a scoped #46 correction under the S3 design sections cited above.
+
+The actual-binary settings PTY regression failed before the fix for Ghostty,
+COLORTERM=truecolor and COLORTERM=24bit because RGB output was absent. All now
+pass, along with non-RGB, NO_COLOR and Linux-console profiles and the setup F2
+handoff. These checks retain file preservation, CLI-lock/Apply, resize, terminal
+restoration and zero requests to the fixture listener. The workspace's 197 Rust
+cases, 67 Python cases, fmt, Clippy and dependency-boundary checks passed; the
+added RGB setup-handoff subcase also passed in the focused settings suite.
+Corrected human appearance remains pending review; no visual acceptance or issue
+closure is implied. Live inference is not_run.
+
+### Requested startup and setup revisions
+
+The S3 human review requested screen defaults instead of setup questions, a
+conservative startup option and an enabled MVP developer-menu default. The setup
+form no longer submits TUI edits; future screen preferences come from the registry.
+The full shared relief wordmark and RGB palette now appear in setup as well as the
+normal shell, with ASCII and limited-color fallbacks. Presentation settings remain
+available through ordinary Configuration and Developer menu > Presentation settings.
+The latter is a typed-editor entry, not the synthetic demo or complete C3 delivery.
+
+`fluzo --safe-screen-settings` selects ASCII, no color, FPS 0, reduced motion,
+no render diagnostics and no desktop notifications for this invocation. It takes
+precedence over conflicting valid visual flags regardless of order. Emergency
+values are CLI-locked and are not written by setup; files are not reset or repaired.
+Reopen without the option to use normal presentation. Existing-file Save still
+requires the supported coordinated host; this option does not bypass that policy.
+The shared `tui.dev_menu` default is true for the MVP; explicit configuration and
+CLI disable remain respected. The review launchers must not disable it implicitly.
+These requested changes are local review work, not a published design revision.
+
+Repeated PTY resize checks preserve 80x24, 120x40 and 160x50 dimensions and reject
+window-resize escape sequences. Inspection of Ratatui 0.29 confirms `resize` only
+updates buffers and clears the viewport. The reported Ghostty/Wayland window-size
+reset has not been reproduced or fixed; compositor/emulator behavior needs an
+actual-window reproduction on Wayland. A disposable, owned Ghostty 1.3.1 X11
+window retained three requested pixel sizes (960x600, 1280x800, 800x500) over
+bounded two-second observation intervals. That does not prove Wayland behavior.
+No terminal preferences or KWin rules were changed.
+
+At the startup-review checkpoint, discovery remained unimplemented. The subsequent
+user-authorized local/LAN wizard is described below. GitHub provider integration
+remains deferred to a later user story. Neither change establishes S3 acceptance.
+
+### Explicit local/LAN model wizard
+
+F3 opens Add model from setup or ordinary configuration. The ordinary palette also
+contains Add model > Local / LAN. Centered dialogs reuse the shell's rounded frame,
+gradient title, theme and retained background. Steps: Local or Frontier (unavailable
+until its separate story), LM Studio/Ollama/OpenAI Compatible, Authorization yes/no,
+optional environment reference, URL, multiple model selection, alias prefix/review.
+Leaving the URL using Tab, Enter or a mouse click outside the field queries once;
+typing, paste, resize and operating-system window focus never query. Esc goes back
+without querying and cancels pending work. All providers currently use /v1/models.
+
+This initial adapter accepts HTTP with a localhost, literal IPv4/IPv6 or DNS host,
+an optional port and optional /v1 suffix. The worker resolves DNS names itself and
+keeps the original authority in the Host header, so virtual-host and dynamic-DNS
+catalogs route correctly. The resolved address class is not restricted: locality is
+the operator's responsibility. HTTPS, custom paths, redirects, userinfo,
+query/fragment and percent escapes are rejected without downgrade. Optional
+Authorization uses a named environment variable
+containing the complete header value (for example Bearer plus a token). The worker
+resolves it only for the user-triggered request; invalid/missing values fail before
+connection. The UI, DTOs and saved configuration contain only the variable name.
+Header values are bounded to 4096 bytes, reject control characters and are marked
+sensitive. HTTP is unencrypted: use only trusted local/LAN destinations and scoped
+credentials. No inherited proxy, LAN scan, redirect, automatic retry or inference.
+
+The multi-select list shows ID, maximum context, output tokens and slots when the
+catalog reports max_context_length/context_length, max_output_tokens and slots.
+Missing or invalid values display ?. These are unverified reported hints, not
+capability discovery. No native provider enrichment is claimed. Space toggles a
+model; selection survives filtering. A single model keeps the chosen alias;
+multiple models receive numbered aliases. All are staged atomically, or none on
+conflict/capacity failure. Registry limits and one-slot admission remain defaults
+until reviewed separately; reported slots are not automatically adopted.
+
+Discovery uses a separate owned core protocol and runtime worker. One request is
+active, the total deadline is five seconds, HTTP headers are bounded to 16 KiB,
+body to 1 MiB, catalog to 256 items and each model ID to 256 bytes. Status is polled
+without network effects. Esc during a query requests cancellation; late results do
+not reopen the wizard or stage data. The worker retains its pending slot until
+completion, supports at most 64 submissions, and is cancelled/joined on shutdown.
+Only the latest result is retained; older IDs become Unknown and cannot replay.
+
+Confirming creates each selected model and an independent single-slot pool with
+its alias in the local draft, never overwriting an existing alias/pool. If used,
+the Authorization variable name is saved as auth=env/api_key_env; its value is never
+persisted. This is a catalog-header reference, not an implemented inference adapter. Setup reserves
+coder/shadow/local for its manual fields and selects the first discovered alias
+when no manual coder is configured. Ordinary settings do not change agent.model;
+select it explicitly there. Save remains separate: setup still requires review
+and confirmation. The wizard grants no permission for later inference and sends
+no request beyond the catalog query the user triggered.
+
+Focused checks: `cargo test -p fluzo-runtime --locked --offline model_discovery`,
+`cargo test -p fluzo-tui --locked --offline model_wizard`, and
+`python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'`. The PTY
+composes actual CLI, discovery and configuration workers with a registered fake
+catalog and independently verifies saved TOML. Runtime tests cover redirects,
+429 without retry, cancellation, timeout, bounds and malformed model IDs.
+Native discovery is not a live agent test or human visual acceptance.
+
+The implementation is original Rust; Crush revision 76cc5c5 was inspected only as
+an interaction reference under its FSL-1.1-MIT license. No source or artwork was
+copied. Cached, already pinned Hyper/Tokio/JSON packages are now allowed on runtime
+production paths and transitively CLI; core/TUI HTTP and direct build edges remain
+forbidden. No dependency was downloaded. This is a user-requested extension beyond
+the original offline S3 baseline, not a published issue/design acceptance.
+
+Validation of the uncommitted wizard on base `2520f22` passed 207 Rust cases,
+71 Python cases, workspace format/check/build/Clippy and dependency-boundary checks.
+The oversized-response fixture initially replied before reading the request and
+failed with Connection/BrokenPipe; synchronizing on request headers fixed the
+fixture. The graph tests were updated to admit only the new runtime HTTP paths,
+while preserving TUI/core prohibitions and rejecting direct build dependencies.
+A separate manual catalog GET was also made to a local endpoint during development;
+that was not isolated simulator evidence and did not run inference. Its returned
+model identifiers are deliberately not recorded here. No human visual acceptance
+of the new wizard, live inference or remote publication is claimed.
+
+The subsequent guided-dialog revision passed 209 Rust cases and 72 Python cases,
+plus format/check/build/Clippy and boundary checks. Its PTYs exercise URL Tab
+queries, optional Authorization from a synthetic environment variable, multiple
+selections and independent verification that only the reference reaches TOML.
+Unit checks cover protocol-1 rejection, missing/invalid header references before
+connection, unknown versus reported metadata, late-result cancellation, atomic
+multi-model rejection and shared dialog frames at 60x16 through 160x50. A clipped
+minimum-size footer was found by the buffer test and shortened without removing
+its back/cancel control. Frontier remains explicitly unavailable; no new live
+catalog query or inference was made for this revision. Human review is pending.
+
+The resulting local working tree passed 200 Rust cases and 69 Python cases,
+including safe-screen file preservation, unchanged setup screen defaults,
+MVP developer-entry navigation, setup relief buffers and repeated-resize PTYs.
+`cargo fmt --all -- --check`, workspace check/build/Clippy with locked offline
+resolution and `python3 -B scripts/check_dev_setup.py` passed. Python unittest
+discovery includes the existing simulator and LSP fixtures; no live inference ran.
+The old default-disabled developer-menu assertion initially failed after the
+requested default change; it now verifies default-enabled and explicit-disabled
+behavior separately. No fixture assertion was removed to hide the resize report.
+
+## Local writes and outside changes
+
+The operator decision for this workspace is that Fluzo owns `.fluzo`: the tool
+may replace the file whenever the user saves, and outside edits are information
+to surface rather than a write barrier. `fluzo-cli` starts the configuration
+service with `WritePolicy::LocalWorkspace`, so no Save path returns `ReadOnly`
+for an existing file. Replacement stays atomic: new bytes go to a temporary file
+in the same directory and move into place with a directory rename, so a crash
+cannot leave a truncated configuration.
+
+No backup is created. The workspace relies on Git to recover a bad save. The
+existing backup machinery stays available to hosts that ask for it; the normal
+Save path passes `backup: false`.
+
+Because the file can now change underneath the writer, the worker polls it. Every
+two seconds it stats the target and compares a fingerprint (device, inode,
+length, mtime, ctime, mode, link count) against the last identity this writer
+owned. A mismatch is classified as `Appeared`, `Modified` or `Removed`, recorded
+on the snapshot as `external_change`, and counted by `external_sequence` so a
+notice the user already acknowledged resurfaces when the file moves again. A
+failed probe is not evidence of an edit: the last known state is kept and the
+next poll retries. Detection adds no dependency; `notify`/`inotify` stay out of
+the lockfile.
+
+The settings view shows a banner naming the kind of change and offers two
+answers. `Ctrl+R` reloads, adopting the outside bytes and discarding the local
+draft. `Ctrl+K` keeps our draft and hides the banner. Neither touches the file.
+
+Save is deliberately the "our edits win" path. When a Save arrives while an
+outside change is pending, the service first rebases onto the file actually on
+disk: the outside bytes become the saved baseline, then only the keys the user
+touched are applied on top. Unrelated keys the outside edit introduced survive,
+and the user's intent is not lost to a conflict error. For this to work the
+polling check must not bump the snapshot version; bumping it would make the view's
+own stale-draft guard reject the Save instead of performing it.
+
+Focused checks: `cargo test -p fluzo-runtime --lib --locked --offline
+configuration` covers classification without version changes, the rebase merge
+that preserves an unrelated outside key, recreation of a file removed outside
+Fluzo, reload adoption and a real two-second worker poll. `cargo test -p
+fluzo-tui --locked --offline configuration` covers banner rendering,
+acknowledgement, resurfacing on a later change and the pending-write guard.
+The PTY case `test_outside_change_banner_offers_keep_ours_then_reload` in
+`scripts/test_configuration.py` drives the real binary through banner,
+keep-ours, Save merge and reload.
+
+This relaxes the read-only-for-replacement boundary previously described for
+ordinary hosts. It changes a default with security relevance, so the project
+documentation baseline (PRD 26.1 and architecture 10.2) needs a matching
+amendment in `fluzo-docs` before this is treated as accepted policy.
+
+## Friendly repository creation
+
+The default setup surface is a centered dialog, not a registry form. It explains
+missing configuration, offers Create, Add models (F3) and Not now (Esc), and uses
+recommended defaults. Create first prepares a candidate; a separate confirmation
+creates the file. The confirmation shows human-readable summaries and the selected
+path, not variable names. F4 retains explicit access to advanced fields and the
+full technical review. No values, writer capabilities or validation rules change.
+Loading has its own title; the welcome action appears only after discovery.
+After successful creation, ordinary Enter/F2 opens Settings; init remains separate.
+Declining, pasting and reopening never authorize creation. Conflicts and uncertain
+outcomes still preserve their explicit diagnostics, without automatic replay.
+
 ## Offline setup (UI-03 S2)
+
+The following describes the S2 baseline; the S3 review revisions above remove
+screen questions while retaining its offline and write-capability boundaries.
 
 S2 (#45, refinement R2) uses the write-capability decision in fluzo-docs #11,
 revision `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, PRD 26.1 and architecture
@@ -322,9 +573,10 @@ directory handles with no-follow opens; parent traversal, directory symlinks,
 non-regular targets and multiply-linked configuration files are rejected.
 Parent identity and target content/metadata are checked before saving.
 
-For replacement, the host must explicitly select `CoordinatedLocalWriters` only for a trusted,
-stable workspace where all concurrent writers honor the same parent-directory
-exclusive lock. Use `ReadOnly` or S2's exclusive `CreateOnly` otherwise. This is an integration precondition,
+For replacement, the host must explicitly select `LocalWorkspace` (renamed from
+`CoordinatedLocalWriters`) for a trusted, stable workspace where all concurrent
+writers honor the same parent-directory exclusive lock. Use `ReadOnly` or
+`CreateOnly` otherwise. This is an integration precondition,
 not user consent, an OS sandbox or protection against arbitrary editors or a
 hostile process that ignores locks. The adapter cannot detect that all external
 writers cooperate or certify a network filesystem. No caller may silently opt
@@ -420,8 +672,10 @@ The table describes the current implementation, not a separate schema.
 | `tui.flags.render_diagnostics` | Show aggregate rendering diagnostics | Boolean | Off | Live presentation |
 | `tui.notifications.desktop_enabled` | Explicit desktop opt-in | Boolean | Off | Session Apply; Ghostty only |
 
-The Developer Menu is disabled by default. Start the demo with `--dev-menu` and
-open it through the command palette; `--no-dev-menu` wins if both are supplied.
+The Developer Menu is enabled by default during the MVP, as requested during
+S3 human review. Open it through the command palette; an explicit `--no-dev-menu`
+still wins over `--dev-menu`. Ordinary startup offers Developer menu > Presentation
+settings through the shared typed editor, without synthetic runtime actions.
 The theme picker exposes only `tui.theme`. The Developer Menu exposes these five
 controls, a separate synthetic notification-text editor and an in-app preview.
 Neither synthetic action is a persistent setting.

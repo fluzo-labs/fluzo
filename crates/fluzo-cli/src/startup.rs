@@ -93,22 +93,37 @@ pub fn run(arguments: &[OsString]) -> ExitCode {
             value,
         })
         .collect();
-    let mut service =
-        match ConfigurationService::start(workspace, config, overrides, WritePolicy::CreateOnly) {
+    let mut service = match ConfigurationService::start(
+        workspace,
+        config,
+        overrides,
+        WritePolicy::LocalWorkspace,
+    ) {
+        Ok(service) => service,
+        Err(error) => {
+            return result(
+                "configuration_unavailable",
+                &fluzo_tui::setup::diagnostic(&error),
+            );
+        }
+    };
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        let mut discovery = match fluzo_runtime::model_discovery::ModelDiscoveryService::start() {
             Ok(service) => service,
-            Err(error) => {
+            Err(_) => {
                 return result(
-                    "configuration_unavailable",
-                    &fluzo_tui::setup::diagnostic(&error),
+                    "discovery_unavailable",
+                    "Model discovery worker unavailable; no network request sent.",
                 );
             }
         };
-    if io::stdin().is_terminal() && io::stdout().is_terminal() {
-        let outcome = fluzo_tui::terminal::run_setup(
+        let outcome = fluzo_tui::terminal::run_configuration(
             &mut service,
+            &mut discovery,
             target.to_string_lossy().into_owned(),
             explicit,
             options.ascii,
+            options.safe_screen_settings,
         );
         service.quiesce();
         return match outcome {

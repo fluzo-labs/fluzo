@@ -159,6 +159,7 @@ pub fn run_demo(
     options: VisualOptions,
     scenes: &[Snapshot],
 ) -> io::Result<()> {
+    let safe_screen_settings = options.safe_screen_settings;
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(io::Error::other(
             "Interactive demo requires terminal stdin and stdout; use 'fluzo demo' for plain output.",
@@ -199,7 +200,9 @@ pub fn run_demo(
             .push(signal_hook::flag::register(signal, stop.clone())?);
     }
     let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
-    let color = !limited && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+    let color = !limited
+        && !safe_screen_settings
+        && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
     shell.preferences.ascii |= limited;
     shell.truecolor = !limited
         && (std::env::var("COLORTERM")
@@ -382,6 +385,34 @@ pub fn run_setup(
     explicit: bool,
     ascii: bool,
 ) -> io::Result<bool> {
+    run_setup_with_screen_settings(port, target, explicit, ascii, false)
+}
+
+pub fn run_setup_with_screen_settings(
+    port: &mut dyn fluzo_core::configuration::ConfigurationPort,
+    target: String,
+    explicit: bool,
+    ascii: bool,
+    safe_screen_settings: bool,
+) -> io::Result<bool> {
+    run_configuration(
+        port,
+        &mut fluzo_core::model_discovery::Unavailable,
+        target,
+        explicit,
+        ascii,
+        safe_screen_settings,
+    )
+}
+
+pub fn run_configuration(
+    port: &mut dyn fluzo_core::configuration::ConfigurationPort,
+    discovery: &mut dyn fluzo_core::model_discovery::ModelDiscoveryPort,
+    target: String,
+    explicit: bool,
+    ascii: bool,
+    safe_screen_settings: bool,
+) -> io::Result<bool> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(io::Error::other(
             "Setup requires terminal stdin and stdout.",
@@ -390,7 +421,13 @@ pub fn run_setup(
     let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
     let mut workspace =
         crate::workspace::Workspace::new(&target, ascii || limited).map_err(io::Error::other)?;
+    workspace.shell.preferences.ascii = ascii || limited;
+    workspace.shell.truecolor = !limited
+        && (std::env::var("COLORTERM")
+            .is_ok_and(|value| matches!(value.as_str(), "truecolor" | "24bit"))
+            || std::env::var("TERM").is_ok_and(|value| value == "xterm-ghostty"));
     let mut normal = false;
+    let mut advanced_setup = false;
     let mut setup = crate::setup::Setup::new(target, explicit);
     let stop = Arc::new(AtomicBool::new(false));
     let mut signals = Signals(Vec::new());
@@ -404,7 +441,9 @@ pub fn run_setup(
             .push(signal_hook::flag::register(signal, stop.clone())?);
     }
     let limited = std::env::var("TERM").is_ok_and(|value| value == "dumb" || value == "linux");
-    let color = !limited && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+    let color = !limited
+        && !safe_screen_settings
+        && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
     let mut output = io::stdout();
     let mut guard = TerminalGuard::enter(&mut output)?;
     let previous_hook = std::panic::take_hook();
@@ -443,15 +482,32 @@ pub fn run_setup(
                     dirty |= normal;
                 }
             }
+            dirty |= workspace.model_wizard.poll(discovery);
             if workspace.shell.quit {
                 break;
             }
             if dirty {
                 terminal.draw(|frame| {
-                    if normal {
+                    if workspace.model_wizard.open {
+                        if normal {
+                            workspace.shell.render(frame, color);
+                        } else {
+                            setup.render_dialog(frame, &workspace.shell, color);
+                        }
+                        workspace
+                            .model_wizard
+                            .render(frame, &workspace.shell, color);
+                    } else if normal {
                         workspace.render(frame, color);
+                    } else if advanced_setup {
+                        setup.render_with_capabilities(
+                            frame,
+                            color,
+                            ascii || limited,
+                            workspace.shell.truecolor,
+                        );
                     } else {
-                        setup.render(frame, color, ascii || limited);
+                        setup.render_dialog(frame, &workspace.shell, color);
                     }
                 })?;
                 dirty = false;
@@ -464,18 +520,57 @@ pub fn run_setup(
                             || (key.modifiers.contains(event::KeyModifiers::CONTROL)
                                 && matches!(key.code, event::KeyCode::Char('c' | 'q'))) =>
                     {
-                        if normal {
+                        if key.modifiers.contains(event::KeyModifiers::CONTROL)
+                            && matches!(key.code, event::KeyCode::Char('c' | 'q'))
+                        {
+                            workspace.model_wizard.close(discovery);
+                            workspace.shell.quit = true;
+                        } else if workspace.model_wizard.open {
+                            workspace.model_wizard.key(key, discovery);
+                            if let Some(selections) = workspace.model_wizard.completed.take() {
+                                let result = if normal {
+                                    workspace.configuration.stage_discovered_models(&selections)
+                                } else {
+                                    setup.stage_discovered_models(&selections)
+                                };
+                                match result {
+                                    Ok(()) => workspace.model_wizard.close(discovery),
+                                    Err(error) => workspace.model_wizard.reject(error),
+                                }
+                            }
+                        } else if key.code == event::KeyCode::F(3) {
+                            workspace.model_wizard.show();
+                        } else if normal {
                             workspace.key(key, port);
-                        } else if !explicit && setup.saved && key.code == event::KeyCode::F(2) {
+                        } else if !explicit
+                            && setup.saved
+                            && (key.code == event::KeyCode::Enter
+                                || (key.modifiers.contains(event::KeyModifiers::CONTROL)
+                                    && key.code == event::KeyCode::Char('p')))
+                        {
                             normal = true;
-                        } else {
+                            workspace.open_configuration_menu();
+                        } else if key.code == event::KeyCode::F(4) {
+                            advanced_setup = !advanced_setup;
+                        } else if advanced_setup {
                             setup.key(key, port);
+                        } else {
+                            setup.dialog_key(key, port);
                         }
                     }
+                    Event::Mouse(mouse) if workspace.model_wizard.open => {
+                        workspace.model_wizard.mouse(
+                            mouse,
+                            ratatui::layout::Rect::new(0, 0, size.width, size.height),
+                            discovery,
+                        );
+                    }
                     Event::Paste(text) if size.width >= 60 && size.height >= 16 => {
-                        if normal {
+                        if workspace.model_wizard.open {
+                            workspace.model_wizard.paste(&text);
+                        } else if normal {
                             workspace.paste(&text);
-                        } else {
+                        } else if advanced_setup {
                             setup.paste(&text);
                         }
                     }
@@ -486,6 +581,7 @@ pub fn run_setup(
         }
         Ok(setup.saved || normal)
     }));
+    workspace.model_wizard.close(discovery);
     let cleanup = guard.restore(&mut output);
     std::panic::set_hook(previous_hook);
     match result {

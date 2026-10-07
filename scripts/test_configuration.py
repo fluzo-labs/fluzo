@@ -22,7 +22,7 @@ class ConfigurationTests(unittest.TestCase):
         test_setup.SetupTests.setUpClass()
         cls.binary = test_setup.SetupTests.binary
 
-    def exercise(self, missing=False, terminate=False):
+    def exercise(self, missing=False, terminate=False, terminal_environment=None, expect_rgb=False, safe_screen=False):
         with tempfile.TemporaryDirectory(prefix="fluzo-s3-pty-") as directory, socket.socket() as listener:
             root = Path(directory)
             listener.bind(("127.0.0.1", 0))
@@ -35,8 +35,12 @@ class ConfigurationTests(unittest.TestCase):
             master, slave = pty.openpty()
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
             before = termios.tcgetattr(slave)
-            child = subprocess.Popen([self.binary, "--animation-fps", "0", "--no-dev-menu"], cwd=root,
-                env={"HOME": directory, "XDG_CONFIG_HOME": directory, "TERM": "xterm-256color", "NO_COLOR": "1"},
+            environment = {"TERM": "xterm-256color", "NO_COLOR": "1"} if terminal_environment is None else terminal_environment
+            arguments = [self.binary, "--animation-fps", "0", "--no-dev-menu"]
+            if safe_screen:
+                arguments.append("--safe-screen-settings")
+            child = subprocess.Popen(arguments, cwd=root,
+                env={"HOME": directory, "XDG_CONFIG_HOME": directory, **environment},
                 stdin=slave, stdout=slave, stderr=slave)
             screen = Screen()
             output = bytearray()
@@ -54,28 +58,54 @@ class ConfigurationTests(unittest.TestCase):
             try:
                 if missing:
                     wait(b"Welcome to Fluzo")
-                    os.write(master, b"\r\x13")
-                    wait(b"Review every value")
-                    os.write(master, b"\x13")
-                    wait(b"Configuration saved offline")
+                    os.write(master, b"\r")
+                    wait(b"Create configuration?")
+                    os.write(master, b"\r")
+                    wait(b"Your repository configuration is ready.")
                     original = (root / ".fluzo").read_text()
-                    os.write(master, b"\x1bOQ")
+                    os.write(master, b"\x10")
+                    wait(b"Limits")
+                    os.write(master, b"\x1b")
                 wait(b"Configuration workspace")
+                if expect_rgb:
+                    self.assertRegex(bytes(output), rb"\x1b\[(?:\d+;)*38;2;\d+;\d+;\d+[;m]")
+                    self.assertRegex(bytes(output), rb"\x1b\[(?:\d+;)*48;2;\d+;\d+;\d+[;m]")
+                else:
+                    self.assertNotRegex(bytes(output), rb"\x1b\[(?:\d+;)*(?:38|48);2;")
                 os.write(master, b"\x1b[200~preserved composer\x1b[201~\x10")
-                wait(b"Commands / configuration only")
+                wait(b"Providers")
                 self.assertNotIn(b"Play synthetic", screen.text())
+                self.assertNotIn(b"Limits", screen.text())
+                os.write(master, b"Configuration\r")
+                wait(b"Commands / Configuration")
                 os.write(master, b"Theme\r")
-                wait(b"tui.theme = default")
-                wait(b"ReadOnly")
-                os.write(master, b"\x1b[C\x01")
+                wait(b"> tui.theme" + b" " * 39 + b"default")
+                wait(b"Save: available")
+                if safe_screen:
+                    os.write(master, b"\x15tui.animation_fps")
+                    wait(b"Effective 0")
+                    os.write(master, b"\x03")
+                    child.wait(timeout=8)
+                    self.assertEqual(child.returncode, 0)
+                    self.assertEqual(termios.tcgetattr(slave), before)
+                    self.assertEqual((root / ".fluzo").read_text(), original)
+                    self.assertNotRegex(bytes(output), rb"\x1b\[(?:\d+;)*(?:38|48);2;")
+                    return
+                os.write(master, b"\r\x1b[C\r\x01")
                 wait(b"Completed: Applied")
                 wait(b"Effective high-contrast")
                 self.assertEqual((root / ".fluzo").read_text(), original)
-                os.write(master, b"\x13")
-                wait(b"ReadOnly")
                 os.write(master, b"\x1b")
+                wait(b"Save changes?")
+                wait(b"Save writes all unsaved changes")
+                os.write(master, b"\x1b[D\r")
                 wait(b"preserved composer")
-                os.write(master, b"\x10Notifications\r")
+                wait(b"Commands / Configuration")
+                os.write(master, b"\x1b")
+                wait(b"Search: Configuration")
+                os.write(master, b"\r")
+                wait(b"Commands / Configuration")
+                os.write(master, b"Notifications\r")
                 wait(b"tui.notifications.desktop_enabled")
                 os.write(master, b"\x15tui.notifications.duration_seconds\r\x1512\r\x01")
                 wait(b"Completed: Applied")
@@ -107,6 +137,14 @@ class ConfigurationTests(unittest.TestCase):
                 wait(b"resize required")
                 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
                 wait(b"FLUZO / Configuration")
+                for rows, columns in [(50, 160), (40, 120), (24, 80)]:
+                    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+                    os.write(master, b"\x15tui.theme")
+                    wait(b"Search: tui.theme")
+                    self.assertEqual(struct.unpack("HHHH", fcntl.ioctl(slave, termios.TIOCGWINSZ, b"\0" * 8))[:2], (rows, columns))
+                    os.write(master, b"\x15tui.animation_fps")
+                    wait(b"Search: tui.animation_fps")
+                self.assertNotRegex(bytes(output), rb"\x1b\[(?:4|8);\d+;\d+t|\x1b\[\?3[hl]")
                 if terminate:
                     child.send_signal(signal.SIGTERM)
                 else:
@@ -135,3 +173,89 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_settings_signal_restores_terminal(self):
         self.exercise(terminate=True)
+
+    def test_normal_shell_honors_terminal_color_capabilities(self):
+        profiles = [
+            ({"TERM": "xterm-ghostty"}, True),
+            ({"TERM": "xterm-256color", "COLORTERM": "truecolor"}, True),
+            ({"TERM": "xterm-256color", "COLORTERM": "24bit"}, True),
+            ({"TERM": "xterm-256color"}, False),
+            ({"TERM": "xterm-ghostty", "NO_COLOR": "1"}, False),
+            ({"TERM": "linux", "COLORTERM": "truecolor"}, False),
+            ({"TERM": "dumb", "COLORTERM": "truecolor"}, False),
+        ]
+        for environment, expect_rgb in profiles:
+            with self.subTest(environment=environment):
+                self.exercise(terminal_environment=environment, expect_rgb=expect_rgb)
+        with self.subTest(entry="setup handoff"):
+            self.exercise(missing=True, terminal_environment={"TERM": "xterm-ghostty"}, expect_rgb=True)
+
+    def test_safe_screen_keeps_existing_configuration(self):
+        self.exercise(terminal_environment={"TERM": "xterm-ghostty"}, safe_screen=True)
+
+    def test_outside_change_banner_offers_keep_ours_then_reload(self):
+        original = "schema_version = 1\n[agent]\nmodel = 'coder'\n[capacity_pools.local]\n[models.coder]\nbase_url = 'http://127.0.0.1:9/v1'\nmodel = 'fixture'\ncapacity_id = 'fixture'\npool = 'local'\nauth = 'env'\napi_key_env = 'ABSENT_FIXTURE'\n"
+        pulled = original + "# pulled from origin/main\n"
+        second = original + "# second pull\n"
+        with tempfile.TemporaryDirectory(prefix="fluzo-outside-pty-") as directory:
+            root = Path(directory)
+            (root / ".fluzo").write_text(original)
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+            before = termios.tcgetattr(slave)
+            child = subprocess.Popen(
+                [self.binary, "--animation-fps", "0", "--no-dev-menu"], cwd=root,
+                env={"HOME": directory, "XDG_CONFIG_HOME": directory,
+                     "TERM": "xterm-256color", "NO_COLOR": "1"},
+                stdin=slave, stdout=slave, stderr=slave)
+            screen = Screen()
+            output = bytearray()
+
+            def wait(marker, budget=12):
+                deadline = time.monotonic() + budget
+                while marker not in screen.text():
+                    self.assertLess(time.monotonic(), deadline, f"Missing {marker!r}: {screen.text()!r}")
+                    if select.select([master], [], [], max(0, deadline - time.monotonic()))[0]:
+                        data = os.read(master, 65536)
+                        output.extend(data)
+                        self.assertLess(len(output), 2 * 1024 * 1024)
+                        screen.feed(data)
+
+            try:
+                wait(b"Configuration workspace")
+                os.write(master, b"\x10")
+                wait(b"Providers")
+                os.write(master, b"Configuration\r")
+                wait(b"Commands / Configuration")
+                os.write(master, b"Theme\r")
+                wait(b"> tui.theme")
+                self.assertNotIn(b"outside Fluzo", screen.text())
+                (root / ".fluzo").write_text(pulled)
+                wait(b"changed outside Fluzo")
+                os.write(master, b"\x0b")
+                wait(b"Keeping our draft")
+                self.assertNotIn(b"changed outside Fluzo", screen.text())
+                os.write(master, b"\r\x1b[C\r\x13")
+                wait(b"Completed: Saved")
+                document = (root / ".fluzo").read_text()
+                self.assertIn("# pulled from origin/main", document)
+                self.assertIn("high-contrast", document)
+                (root / ".fluzo").write_text(second)
+                wait(b"changed outside Fluzo")
+                os.write(master, b"\x12")
+                wait(b"Press the same key again")
+                os.write(master, b"\x12")
+                wait(b"Completed: Reloaded")
+                self.assertNotIn(b"outside Fluzo", screen.text())
+                self.assertEqual((root / ".fluzo").read_text(), second)
+                os.write(master, b"\x03")
+                child.wait(timeout=8)
+                self.assertEqual(child.returncode, 0)
+                self.assertEqual(termios.tcgetattr(slave), before)
+                self.assertEqual(sorted(path.name for path in root.iterdir()), [".fluzo"])
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=8)
+                os.close(master)
+                os.close(slave)
