@@ -272,7 +272,13 @@ def main():
     toolchain = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]
     assert toolchain["channel"] == "1.98.0"
     assert {"rust-analyzer", "rust-src", "clippy", "rustfmt"} <= set(toolchain["components"])
-    expected = "lsp add rust-analyzer --command rustup --args run --args 1.98.0 --args rust-analyzer --filetypes rust --root-markers Cargo.toml\n"
+    expected = (
+        "lsp add rust-analyzer --command rustup --args run --args 1.98.0 "
+        "--args rust-analyzer --filetypes rust --root-markers Cargo.toml\n"
+        "mcp add tui-test --type stdio --command uvx "
+        "--args git+https://github.com/GeorgePearse/mcp-tui-test@bbdd9003eaefd0609d86707abdb5d32d1540b25c "
+        "--args mcp-tui-test\n"
+    )
     assert (ROOT / "crushrc").read_text() == expected
     metadata = subprocess.check_output(
         ["cargo", "metadata", "--format-version", "1", "--locked", "--offline"],
