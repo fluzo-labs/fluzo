@@ -107,8 +107,9 @@ column- and row-sensitive rather than trivially satisfied.
 Registration in this project's `crushrc` takes effect when Crush starts. A
 running Crush session does not pick up a mid-session edit, so the live drive
 above was performed by speaking MCP over stdio against the same pinned server,
-which is the identical transport and tool path. Confirming `crush_info` reports
-`tui-test` as connected requires restarting Crush.
+which is the identical transport and tool path. After a restart, `crush_info`
+reports `tui-test = connected (12 tools, 0 resources)`, loaded from this
+project's `crushrc` with no user-level MCP entry.
 
 ## Boundary with the deterministic PTY suite
 
