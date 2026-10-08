@@ -23,11 +23,13 @@ see CONFIGURATION.md for its explicit coordinated-writer filesystem contract.
 UI-03 S2 adds offline welcome/setup and headless configuration discovery using
 configuration protocol 3. Under #45 R2 and fluzo-docs revision
 `ed08afab9e2e3ac22a9ef5ef89e32911fcda1850`, ordinary CLI hosts may exclusively
-create missing files. The operator has since overridden the
-read-only-for-replacement boundary here: configuration is local, the CLI runs
-`LocalWorkspace`, Fluzo replaces `.fluzo` on Save and trusts Git instead of a
-backup copy. Outside edits are polled and surfaced as a banner offering reload or
-keep-ours. UI-03 S3 (#46 R2) adds the normal configuration-only shell and typed
+create missing files. The accepted amendment in fluzo-docs revision
+`3c7fc8e1f6934922ad66fe3eda8123854620839b` (PRD 26.1, architecture 10.2)
+lifts the read-only-for-replacement boundary here: configuration is local, the
+CLI runs `LocalWorkspace`, Fluzo replaces `.fluzo` on Save and trusts Git
+instead of a backup copy. Outside edits are polled and surfaced as a banner
+offering reload or keep-ours. UI-03 S3 (#46 R2) adds the normal
+configuration-only shell and typed
 basic/advanced editing with protocol 5, owned descriptors, operation
 availability and bounded request reconciliation. Presentation Apply is separate.
 S3 human-review revisions replace the default setup form with a centered repository
