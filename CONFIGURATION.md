@@ -408,9 +408,12 @@ The PTY case `test_outside_change_banner_offers_keep_ours_then_reload` in
 keep-ours, Save merge and reload.
 
 This relaxes the read-only-for-replacement boundary previously described for
-ordinary hosts. It changes a default with security relevance, so the project
-documentation baseline (PRD 26.1 and architecture 10.2) needs a matching
-amendment in `fluzo-docs` before this is treated as accepted policy.
+ordinary hosts. Because it changes a default with security relevance, the
+matching amendment is recorded in the documentation baseline instead of
+assumed: [PRD 26.1](https://github.com/fluzo-labs/fluzo-docs/blob/3c7fc8e1f6934922ad66fe3eda8123854620839b/PRD.md)
+and architecture 10.2 at fluzo-docs revision
+`3c7fc8e1f6934922ad66fe3eda8123854620839b`. The behaviour described above
+implements accepted policy, not a pending proposal.
 
 ## Friendly repository creation
 
