@@ -74,6 +74,10 @@ It provides a multiline composer, searchable palette and synthetic streaming,
 without reading configuration or executing tasks. Ctrl+P opens actions;
 Ctrl+Q exits with confirmation for a nonempty draft.
 
+[MCP_TUI_TEST.md](MCP_TUI_TEST.md) records the pinned live TUI exploration
+harness used during development. It is agent-side tooling only: no MCP support
+in the Fluzo product and no CI dependency.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

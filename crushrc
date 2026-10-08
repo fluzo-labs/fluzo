@@ -1,1 +1,2 @@
 lsp add rust-analyzer --command rustup --args run --args 1.98.0 --args rust-analyzer --filetypes rust --root-markers Cargo.toml
+mcp add tui-test --type stdio --command uvx --args git+https://github.com/GeorgePearse/mcp-tui-test@bbdd9003eaefd0609d86707abdb5d32d1540b25c --args mcp-tui-test
