@@ -29,12 +29,20 @@ scenario adapter. No production runtime dependency is added to TUI.
 
 ## Explicit model-catalog discovery
 
-The user-requested local/LAN wizard uses `fluzo_core::model_discovery` protocol 2,
+The user-requested local/LAN wizard uses `fluzo_core::model_discovery` protocol 3,
 separate from configuration protocol 5 and task protocol 1. Requests own an ID,
 endpoint and optional Authorization environment reference, never the secret value.
-Status owns Pending or bounded model IDs plus optional reported context/output/slot
-metadata. Protocol 1 is rejected. Leaving the URL field triggers one catalog GET
-with the disclosed header policy, not an inference grant.
+Status owns Pending, a pre-connect Notice carrying the resolved address class, or
+bounded model IDs plus optional reported context/output/slot metadata. Protocols 1
+and 2 are rejected. Leaving the URL field triggers one catalog GET with the
+disclosed header policy, not an inference grant.
+A probe resolves and classifies the endpoint without opening a socket, and
+acceptance is recorded per run for one exact endpoint and address class. A
+discovery request for a non-loopback endpoint that lacks that acceptance yields
+the Notice and performs no connect; a later request for the same endpoint is
+refused before queueing. If the class resolved at connect differs from the
+accepted one, the request fails with `AddressClassChanged` and nothing is sent.
+Acceptance lives only in process memory and is never written to `.fluzo`.
 Status does no I/O; cancel requests termination without freeing the occupied slot
 until a terminal result is collected. Old IDs cannot be resubmitted as new work.
 
@@ -51,7 +59,8 @@ UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
 `fluzo_core::configuration::ConfigurationPort` alongside the task port, without
 changing task protocol version 1 or inventing tasks for configuration edits.
 Its separately versioned requests own typed values and a configuration request
-ID. Configuration protocol 5 retains protocol 2's typed diagnostic codes and optional UTF-8
+ID. Configuration protocol 5 retains discovery protocol 3's typed diagnostic
+codes and optional UTF-8
 byte ranges in Invalid outcomes, including syntax, missing-version, size and
 encoding failures. It rejects protocols 1 and 2 instead of silently discarding new
 error fields; protocol 3 is also rejected by the S3 capability/descriptor extension.

@@ -43,13 +43,15 @@ Repeated resize PTYs preserve dimensions and prohibit window-resize sequences,
 but the reported Ghostty/Wayland physical resize reset is not yet reproduced.
 The F3 model wizard reuses centered dialogs: Local/Frontier, provider, optional
 Authorization environment reference, URL blur query and multiple model selection.
-Core discovery protocol 2 carries only references and optional reported metadata;
+Core discovery protocol 3 carries only references and optional reported metadata;
 the runtime resolves headers for the selected endpoint. No secret is saved in repo
 configuration. No startup probes, redirects, retries or inference are enabled.
 It accepts localhost, private IPs and DNS names over HTTP, not HTTPS. The worker
 resolves names itself and keeps the original authority in the Host header for
-virtual-host routing; the resolved address class is unrestricted and locality is
-the operator's responsibility. See CONFIGURATION.md for limits.
+virtual-host routing; locality remains the operator's responsibility, but a
+non-loopback endpoint now needs an explicit per-run acceptance before any socket
+is opened, and the accepted address class is rechecked at connect. See
+CONFIGURATION.md for limits.
 Pinned cached Hyper/Tokio/JSON dependencies now have runtime production paths;
 core/TUI remain HTTP-free. Focused checks are `cargo test -p fluzo-runtime --locked
 --offline model_discovery`, `cargo test -p fluzo-tui --locked --offline model_wizard`

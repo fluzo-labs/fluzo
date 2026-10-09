@@ -577,6 +577,19 @@ mod tests {
         cancelled: Vec<u64>,
     }
     impl ModelDiscoveryPort for Port {
+        fn probe(
+            &mut self,
+            _: fluzo_core::model_discovery::Probe,
+        ) -> Result<(), fluzo_core::model_discovery::Error> {
+            Ok(())
+        }
+        fn accept(
+            &mut self,
+            _: &str,
+            _: fluzo_core::model_discovery::AddressClass,
+        ) -> Result<(), fluzo_core::model_discovery::Error> {
+            Ok(())
+        }
         fn submit(&mut self, request: Request) -> Result<(), fluzo_core::model_discovery::Error> {
             self.requests.push(request);
             Ok(())
