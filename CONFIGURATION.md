@@ -123,6 +123,12 @@ capability; the host wiring does. Session presentation Apply stays independent.
 Operational Apply stays unavailable; restart state is pending only. CLI overrides
 govern active settings, not the separately saved future defaults.
 
+The normal host renders that state as a `Restart pending: <keys>` row in the
+settings details area, or `Restart pending: none` when the list is empty. The row
+is presentation only: it offers no restart action, and a presentation Apply for
+an unrelated key never clears it. Restart application remains deferred to
+REL-01 (#24).
+
 The service retains 64 request records without eviction. Keystrokes remain local;
 a Validate/Edit consumes one record, chained Save/Apply needs a second. Exhaustion
 preserves the displayed draft and retained outcomes, rejects new mutation and

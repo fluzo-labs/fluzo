@@ -215,6 +215,44 @@ fn text(view: &ConfigurationView, width: u16, height: u16, ascii: bool) -> Strin
         .map(|cell| cell.symbol())
         .collect()
 }
+fn rows(
+    view: &ConfigurationView,
+    width: u16,
+    height: u16,
+    color: bool,
+    ascii: bool,
+) -> Vec<String> {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal
+        .draw(|frame| view.render(frame, color, ascii))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    (0..buffer.area.height)
+        .map(|row| {
+            (0..buffer.area.width)
+                .map(|column| buffer[(column, row)].symbol().to_string())
+                .collect::<String>()
+        })
+        .collect()
+}
+fn restart_line(
+    view: &ConfigurationView,
+    width: u16,
+    height: u16,
+    color: bool,
+    ascii: bool,
+) -> String {
+    rows(view, width, height, color, ascii)
+        .iter()
+        .find_map(|row| {
+            row.find("Restart pending:").map(|start| {
+                row[start..]
+                    .trim_end_matches([' ', '\u{2502}', '|'])
+                    .to_string()
+            })
+        })
+        .unwrap_or_else(|| panic!("restart-pending line missing from the settings details area"))
+}
 
 #[test]
 fn review_regression_effective_only_collections_can_be_recreated_after_reload() {
@@ -1094,6 +1132,129 @@ fn layouts_keyboard_and_hostile_text_remain_bounded() {
     view.paste("\u{1b}]52;c;synthetic\u{7}");
     assert!(!text(&view, 120, 40, false).contains('\u{1b}'));
     assert!(port.requests.is_empty());
+}
+
+#[test]
+fn restart_pending_line_lists_exactly_the_snapshot_keys() {
+    let mut port = Port::new();
+    port.snapshot.pending_restart = vec!["agent.runtime".into(), "harness.max_turns".into()];
+    let mut view = view(&mut port);
+    view.show("tui.theme");
+    assert_eq!(
+        restart_line(&view, 120, 40, false, false),
+        "Restart pending: agent.runtime, harness.max_turns"
+    );
+    let rows = rows(&view, 120, 40, false, false);
+    let effective = rows
+        .iter()
+        .position(|row| row.contains("Effective "))
+        .expect("selected key details");
+    let restart = rows
+        .iter()
+        .position(|row| row.contains("Restart pending:"))
+        .expect("restart-pending line");
+    let footer = rows
+        .iter()
+        .position(|row| row.contains("Enter edit"))
+        .expect("footer");
+    assert!(restart > effective && restart < footer);
+}
+
+#[test]
+fn restart_pending_empty_state_is_explicit() {
+    let mut port = Port::new();
+    assert!(port.snapshot.pending_restart.is_empty());
+    let view = view(&mut port);
+    for ascii in [false, true] {
+        let line = restart_line(&view, 120, 40, false, ascii);
+        assert_eq!(line, "Restart pending: none");
+    }
+    assert!(!text(&view, 120, 40, false).contains("Restart pending: \u{2502}"));
+}
+
+#[test]
+fn restart_pending_line_survives_an_unrelated_presentation_apply() {
+    let mut port = Port::new();
+    port.snapshot.pending_restart = vec!["agent.runtime".into()];
+    let mut view = view(&mut port);
+    view.show("tui.theme");
+    view.checked.insert("tui.theme".into());
+    view.apply(&mut port);
+    assert!(
+        matches!(
+            &port.requests.last().unwrap().action,
+            ConfigurationAction::Apply { keys, .. } if keys == &vec!["tui.theme".to_owned()]
+        ),
+        "a presentation Apply must name only the selected key, never the restart key"
+    );
+    assert_eq!(
+        restart_line(&view, 120, 40, false, false),
+        "Restart pending: agent.runtime"
+    );
+    port.outcome = ConfigurationRequestStatus::Completed {
+        version: port.snapshot.version,
+        outcome: ConfigurationOutcome::Applied,
+    };
+    assert!(view.poll(&mut port));
+    assert!(!view.checked.contains("tui.theme"));
+    assert!(!view.unapplied.contains("tui.theme"));
+    assert_eq!(
+        restart_line(&view, 120, 40, false, false),
+        "Restart pending: agent.runtime"
+    );
+}
+
+#[test]
+fn restart_pending_line_stays_readable_across_sizes_and_fallbacks() {
+    let mut port = Port::new();
+    port.snapshot.pending_restart = vec!["agent.runtime".into(), "harness.max_turns".into()];
+    let view = view(&mut port);
+    for (width, height) in [(60u16, 16u16), (80, 24), (120, 40), (160, 50)] {
+        for color in [false, true] {
+            for ascii in [false, true] {
+                assert_eq!(
+                    restart_line(&view, width, height, color, ascii),
+                    "Restart pending: agent.runtime, harness.max_turns",
+                    "{width}x{height} color={color} ascii={ascii}"
+                );
+            }
+        }
+    }
+    port.snapshot.external_change = Some(ExternalChange::Modified);
+    port.snapshot.external_sequence = 1;
+    let mut notified = ConfigurationView::default();
+    notified.poll(&mut port);
+    notified.show("");
+    for (width, height) in [(60u16, 16u16), (80, 24)] {
+        assert_eq!(
+            restart_line(&notified, width, height, false, false),
+            "Restart pending: agent.runtime, harness.max_turns",
+            "{width}x{height} with an outside-change notice row"
+        );
+    }
+}
+
+#[test]
+fn restart_pending_keys_are_sanitized_like_other_configuration_text() {
+    let mut port = Port::new();
+    port.snapshot.pending_restart = vec![
+        "\u{1b}[31m\u{7}evil".to_string(),
+        "\u{202e}evil\u{200e}".to_string(),
+    ];
+    let view = view(&mut port);
+    assert_eq!(
+        restart_line(&view, 120, 40, false, false),
+        r"Restart pending: \u{1b}[31m\u{7}evil, \u{202e}evil\u{200e}"
+    );
+    for ascii in [false, true] {
+        let screen = text(&view, 120, 40, ascii);
+        for character in ['\u{1b}', '\u{7}', '\u{202e}', '\u{200e}'] {
+            assert!(
+                !screen.contains(character),
+                "raw {character:?} reached the screen"
+            );
+        }
+    }
 }
 
 #[test]
