@@ -282,8 +282,11 @@ without querying and cancels pending work. All providers currently use /v1/model
 This initial adapter accepts HTTP with a localhost, literal IPv4/IPv6 or DNS host,
 an optional port and optional /v1 suffix. The worker resolves DNS names itself and
 keeps the original authority in the Host header, so virtual-host and dynamic-DNS
-catalogs route correctly. The resolved address class is not restricted: locality is
-the operator's responsibility. HTTPS, custom paths, redirects, userinfo,
+catalogs route correctly. The resolved address class is not restricted, but it is
+checked before any socket is opened: a non-loopback endpoint requires an explicit
+per-run acceptance for that exact endpoint and class, and the class is rechecked
+at connect. Locality remains the operator's responsibility. HTTPS, custom paths,
+redirects, userinfo,
 query/fragment and percent escapes are rejected without downgrade. Optional
 Authorization uses a named environment variable
 containing the complete header value (for example Bearer plus a token). The worker
