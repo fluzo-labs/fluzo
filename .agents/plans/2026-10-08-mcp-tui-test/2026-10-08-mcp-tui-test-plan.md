@@ -3,7 +3,7 @@ name: "2026-10-08-mcp-tui-test"
 description: "Give the coding agent a live, position-aware way to drive and inspect the Fluzo TUI during development, without weakening the deterministic PTY evidence suite or adding MCP to the Fluzo product."
 created_at: "2026-10-08T13:30:55Z"
 last_implementation_at: "2026-10-08T14:41:30Z"
-has_completed_all_phases: false
+has_completed_all_phases: true
 ---
 
 # Accelerate Fluzo TUI development with a live agent-driven terminal harness
@@ -114,7 +114,7 @@ Risks and mitigations:
   - [x] Verify the MIT license in the resolved source and record the SHA-256 of the pinned commit reference.
   - [x] Record the install recipe and provenance in the project documentation, with the explicit "developer-time only, not CI, not product MCP" statement.
   - [x] Run applicable checks and record actual results.
-  - [ ] Present evidence and stop for review before another phase.
+  - [x] Present evidence and stop for review before another phase.
 - Verification: from a shell in the consumer root, run the pinned `uvx` command, then a `list_sessions` call against it; run `git diff --stat .github/workflows/` and confirm it is empty; run `python3 scripts/check_dev_setup.py` and confirm it still passes (P1 must not have touched `crushrc`). Expected evidence: a structured session-list response, an empty workflow diff, and a passing setup check.
 - Risks and recovery: if the pinned commit does not build under Python 3.14, pin 3.12 for the tool environment only; if the git channel is unusable, switch to the checkout fallback and update the recorded recipe. Neither recovery touches the consumer repository.
 
@@ -137,7 +137,7 @@ Risks and mitigations:
   - [x] Reload the project and confirm the server is connected via `crush_info`. Confirmed after a restart: `tui-test = connected (12 tools, 0 resources)`, loaded from `/home/jose/gitrepos/fluzo/crushrc` with no user-level MCP entry. Crush loads MCP servers at startup only, so the session that edited `crushrc` could not confirm this and a restart was required.
   - [x] Drive the live exploration against `fluzo demo --interactive` in buffer mode and capture the actual tool results.
   - [x] Run applicable checks and record actual results.
-  - [ ] Present evidence and stop for review before another phase.
+  - [x] Present evidence and stop for review before another phase.
 - Verification: `crush_info` (MCP section present and ready); the exploration transcript showing a passing row-and-column assertion; `python3 scripts/check_dev_setup.py` passing; `python3 -m unittest discover -s scripts -p 'test_*.py'` passing. Working directory is the consumer root throughout.
 - Risks and recovery: if the byte assertion and the `crushrc` drift, CI fails fast and the fix is to re-derive the expectation from the actual file. If the MCP server destabilizes the agent session, the entry can be set with `--disabled true` to keep the configuration while removing the runtime effect. Recovery never requires reverting the Rust workspace.
 
@@ -159,7 +159,7 @@ Risks and mitigations:
   - [x] Write the developer-tooling boundary section with purpose, non-purpose, worked examples and the timing caveat.
   - [x] Verify every relative link resolves from the final file location.
   - [x] Run applicable checks and record actual results.
-  - [ ] Present evidence and stop for review.
+  - [x] Present evidence and stop for review.
 - Verification: `python3 scripts/check_dev_setup.py` (its skill-reference link validator and foundation checks still pass); manual review of the comparison output against the live screen; the documentation section reviewed for the explicit product-versus-tooling distinction.
 - Risks and recovery: if the comparison shows the current harness was hiding a real rendering issue, that is a finding to file, not something to fix silently inside this plan.
 
@@ -168,31 +168,44 @@ Risks and mitigations:
 | Phase | Implementation | Verification | Review | Evidence |
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | accepted | `MCP_TUI_TEST.md` records the recipe and provenance. At consumer `cef2b32`: pinned `uvx git+...@bbdd900` completes the MCP handshake (server `tui-test`, protocol `2024-11-05`, 12 tools) and `list_sessions` returns `{"success": true, "sessions": [], "reaped": {}}`; PyPI form fails as expected; uvx selects Python 3.13.16 and a forced `--python 3.14` run reproduces the same handshake on 3.14.7; LICENSE SHA-256 `1d28272e...1e6f46` matches between clean clone and uv cache; `git diff .github/` empty; `python3 scripts/check_dev_setup.py` passes; `python3 -m unittest discover -s scripts -p 'test_*.py'` passes 73 tests. |
-| P2 | implemented | passed | pending | `crushrc` carries the pinned `mcp add tui-test` line and `scripts/check_dev_setup.py` expects those exact bytes (setup check passes). Live drive over MCP stdio against the same pinned server, consumer `cef2b32`: 17/17 checks passed. Buffer-mode launch at 120x40; composer `Ask anything` located at row 34, column 5; `assert_at_position` passes there and fails at (34, 8) and (39, 5), proving row and column sensitivity; cursor reported (34, 5); `get_line` and `get_screen_region` returned as requested; `Ctrl+B` collapses the wide sidebar to the compact status and again restores it; poisoned `.fluzo` never read; `close_session` leaves `sessions: []`; the ninth concurrent launch returns the structured `session cap reached (8); close a session or raise MCP_TUI_MAX_SESSIONS` rather than hanging; no orphaned demo processes after server exit. 73 unittest tests still pass and `.github/` is unchanged. The `crush_info` criterion is verified: after a restart the agent reports `tui-test = connected (12 tools, 0 resources)` loaded from the project `crushrc`, with no user-level MCP entry. |
-| P3 | implemented | passed | pending | `MCP_TUI_TEST.md` gains "Boundary with the deterministic PTY suite", "Where the two genuinely diverge" and "Usage notes". Census of one captured real-demo stream at 120x40: 360 CUP, 45 SGR, 17 DECSET (`?1000h`, `?1002h`, `?1049h`, `?2004h`) and 1 DECTCEM (`?25l`); the repo `Screen` drops the last three classes, and both emulators still produced **identical text** (zero differing rows across palette open, typed query, escape and sidebar toggle), so no existing assertion depended on the drops. That agreement is a property of ratatui's CUP-per-row diff renderer, not a guarantee. EL, IL/DL and DECSTBM were **not emitted** on this path, so the divergence for them was proven with a synthetic differential instead: EL leaves stale cells that `wait_for` can match after a real terminal erased them; IL/DL produce no shift; and the hardcoded 90x260 grid at `scripts/test_tui.py:22` keeps a 150-column line unwrapped where a 120-column terminal wraps it. Also recorded: `expect_text` consumes the pexpect stream in buffer mode (observed blank buffer, so poll `capture_screen` instead) and `launch_tui` needs an `sh -c` wrapper because it spawns argv without a shell. Relative links in `MCP_TUI_TEST.md` and `README.md` all resolve; setup check passes. |
+| P2 | implemented | passed | accepted | `crushrc` carries the pinned `mcp add tui-test` line and `scripts/check_dev_setup.py` expects those exact bytes (setup check passes). Live drive over MCP stdio against the same pinned server, consumer `cef2b32`: 17/17 checks passed. Buffer-mode launch at 120x40; composer `Ask anything` located at row 34, column 5; `assert_at_position` passes there and fails at (34, 8) and (39, 5), proving row and column sensitivity; cursor reported (34, 5); `get_line` and `get_screen_region` returned as requested; `Ctrl+B` collapses the wide sidebar to the compact status and again restores it; poisoned `.fluzo` never read; `close_session` leaves `sessions: []`; the ninth concurrent launch returns the structured `session cap reached (8); close a session or raise MCP_TUI_MAX_SESSIONS` rather than hanging; no orphaned demo processes after server exit. 73 unittest tests still pass and `.github/` is unchanged. The `crush_info` criterion is verified: after a restart the agent reports `tui-test = connected (12 tools, 0 resources)` loaded from the project `crushrc`, with no user-level MCP entry. |
+| P3 | implemented | passed | accepted | `MCP_TUI_TEST.md` gains "Boundary with the deterministic PTY suite", "Where the two genuinely diverge" and "Usage notes". Census of one captured real-demo stream at 120x40: 360 CUP, 45 SGR, 17 DECSET (`?1000h`, `?1002h`, `?1049h`, `?2004h`) and 1 DECTCEM (`?25l`); the repo `Screen` drops the last three classes, and both emulators still produced **identical text** (zero differing rows across palette open, typed query, escape and sidebar toggle), so no existing assertion depended on the drops. That agreement is a property of ratatui's CUP-per-row diff renderer, not a guarantee. EL, IL/DL and DECSTBM were **not emitted** on this path, so the divergence for them was proven with a synthetic differential instead: EL leaves stale cells that `wait_for` can match after a real terminal erased them; IL/DL produce no shift; and the hardcoded 90x260 grid at `scripts/test_tui.py:22` keeps a 150-column line unwrapped where a 120-column terminal wraps it. Also recorded: `expect_text` consumes the pexpect stream in buffer mode (observed blank buffer, so poll `capture_screen` instead) and `launch_tui` needs an `sh -c` wrapper because it spawns argv without a shell. Relative links in `MCP_TUI_TEST.md` and `README.md` all resolve; setup check passes. |
 
 P1 review acceptance is user-supplied, recorded 2026-10-08 from the explicit
 directive "dale caña a P1, P2 y P3 vamos a por todo", given after the P1
 evidence table was presented. It is not a self-approval and it does not extend
 to later phases: P2 and P3 still stop for their own review.
 
+P2 and P3 review acceptance is also user-supplied, recorded 2026-10-08T17:50Z
+from the explicit directive "acepto P2 y P3 y registra la aceptación en el
+plan", given after both phases' evidence had been presented and after PR #58
+was merged into `main` as `c83b43a`. As with P1, this is not a self-approval:
+the reviewer is the user, and the merge was authorized separately from the
+publication approval that preceded it.
+
 ## Next step
 
-Review **P2 and P3** of `.agents/plans/2026-10-08-mcp-tui-test/2026-10-08-mcp-tui-test-plan.md`. Both are implemented and their checks pass, and no further phase remains in this plan, so the decision is acceptance rather than a handoff to another phase.
+Nothing remains to review in this plan. P1, P2 and P3 are implemented, verified
+and accepted, and the work is merged into `main` as `c83b43a` through PR #58.
 
-Two things the reviewer should know before accepting:
+Two things recorded at acceptance, kept here because they shaped what was
+actually delivered:
 
 - The P2 criterion "crush_info reports the tui-test MCP server as connected" is **verified**. After a restart the agent reports `tui-test = connected (12 tools, 0 resources)`, loaded from `/home/jose/gitrepos/fluzo/crushrc` with no user-level MCP entry. Crush reads MCP configuration only at startup, which is why the session that edited `crushrc` could not confirm it at the time.
 - The P3 comparison came out differently than the plan predicted. The plan expected the side-by-side to name EL, IL/DL and DECSTBM among the sequences the current `Screen` drops on real traffic. The captured demo stream never emits them, so the recorded finding is narrower and stronger: the repo emulator and pyte agree exactly today, the drops that do occur are SGR, DECSET and DECTCEM, and the EL/IL/DL and grid-size gaps were proven with a synthetic differential instead. Nothing was hidden or fixed silently; the divergence is documented as a latent risk tied to ratatui's renderer, not a present bug.
 
-Suggested short reply: "accept P2 and P3", or "request changes", or "stop". Acceptance does not authorize a commit; that is a separate explicit request.
+Follow-on work lives in GitHub, not in this document. #56 is unblocked and
+directly primed by the P3 finding: the repo's PTY emulator can pin a row but
+never a column, and erase-to-end-of-line leaves stale cells that a text match
+still hits. That has to be resolved before the restart-pending line can be
+asserted reliably there.
 
 ## Evidence and tracking
 
 - Consumer revision reviewed: `cef2b32e3bc25ccbaa8badf29b6314a0a5b66494` (`main`, clean).
 - Upstream tool reviewed: `bbdd9003eaefd0609d86707abdb5d32d1540b25c` (MIT, 2026-10-06T18:57:30Z, no releases).
 - Related consumer issues: #56 (settings restart-pending line coverage, which the P3 column-assertion finding feeds) and #57 (Ghostty/Wayland resize reproduction). GitHub remains the authority for their state; this document is not a parallel board.
-- Implementation evidence for P1, P2 and P3 is recorded in the progress table above and in `MCP_TUI_TEST.md`. The work is published on `docs/mcp-tui-harness` as PR [#58](https://github.com/fluzo-labs/fluzo/pull/58) against `main`, and the emulator gap finding is posted on [#56](https://github.com/fluzo-labs/fluzo/issues/56). Merge and acceptance remain separate authorizations; GitHub is the authority for their state.
+- Implementation evidence for P1, P2 and P3 is recorded in the progress table above and in `MCP_TUI_TEST.md`. The work is merged into `main` as `c83b43a` through PR [#58](https://github.com/fluzo-labs/fluzo/pull/58), and the emulator gap finding is posted on [#56](https://github.com/fluzo-labs/fluzo/issues/56). GitHub is the authority for their state.
 
 ## Optional handoff to another skill
 
