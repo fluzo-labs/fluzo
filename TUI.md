@@ -226,6 +226,13 @@ normal preference. Operational controls remain unavailable, restart stays pendin
 and partial/unknown outcomes do not authorize replay. See CONFIGURATION.md for
 input formats, whole-value replacement, collection semantics and record exhaustion.
 
+The settings details area reserves one always-visible row for `Restart pending:`.
+It lists the snapshot's pending keys comma-separated, or `Restart pending: none`
+when nothing waits for a restart, so an empty list never reads as a truncated
+line. Keys pass through the same display sanitization as other configuration
+text, and the reserved row keeps a long wrapped description from pushing the
+summary off screen.
+
 `cargo test -p fluzo-tui --locked --offline configuration` covers reducers/buffers;
 `cargo test -p fluzo-cli --test configuration --locked --offline` composes actual
 UI/service/file behavior in controlled hosts. `python3 -B -m unittest discover -s
