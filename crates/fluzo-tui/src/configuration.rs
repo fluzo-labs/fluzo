@@ -1348,10 +1348,15 @@ impl ConfigurationView {
             Paragraph::new(header).style(theme.muted),
             Rect::new(inner.x, inner.y, inner.width, header_height),
         );
-        let detail_height = inner.height.saturating_sub(7).min(4);
+        let footer_height = 4;
+        let restart_height = 1;
+        let detail_height = inner
+            .height
+            .saturating_sub(footer_height + header_height + restart_height + 1)
+            .min(4);
         let list_height = inner
             .height
-            .saturating_sub(4 + header_height + detail_height)
+            .saturating_sub(footer_height + header_height + detail_height + restart_height)
             .max(1);
         let keys = self.keys();
         let selected = keys
@@ -1450,12 +1455,6 @@ impl ConfigurationView {
                 )));
             }
         }
-        if let Some(snapshot) = &self.snapshot {
-            details.push(Line::from(format!(
-                "Restart pending: {}",
-                snapshot.pending_restart.join(", ")
-            )));
-        }
         frame.render_widget(
             Paragraph::new(details)
                 .wrap(Wrap { trim: false })
@@ -1467,6 +1466,28 @@ impl ConfigurationView {
                 detail_height,
             ),
         );
+        if let Some(snapshot) = &self.snapshot {
+            let pending = if snapshot.pending_restart.is_empty() {
+                "none".to_owned()
+            } else {
+                snapshot
+                    .pending_restart
+                    .iter()
+                    .map(|key| safe_text(key))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(format!("Restart pending: {pending}")))
+                    .wrap(Wrap { trim: false }),
+                Rect::new(
+                    inner.x,
+                    inner.y + header_height + list_height + detail_height,
+                    inner.width,
+                    restart_height,
+                ),
+            );
+        }
         let footer = vec![
             Line::from(safe_text(&self.status)),
             Line::from(
@@ -1483,7 +1504,12 @@ impl ConfigurationView {
         ];
         frame.render_widget(
             Paragraph::new(footer).style(theme.muted),
-            Rect::new(inner.x, inner.bottom().saturating_sub(4), inner.width, 4),
+            Rect::new(
+                inner.x,
+                inner.bottom().saturating_sub(footer_height),
+                inner.width,
+                footer_height,
+            ),
         );
         if self.help {
             shell.render_dialog_frame(frame, area, Theme::new(&settings, color));
