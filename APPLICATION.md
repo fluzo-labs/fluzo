@@ -30,7 +30,7 @@ scenario adapter. No production runtime dependency is added to TUI.
 ## Explicit model-catalog discovery
 
 The user-requested local/LAN wizard uses `fluzo_core::model_discovery` protocol 3,
-separate from configuration protocol 5 and task protocol 1. Requests own an ID,
+separate from configuration protocol 6 and task protocol 1. Requests own an ID,
 endpoint and optional Authorization environment reference, never the secret value.
 Status owns Pending, a pre-connect Notice carrying the resolved address class, or
 bounded model IDs plus optional reported context/output/slot metadata. Protocols 1
@@ -61,12 +61,14 @@ UI-03 S1 ([#44](https://github.com/fluzo-labs/fluzo/issues/44)) introduces
 `fluzo_core::configuration::ConfigurationPort` alongside the task port, without
 changing task protocol version 1 or inventing tasks for configuration edits.
 Its separately versioned requests own typed values and a configuration request
-ID. Configuration protocol 5 retains discovery protocol 3's typed diagnostic
+ID. Configuration protocol 6 retains discovery protocol 3's typed diagnostic
 codes and optional UTF-8
 byte ranges in Invalid outcomes, including syntax, missing-version, size and
-encoding failures. It rejects protocols 1 and 2 instead of silently discarding new
-error fields; protocol 3 is also rejected by the S3 capability/descriptor extension.
-Task protocol 1 is unchanged. Codes and ranges contain no source
+encoding failures. The runtime accepts only the current protocol, so protocols 1
+through 5 are rejected rather than silently discarding new error fields: 1 and 2
+predate the richer Invalid outcomes, 3 predates the S3 capability/descriptor
+extension, and 4 and 5 predate the registry-owned basic/advanced tier that
+protocol 6 carries on every descriptor. Task protocol 1 is unchanged. Codes and ranges contain no source
 values. Runtime's existing ConfigErrorCode import re-exports the core type.
 Versions contain a service instance and revision; an old instance/revision
 cannot authorize an edit, save, cancel or apply on a new snapshot.
@@ -86,7 +88,7 @@ ConfirmSetup with the prepared version. Preparation carries a bounded private
 candidate and observed original on the worker, not in a widget. Snapshots expose
 only a redacted SetupPreview and any retained backup basename. Confirm consumes
 preparation; intervening actions invalidate it. Replayed request IDs still return
-the retained outcome. Config protocol 5 is required; task protocol 1 is unchanged.
+the retained outcome. Config protocol 6 is required; task protocol 1 is unchanged.
 See CONFIGURATION.md for the LocalWorkspace write policy, outside-change polling
 and backup failure/uncertainty semantics. No new dependencies or transport handles cross core. Submit
 returns accepted identity, not effect completion. Status returns Unknown,

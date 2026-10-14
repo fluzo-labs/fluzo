@@ -69,7 +69,7 @@ fn s3_capabilities_metadata_and_protocol_follow_runtime_policy() {
         for value in state.snapshot().values.values() {
             assert!(state.saved.descriptors().contains(&value.descriptor));
         }
-        for protocol in [1, 2, 3] {
+        for protocol in [1, 2, 3, 4, 5] {
             let request = ConfigurationRequest {
                 protocol,
                 id: ConfigurationRequestId(1),

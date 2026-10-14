@@ -200,7 +200,30 @@ fn view(port: &mut Port) -> ConfigurationView {
     let mut view = ConfigurationView::default();
     view.poll(port);
     view.show("");
+    view.advanced = true;
     view
+}
+fn add_snapshot_value(port: &mut Port, key: &str, template_key: &str, value: SettingValue) {
+    let template = Settings::collection_descriptors()
+        .into_iter()
+        .find(|descriptor| descriptor.key == template_key)
+        .unwrap();
+    port.snapshot.values.insert(
+        key.to_owned(),
+        ConfigurationValue {
+            descriptor: SettingDescriptor {
+                key: key.to_owned(),
+                ..template
+            },
+            saved: value.clone(),
+            draft: value.clone(),
+            effective: value,
+            saved_origin: fluzo_core::settings::SettingOrigin::BuiltIn,
+            draft_origin: fluzo_core::settings::SettingOrigin::BuiltIn,
+            effective_origin: fluzo_core::settings::SettingOrigin::BuiltIn,
+            cli_locked: false,
+        },
+    );
 }
 fn text(view: &ConfigurationView, width: u16, height: u16, ascii: bool) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -1048,6 +1071,270 @@ fn selected_default_cancel_and_redacted_input_never_reuse_projection() {
         port.requests[0].action,
         ConfigurationAction::Cancel { .. }
     ));
+}
+
+#[test]
+fn advanced_fields_are_hidden_until_f4_and_the_toggle_preserves_state() {
+    let mut port = Port::new();
+    let mut view = ConfigurationView::default();
+    view.poll(&mut port);
+    view.show("");
+    let basic = view.keys();
+    assert!(basic.contains(&"tui.theme".to_owned()));
+    assert!(basic.contains(&"tui.notifications.duration_seconds".to_owned()));
+    assert!(!basic.contains(&"harness.max_turns".to_owned()));
+    assert!(!basic.contains(&"schema_version".to_owned()));
+    assert!(
+        basic
+            .iter()
+            .all(|key| view.descriptors()[key].tier == SettingTier::Basic)
+    );
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(view.advanced);
+    let all = view.keys();
+    assert!(all.contains(&"harness.max_turns".to_owned()));
+    assert!(all.contains(&"schema_version".to_owned()));
+    assert!(all.len() > basic.len());
+    view.show("tui.notifications.duration_seconds");
+    assert_eq!(view.selected, "tui.notifications.duration_seconds");
+    view.checked
+        .insert("tui.notifications.duration_seconds".to_owned());
+    view.edits.insert(
+        "tui.theme".to_owned(),
+        SettingValue::Text("high-contrast".to_owned()),
+    );
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(!view.advanced);
+    assert_eq!(view.filter, "tui.notifications.duration_seconds");
+    assert_eq!(view.selected, "tui.notifications.duration_seconds");
+    assert_eq!(view.checked.len(), 1);
+    assert_eq!(
+        view.edits["tui.theme"],
+        SettingValue::Text("high-contrast".to_owned())
+    );
+    assert!(port.requests.is_empty());
+}
+
+#[test]
+fn an_empty_basic_list_names_f4_instead_of_showing_nothing() {
+    let mut port = Port::new();
+    let mut view = ConfigurationView::default();
+    view.poll(&mut port);
+    view.show("harness.");
+    assert!(view.keys().is_empty());
+    let hidden = text(&view, 80, 24, false);
+    assert!(hidden.contains("Press F4 to show advanced fields"));
+    assert!(hidden.contains("harness"));
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(!view.keys().is_empty());
+    let revealed = text(&view, 80, 24, false);
+    assert!(revealed.contains("harness.max_turns"));
+    assert!(!revealed.contains("Press F4 to show advanced fields"));
+}
+
+#[test]
+fn restore_defaults_targets_the_explicit_selection_and_stays_in_the_draft() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    view.show("context.");
+    view.edits.insert(
+        "context.compaction_threshold".to_owned(),
+        SettingValue::Fraction(0.4),
+    );
+    view.edits.insert(
+        "context.safety_reserve_tokens".to_owned(),
+        SettingValue::Integer(9),
+    );
+    view.edits.insert(
+        "context.tool_capture_max_bytes".to_owned(),
+        SettingValue::Integer(1),
+    );
+    view.edits.insert(
+        "tools.shell.inherit_env".to_owned(),
+        SettingValue::TextList(vec!["LANG".to_owned()]),
+    );
+    for key in [
+        "context.compaction_threshold",
+        "context.safety_reserve_tokens",
+        "context.safety_reserve_fraction",
+        "tools.shell.inherit_env",
+    ] {
+        view.checked.insert(key.to_owned());
+    }
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('d'),
+        KeyModifiers::CONTROL,
+    );
+    let descriptors = view.descriptors();
+    assert_eq!(
+        view.edits["context.compaction_threshold"],
+        descriptors["context.compaction_threshold"].default
+    );
+    assert_eq!(
+        view.edits["context.safety_reserve_tokens"],
+        descriptors["context.safety_reserve_tokens"].default
+    );
+    assert_eq!(
+        view.edits["context.tool_capture_max_bytes"],
+        SettingValue::Integer(1)
+    );
+    assert_eq!(
+        view.edits["tools.shell.inherit_env"],
+        SettingValue::TextList(vec!["LANG".to_owned()])
+    );
+    assert_eq!(view.checked.len(), 4);
+    assert!(port.requests.is_empty());
+    assert!(view.status.contains("Restored 2 default(s)"));
+    assert!(view.status.contains("1 sensitive"));
+}
+
+#[test]
+fn restore_defaults_never_removes_a_collection_and_keeps_the_focused_key_path() {
+    let mut port = Port::new();
+    add_snapshot_value(
+        &mut port,
+        "models.tmp.model",
+        "models.<id>.model",
+        SettingValue::Text("saved-model".to_owned()),
+    );
+    let mut view = view(&mut port);
+    view.collections.insert("models.tmp".to_owned(), false);
+    view.checked.insert("models.tmp.model".to_owned());
+    view.edits.insert(
+        "models.tmp.model".to_owned(),
+        SettingValue::Text("keep-me".to_owned()),
+    );
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('d'),
+        KeyModifiers::CONTROL,
+    );
+    assert_eq!(
+        view.edits["models.tmp.model"],
+        SettingValue::Text("keep-me".to_owned())
+    );
+    assert!(
+        !view.collections["models.tmp"],
+        "a staged collection removal must survive Ctrl+D"
+    );
+    assert!(port.requests.is_empty());
+    view.checked.clear();
+    view.show("context.compaction_threshold");
+    view.edits.insert(
+        "context.compaction_threshold".to_owned(),
+        SettingValue::Fraction(0.4),
+    );
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('d'),
+        KeyModifiers::CONTROL,
+    );
+    assert_eq!(
+        view.edits["context.compaction_threshold"],
+        view.descriptors()["context.compaction_threshold"].default
+    );
+    assert!(port.requests.is_empty());
+}
+
+#[test]
+fn f4_toggle_preserves_a_pending_request_and_its_identity() {
+    let mut port = Port::new();
+    let mut view = ConfigurationView::default();
+    view.poll(&mut port);
+    view.show("");
+    view.edits.insert(
+        "tui.theme".to_owned(),
+        SettingValue::Text("dracula".to_owned()),
+    );
+    view.checked.insert("tui.theme".to_owned());
+    view.request(&mut port, Intent::Save);
+    assert!(view.is_pending());
+    assert_eq!(port.requests.len(), 1);
+    let before = {
+        let pending = view.pending.as_ref().unwrap();
+        (
+            pending.id,
+            pending.intent,
+            pending.editing,
+            pending.keys.clone(),
+        )
+    };
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(view.advanced);
+    let after = {
+        let pending = view.pending.as_ref().unwrap();
+        (
+            pending.id,
+            pending.intent,
+            pending.editing,
+            pending.keys.clone(),
+        )
+    };
+    assert_eq!(after, before, "F4 must not alter a pending request");
+    assert_eq!(port.requests.len(), 1, "F4 must not submit another request");
+    assert_eq!(view.filter, "");
+    assert_eq!(view.checked.len(), 1);
+    assert_eq!(
+        view.edits["tui.theme"],
+        SettingValue::Text("dracula".to_owned())
+    );
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(!view.advanced);
+    let after = {
+        let pending = view.pending.as_ref().unwrap();
+        (
+            pending.id,
+            pending.intent,
+            pending.editing,
+            pending.keys.clone(),
+        )
+    };
+    assert_eq!(after, before, "toggling back must not alter it either");
+    assert_eq!(port.requests.len(), 1);
+}
+
+#[test]
+fn bulk_restore_skips_fixed_keys_without_staging_their_edits() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    view.show("");
+    view.edits.insert(
+        "context.compaction_threshold".to_owned(),
+        SettingValue::Fraction(0.4),
+    );
+    for key in [
+        "storage.auto_expire",
+        "schema_version",
+        "context.compaction_threshold",
+    ] {
+        view.checked.insert(key.to_owned());
+    }
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('d'),
+        KeyModifiers::CONTROL,
+    );
+    assert_eq!(
+        view.edits["context.compaction_threshold"],
+        view.descriptors()["context.compaction_threshold"].default
+    );
+    assert!(
+        !view.edits.contains_key("storage.auto_expire"),
+        "a FixedFalse key must not gain a staged edit"
+    );
+    assert!(
+        !view.edits.contains_key("schema_version"),
+        "the schema version must not gain a staged edit"
+    );
+    assert_eq!(view.checked.len(), 3, "the checked set must be unchanged");
+    assert!(view.status.contains("Restored 1 default(s)"));
+    assert!(view.status.contains("2 skipped"));
+    assert!(port.requests.is_empty());
 }
 
 #[test]
