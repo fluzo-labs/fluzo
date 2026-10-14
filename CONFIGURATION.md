@@ -269,12 +269,27 @@ These requested changes are local review work, not a published design revision.
 
 Repeated PTY resize checks preserve 80x24, 120x40 and 160x50 dimensions and reject
 window-resize escape sequences. Inspection of Ratatui 0.29 confirms `resize` only
-updates buffers and clears the viewport. The reported Ghostty/Wayland window-size
-reset has not been reproduced or fixed; compositor/emulator behavior needs an
-actual-window reproduction on Wayland. A disposable, owned Ghostty 1.3.1 X11
+updates buffers and clears the viewport. A disposable, owned Ghostty 1.3.1 X11
 window retained three requested pixel sizes (960x600, 1280x800, 800x500) over
-bounded two-second observation intervals. That does not prove Wayland behavior.
-No terminal preferences or KWin rules were changed.
+bounded two-second observation intervals.
+
+#57 replaced the missing Wayland half of that evidence and did not reproduce the
+reported reset. On a real session (KDE Plasma 6.7.5 with `kwin_wayland`, Ghostty
+1.3.1-arch2.2 running Wayland-native, not XWayland) owned windows ran the TUI
+while KWin global shortcuts drove maximize, quick-tile and fullscreen resizes.
+The terminal grid followed every request and stayed there: 24x80 to 51x289 back to
+24x80, then 51x143, 54x289 and 51x143 for the 80x24 case, and the same shape for
+40x120. Each SIGWINCH matched the size KWin had just requested and nothing drifted
+over a ten-second idle window. The raw byte stream the TUI wrote during those
+sessions contains only CSI `h`, `l`, `u`, `H`, `m` and `J` sequences: zero CSI `t`
+window-manipulation (XTWINOPS) sequences and zero OSC or DCS sequences, so nothing
+Fluzo writes can ask the emulator to resize a window. Classification is not
+reproducible and no Fluzo implementation issue was opened. Two gaps stay open for a
+human: a live drag resize cannot be scripted here (no input-synthesis tool and KWin
+D-Bus scripting does not execute), and a requested 160-column window clamped to
+106 columns on the narrower output it landed on, so the exact 160x50 physical
+size is covered only by the wider maximized and fullscreen grids. No terminal
+preferences or KWin rules were changed.
 
 At the startup-review checkpoint, discovery remained unimplemented. The subsequent
 user-authorized local/LAN wizard is described below. GitHub provider integration
