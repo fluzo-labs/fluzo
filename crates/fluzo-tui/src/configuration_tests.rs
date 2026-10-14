@@ -1241,6 +1241,103 @@ fn restore_defaults_never_removes_a_collection_and_keeps_the_focused_key_path() 
 }
 
 #[test]
+fn f4_toggle_preserves_a_pending_request_and_its_identity() {
+    let mut port = Port::new();
+    let mut view = ConfigurationView::default();
+    view.poll(&mut port);
+    view.show("");
+    view.edits.insert(
+        "tui.theme".to_owned(),
+        SettingValue::Text("dracula".to_owned()),
+    );
+    view.checked.insert("tui.theme".to_owned());
+    view.request(&mut port, Intent::Save);
+    assert!(view.is_pending());
+    assert_eq!(port.requests.len(), 1);
+    let before = {
+        let pending = view.pending.as_ref().unwrap();
+        (
+            pending.id,
+            pending.intent,
+            pending.editing,
+            pending.keys.clone(),
+        )
+    };
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(view.advanced);
+    let after = {
+        let pending = view.pending.as_ref().unwrap();
+        (
+            pending.id,
+            pending.intent,
+            pending.editing,
+            pending.keys.clone(),
+        )
+    };
+    assert_eq!(after, before, "F4 must not alter a pending request");
+    assert_eq!(port.requests.len(), 1, "F4 must not submit another request");
+    assert_eq!(view.filter, "");
+    assert_eq!(view.checked.len(), 1);
+    assert_eq!(
+        view.edits["tui.theme"],
+        SettingValue::Text("dracula".to_owned())
+    );
+    press(&mut view, &mut port, KeyCode::F(4), KeyModifiers::NONE);
+    assert!(!view.advanced);
+    let after = {
+        let pending = view.pending.as_ref().unwrap();
+        (
+            pending.id,
+            pending.intent,
+            pending.editing,
+            pending.keys.clone(),
+        )
+    };
+    assert_eq!(after, before, "toggling back must not alter it either");
+    assert_eq!(port.requests.len(), 1);
+}
+
+#[test]
+fn bulk_restore_skips_fixed_keys_without_staging_their_edits() {
+    let mut port = Port::new();
+    let mut view = view(&mut port);
+    view.show("");
+    view.edits.insert(
+        "context.compaction_threshold".to_owned(),
+        SettingValue::Fraction(0.4),
+    );
+    for key in [
+        "storage.auto_expire",
+        "schema_version",
+        "context.compaction_threshold",
+    ] {
+        view.checked.insert(key.to_owned());
+    }
+    press(
+        &mut view,
+        &mut port,
+        KeyCode::Char('d'),
+        KeyModifiers::CONTROL,
+    );
+    assert_eq!(
+        view.edits["context.compaction_threshold"],
+        view.descriptors()["context.compaction_threshold"].default
+    );
+    assert!(
+        !view.edits.contains_key("storage.auto_expire"),
+        "a FixedFalse key must not gain a staged edit"
+    );
+    assert!(
+        !view.edits.contains_key("schema_version"),
+        "the schema version must not gain a staged edit"
+    );
+    assert_eq!(view.checked.len(), 3, "the checked set must be unchanged");
+    assert!(view.status.contains("Restored 1 default(s)"));
+    assert!(view.status.contains("2 skipped"));
+    assert!(port.requests.is_empty());
+}
+
+#[test]
 fn failures_and_closed_view_completion_are_not_replayed() {
     for error in [
         ConfigurationError::WriteFailed,
