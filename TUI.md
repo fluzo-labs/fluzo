@@ -32,9 +32,14 @@ Presentation settings entry opens the real typed editor, not synthetic playback.
 Explicit `--no-dev-menu` remains supported for fallback and regression checks.
 
 Resize is driven by the current terminal dimensions, never a configured default.
-Repeated PTYs check dimensions and absence of window-resize control sequences;
-the reported physical Ghostty/Wayland resize reset remains unverified. These
-checks do not substitute for human review. F3 now opens the explicit local/LAN
+Repeated PTYs check dimensions and absence of window-resize control sequences.
+#57 closed the Wayland half of that claim: on KDE Plasma 6.7.5 (`kwin_wayland`)
+with an owned Wayland-native Ghostty 1.3.1-arch2.2 window, KWin-driven maximize,
+quick-tile and fullscreen resizes tracked the terminal grid with no reset, every
+SIGWINCH matched the requested size and the captured output stream held zero CSI
+`t` (XTWINOPS) and zero OSC/DCS sequences, so nothing Fluzo writes can resize the
+window. The report did not reproduce. A live drag resize still needs human review.
+These checks do not substitute for human review. F3 now opens the explicit local/LAN
 model wizard in setup and ordinary settings; the normal palette also offers
 Add model > Local / LAN. The wizard uses the existing centered rounded dialogs and
 gradient titles. It asks Local/Frontier, provider, Authorization yes/no and optional
