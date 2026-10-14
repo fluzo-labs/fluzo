@@ -2,7 +2,7 @@
 name: "2026-10-09-endpoint-consent"
 description: "Make model discovery refuse to send a cleartext HTTP catalog request to a non-loopback endpoint until the operator explicitly accepts that exact endpoint, with the resolved address class shown before the first byte leaves the process."
 created_at: "2026-10-09T08:19:50Z"
-last_implementation_at: "2026-10-09T15:51:00Z"
+last_implementation_at: "2026-10-14T09:14:39Z"
 has_completed_all_phases: false
 ---
 
@@ -157,10 +157,10 @@ Hypotheses not yet verified:
   - The "not yet surfaced" note in the PRD 26.1 amendment is replaced by a pointer to the closed implementation, in a separate `fluzo-docs` change under its own approval.
   - No wording claims a property the implementation does not have, in particular the exact bound of the trust-on-first-use window.
 - Actions:
-  - [ ] Update `CONFIGURATION.md` and `TUI.md` in this repository.
-  - [ ] Prepare the `fluzo-docs` amendment pointer as a separate change and obtain its own approval before publishing.
-  - [ ] Run `python3 scripts/check_dev_setup.py` and the documentation-link checks and record results.
-  - [ ] Present evidence and stop for review.
+  - [x] Update `CONFIGURATION.md` and `TUI.md` in this repository.
+  - [ ] Prepare the `fluzo-docs` amendment pointer as a separate change and obtain its own approval before publishing. **Out of scope for this change:** `fluzo-labs/fluzo-docs` is not cloned on this machine and the amendment needs its own PR and its own approval there. Recorded as pending, not dropped.
+  - [x] Run `python3 scripts/check_dev_setup.py` and the documentation-link checks and record results.
+  - [x] Present evidence and stop for review.
 - Verification: local link and setup checks from the repository root, plus a read-back of the published `fluzo-docs` revision after that separate change lands.
 - Risks and recovery: the cross-repository change cannot be completed from this workspace alone. If `fluzo-docs` approval is withheld, the local documentation still lands and the criterion stays explicitly open rather than silently dropped.
 
@@ -169,18 +169,37 @@ Hypotheses not yet verified:
 | Phase | Implementation | Verification | Review | Evidence |
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | accepted | Merged into `main` as `66047d96058e5209910698994f1b233e52fb0890` (PR #61); see the P1 evidence section for the tested state and acceptance reference |
-| P2 | implemented | passed | pending | P2 evidence below: 11 wizard tests (8 new), 262 workspace tests, 3 wizard PTY tests, 73 script tests, clean fmt/clippy at the working state fingerprinted `db23d73afa9044f2be005a8528493e0029e94cb839fa4ef331107865c93cf9d8`, captured 2026-10-09T15:48:44Z |
-| P3 | pending | not_run | pending | none yet |
+| P2 | implemented | passed | accepted | Accepted by the user on 2026-10-14 from the explicit directive "acepto P2", recorded in the acceptance note below; not a self-approval. P2 evidence below: 11 wizard tests (8 new), 262 workspace tests, 3 wizard PTY tests, 73 script tests, clean fmt/clippy at the working state fingerprinted `db23d73afa9044f2be005a8528493e0029e94cb839fa4ef331107865c93cf9d8`, captured 2026-10-09T15:48:44Z. Landed locally as `7ddca6a` on `feat/endpoint-consent-p2`; merge into `main` still pending review of P3. |
+| P3 | implemented | passed | pending | Documentation of the accepted contract landed in this repository: `TUI.md` gains the "Model wizard cleartext warning step" section, and `CONFIGURATION.md`, `APPLICATION.md`, `AGENTS.md` and the CLI help text were completed where the accepted behavior was understated. Verification: `cargo fmt --all -- --check` clean, `cargo test -p fluzo-tui --locked --offline model_wizard` 11 passed, `python3 scripts/check_dev_setup.py` OK, ad-hoc relative-link scan 26 links / none broken. The `fluzo-docs` PRD 26.1 pointer stays open and outside this change. See the P3 evidence section; `Review` is a human gate and has not been given. |
 
 Implementation, verification and review are distinct states. A selected commit message is not acceptance. `has_completed_all_phases` stays `false` until every phase is implemented, required verification passes, all reviews are accepted, and global criteria including any required merge are satisfied.
 
+P2 review acceptance is user-supplied, recorded 2026-10-14 from the explicit
+directive "acepto P2", given after the P2 evidence had been presented and after
+the current state was re-checked the same day: `cargo fmt --all -- --check` clean,
+`cargo test -p fluzo-tui --locked --offline model_wizard` 11 passed,
+`python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'` 3 tests
+OK, `cargo test --workspace --locked --offline` 262 passed, clippy clean with
+`-D warnings`, and `python3 scripts/check_dev_setup.py` OK. The reviewer is the
+user, not the agent: this is a record of a human decision, not a self-approval,
+and it covers P2 only. P3 still stops for its own review.
+
 ## Next step
 
-Review **P2: Wizard cleartext warning step** at the working state recorded under "P2 evidence". `Verification` is `passed`; `Review` stays `pending` until a maintainer accepts it, and the notice's visual quality remains a human gate that buffer snapshots cannot certify.
+P2 is closed out: implemented, verified, and accepted by the user on 2026-10-14.
+It is committed as `7ddca6a` on `feat/endpoint-consent-p2` and is not yet merged
+into `main`.
 
-P1 is closed out: accepted and merged into `main` as `66047d96058e5209910698994f1b233e52fb0890` (PR #61). That merge also closes the interim usability gap recorded in P1's limitations, because P2 gives the wizard the step needed to add a non-loopback endpoint.
+**P3: Documentation of the accepted contract** is the active phase. It is
+implemented and verified in this repository (see the P3 evidence section), and
+its `Review` stays `pending` until a maintainer accepts it.
 
-**P3: Documentation of the accepted contract** becomes eligible only after P2 is accepted, so the documented wording describes shipped behavior. Its `fluzo-docs` pointer change lives in another repository and needs its own approval there.
+One P3 criterion remains open by design and is deliberately outside this change:
+replacing the "not yet surfaced" note in the PRD 26.1 amendment with a pointer
+to the closed implementation. That text lives in `fluzo-labs/fluzo-docs`, which
+is not cloned on this machine and needs its own PR and its own approval there.
+For that reason `has_completed_all_phases` stays `false`, and the pull request for
+P3 references #55 without closing it.
 
 ## Evidence and tracking
 
@@ -260,6 +279,28 @@ P1 is closed out: accepted and merged into `main` as `66047d96058e5209910698994f
   - `crates/fluzo-cli/src/main.rs:102` still describes the URL step as "Leaving URL fetches the catalog". Documentation prose is owned by P3, so it is flagged here rather than changed in this phase.
   - The trust-on-first-use bound recorded in P1 is unchanged: re-resolving at connect bounds the window to a same-class swap, it does not eliminate it.
 - Approval reference: the plan's approval annotation covers the plan's content and destination, not acceptance of this implementation. `Review` remains `pending`.
+
+### P3 evidence (implemented, verification passed, review pending)
+
+- Tested state: working tree on `feat/endpoint-consent-p2` at HEAD `7ddca6a`, the accepted P2 commit, on top of `main` at `66047d96058e5209910698994f1b233e52fb0890` (P1). The change is documentation prose plus one CLI help string; no product behavior was touched.
+- `TUI.md` gains "Model wizard cleartext warning step", documenting that the step is reached before any part of the catalog request leaves the process (the resolver's own name query is named as the only traffic performed to that point), that it names the exact endpoint, the resolved addresses and the address class, that the transport is cleartext HTTP because HTTPS is unsupported for discovery, that it reports whether a credential reference is attached and never its value, that Enter/Tab accept that endpoint for the current run only while Esc sends nothing, and that editing the URL invalidates a prior acceptance. The trust-on-first-use bound is stated as a same-class swap, not as a closed gap.
+- `CONFIGURATION.md` now states what the acceptance is not: per run, held in process memory, neither a credential nor repository configuration, never written to `.fluzo`, not reused by a later process, and granting nothing beyond the catalog query it authorizes. Its URL-step prose was corrected from "queries once" to resolve-then-maybe-warn.
+- `APPLICATION.md` now describes the URL step as probe-first, with the catalog GET following only for a loopback endpoint or after the operator accepts the notice. `AGENTS.md` names the cleartext warning between the URL step and model selection.
+- `crates/fluzo-cli/src/main.rs:102` help text was corrected from "Leaving URL fetches the catalog" to the probe-then-warn behavior. This was the prose flagged in the P2 limitations as P3-owned; `fluzo --help` output was read back to confirm the new wording reaches users.
+- Commands run from the repository root at this state, all passing:
+  - `cargo fmt --all -- --check` → clean
+  - `cargo test -p fluzo-tui --locked --offline model_wizard` → 11 passed, 0 failed
+  - `cargo test -p fluzo-cli --locked --offline` → 8 passed, 0 failed (run because the CLI help string changed)
+  - `cargo test --workspace --locked --offline` → 2 / 4 / 8 / 15 / 78 / 12 / 143 passed, 0 failed (262 total, unchanged from P2)
+  - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` → clean
+  - `python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'` → 3 tests OK
+  - `python3 scripts/check_dev_setup.py` → "Resolved foundation graph, toolchain, LSP config and 12 skills checked."
+- Documentation-link check: no link checker exists in `scripts/`. An ad-hoc scan of every relative Markdown link in the repository-root documents was run instead: 26 relative links, none broken. It is not a standing check and is not wired into CI.
+- Not changed, recorded deliberately:
+  - The `fluzo-docs` PRD 26.1 pointer stays open and out of scope: different repository, not cloned here, its own approval required.
+  - `crates/fluzo-tui/src/model_wizard.rs:361` still reads "Leaving URL with Tab/Enter sends this Authorization header to that endpoint." Strictly the header travels with the discovery request, not the probe. It is accepted P2 product copy, so it is flagged here rather than rewritten inside a documentation change.
+- Limitations: this is documentation evidence. No test asserts the prose, and nothing here certifies the notice's visual quality, which remains the human gate recorded in P2.
+- Approval reference: the plan's approval annotation covers the plan's content and destination, not acceptance of this phase. `Review` remains `pending`.
 
 ## Optional handoff to another skill
 

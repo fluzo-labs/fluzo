@@ -34,8 +34,10 @@ separate from configuration protocol 5 and task protocol 1. Requests own an ID,
 endpoint and optional Authorization environment reference, never the secret value.
 Status owns Pending, a pre-connect Notice carrying the resolved address class, or
 bounded model IDs plus optional reported context/output/slot metadata. Protocols 1
-and 2 are rejected. Leaving the URL field triggers one catalog GET with the
-disclosed header policy, not an inference grant.
+and 2 are rejected. Leaving the URL field triggers one probe first; the catalog
+GET follows under the disclosed header policy only for a loopback endpoint or
+after the operator accepts the notice in the wizard, and neither is an inference
+grant.
 A probe resolves and classifies the endpoint without opening a socket, and
 acceptance is recorded per run for one exact endpoint and address class. A
 discovery request for a non-loopback endpoint that lacks that acceptance yields
