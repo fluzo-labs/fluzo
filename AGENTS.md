@@ -60,7 +60,9 @@ core/TUI remain HTTP-free. Focused checks are `cargo test -p fluzo-runtime --loc
 --offline model_discovery`, `cargo test -p fluzo-tui --locked --offline model_wizard`
 and `python3 -B -m unittest discover -s scripts -p 'test_model_wizard.py'`.
 GitHub provider work remains deferred to a later story.
-Full UI-02 C3 menu wiring and S3 human visual/parent acceptance remain pending.
+UI-02 C3 developer-menu route wiring is evidenced by route-level shared-service
+integration tests (see the C3 section in TUI.md); S3 human visual/parent
+acceptance remains pending.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;

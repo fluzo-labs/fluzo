@@ -390,6 +390,31 @@ The old default-disabled developer-menu assertion initially failed after the
 requested default change; it now verifies default-enabled and explicit-disabled
 behavior separately. No fixture assertion was removed to hide the resize report.
 
+## Developer menu persistence (UI-02 C3)
+
+Developer Menu > Presentation settings persists through the same shared
+service, registry revalidation, atomic save and outside-change rebase
+documented above. The route adds no second writer, no developer-only file
+format and no session-only persistence shortcut: only the selected
+persistent `tui.*` keys are written, comments and unrelated keys are
+preserved, and synthetic preview or scenario content is never persisted.
+CLI-locked values keep precedence: a draft for a locked key may be saved as
+a future default, but Apply returns `CliLocked` and the effective value
+stays the CLI value.
+
+Session-only versus persistent fixture evidence: theme preview, draft
+retention and Cancel semantics are session-local and covered by the TUI
+reducer tests in `crates/fluzo-tui/src/configuration_tests.rs` (for
+example `f4_toggle_preserves_a_pending_request_and_its_identity` and the
+late-completion cases). Persistent behavior is covered at route level by
+`developer_menu_route_saves_and_applies_only_selected_ui_preferences`
+and `developer_menu_route_cancel_and_close_never_undo_a_completed_save`
+in `crates/fluzo-cli/tests/configuration.rs`, which drive the actual
+Developer menu keyboard-only against the real service and verify the
+file, saved-future versus active-effective state, session-applied
+propagation and that Cancel or closing the view never rolls back a
+completed Save.
+
 ## Local writes and outside changes
 
 The operator decision for this workspace is that Fluzo owns `.fluzo`: the tool

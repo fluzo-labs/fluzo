@@ -1,12 +1,16 @@
 use fluzo_core::{
     configuration::*,
-    settings::{SettingValue, Settings},
+    settings::{SettingOrigin, SettingValue, Settings},
 };
 use fluzo_runtime::{
     config::{encode_settings, parse_settings},
     configuration::{ConfigurationService, WritePolicy},
 };
-use fluzo_tui::configuration::ConfigurationView;
+use fluzo_tui::{
+    configuration::ConfigurationView,
+    input::{KeyCode, KeyEvent, KeyModifiers},
+    workspace::Workspace,
+};
 use std::{
     fs,
     path::PathBuf,
@@ -341,4 +345,174 @@ fn request_exhaustion_is_projected_without_evicting_results() {
         service.status(ConfigurationRequestId(1)).unwrap(),
         ConfigurationRequestStatus::Completed { .. }
     ));
+}
+
+fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+    KeyEvent::new(code, modifiers)
+}
+
+fn open_developer_presentation_settings(
+    workspace: &mut Workspace,
+    service: &mut ConfigurationService,
+) {
+    workspace.key(key(KeyCode::Char('p'), KeyModifiers::CONTROL), service);
+    for character in "Developer menu".chars() {
+        workspace.key(key(KeyCode::Char(character), KeyModifiers::NONE), service);
+    }
+    workspace.key(key(KeyCode::Enter, KeyModifiers::NONE), service);
+    workspace.key(key(KeyCode::Enter, KeyModifiers::NONE), service);
+    assert!(workspace.configuration.open);
+    assert_eq!(workspace.configuration.filter, "tui.");
+}
+
+#[test]
+fn developer_menu_route_saves_and_applies_only_selected_ui_preferences() {
+    let root = Root::new();
+    fs::write(
+        root.0.join(".fluzo"),
+        "schema_version = 1\n# keep this comment\n[project]\nname = 'fixture' # retained\n[tools.shell.env]\nORIGINAL = 'unchanged'\n",
+    )
+    .unwrap();
+    let mut service = ConfigurationService::start(
+        root.0.clone(),
+        None,
+        vec![Edit::Set {
+            key: "tui.animation_fps".into(),
+            value: SettingValue::Integer(0),
+        }],
+        WritePolicy::LocalWorkspace,
+    )
+    .unwrap();
+    let mut workspace = Workspace::new(root.0.to_str().unwrap(), false).unwrap();
+    settle(&mut workspace.configuration, &mut service);
+    open_developer_presentation_settings(&mut workspace, &mut service);
+
+    let before = workspace.configuration.snapshot.clone().unwrap();
+    assert_eq!(before.effective_ui.theme, "default");
+
+    set(
+        &mut workspace.configuration,
+        "tui.theme",
+        SettingValue::Text("high-contrast".into()),
+    );
+    set(
+        &mut workspace.configuration,
+        "tui.notifications.duration_seconds",
+        SettingValue::Integer(9),
+    );
+    set(
+        &mut workspace.configuration,
+        "tui.animation_fps",
+        SettingValue::Integer(15),
+    );
+    workspace.key(key(KeyCode::Char('s'), KeyModifiers::CONTROL), &mut service);
+    settle(&mut workspace.configuration, &mut service);
+    assert!(
+        workspace.configuration.status.contains("Saved"),
+        "{}",
+        workspace.configuration.status
+    );
+
+    let saved = fs::read_to_string(root.0.join(".fluzo")).unwrap();
+    assert!(saved.contains("# keep this comment") && saved.contains("# retained"));
+    let parsed = parse_settings(&saved).unwrap();
+    assert_eq!(parsed.tui.theme, "high-contrast");
+    assert_eq!(parsed.tui.notifications.duration_seconds, 9);
+    assert_eq!(parsed.tui.animation_fps, 15);
+    assert_eq!(parsed.project.name, "fixture");
+    let lowered = saved.to_lowercase();
+    for forbidden in ["synthetic", "preview", "scenario", "playback"] {
+        assert!(
+            !lowered.contains(forbidden),
+            "persisted {forbidden} content"
+        );
+    }
+
+    let snap = workspace.configuration.snapshot.clone().unwrap();
+    assert_eq!(snap.effective_ui.theme, "default");
+    assert_eq!(
+        snap.values["tui.theme"].effective,
+        SettingValue::Text("default".into())
+    );
+    assert_eq!(
+        snap.values["tui.theme"].saved,
+        SettingValue::Text("high-contrast".into())
+    );
+    assert_eq!(
+        snap.values["tui.theme"].saved_origin,
+        SettingOrigin::SavedFuture
+    );
+    assert!(snap.values["tui.animation_fps"].cli_locked);
+    assert_eq!(
+        snap.values["tui.animation_fps"].effective,
+        SettingValue::Integer(0)
+    );
+
+    workspace.key(key(KeyCode::Char('a'), KeyModifiers::CONTROL), &mut service);
+    settle(&mut workspace.configuration, &mut service);
+    let snap = workspace.configuration.snapshot.clone().unwrap();
+    assert_eq!(snap.effective_ui.theme, "high-contrast");
+    assert_eq!(
+        snap.values["tui.notifications.duration_seconds"].effective,
+        SettingValue::Integer(9)
+    );
+    assert_eq!(
+        snap.values["tui.animation_fps"].effective,
+        SettingValue::Integer(0)
+    );
+
+    workspace.poll(&mut service);
+    assert_eq!(workspace.shell.preferences.applied().theme, "high-contrast");
+    assert_eq!(workspace.shell.preferences.effective().animation_fps, 0);
+
+    let outcomes: Vec<ConfigurationOutcome> = snap
+        .changes
+        .iter()
+        .map(|change| change.outcome.clone())
+        .collect();
+    assert!(
+        outcomes.contains(&ConfigurationOutcome::Saved),
+        "{outcomes:?}"
+    );
+    assert_eq!(*outcomes.last().unwrap(), ConfigurationOutcome::Applied);
+}
+
+#[test]
+fn developer_menu_route_cancel_and_close_never_undo_a_completed_save() {
+    let root = Root::new();
+    fs::write(root.0.join(".fluzo"), "schema_version = 1\n# keep\n").unwrap();
+    let mut service = root.service(WritePolicy::LocalWorkspace);
+    let mut workspace = Workspace::new(root.0.to_str().unwrap(), false).unwrap();
+    settle(&mut workspace.configuration, &mut service);
+    open_developer_presentation_settings(&mut workspace, &mut service);
+
+    set(
+        &mut workspace.configuration,
+        "tui.theme",
+        SettingValue::Text("high-contrast".into()),
+    );
+    workspace.key(key(KeyCode::Char('s'), KeyModifiers::CONTROL), &mut service);
+    settle(&mut workspace.configuration, &mut service);
+    assert!(workspace.configuration.status.contains("Saved"));
+    let saved = fs::read_to_string(root.0.join(".fluzo")).unwrap();
+    assert!(saved.contains("high-contrast"));
+
+    set(
+        &mut workspace.configuration,
+        "tui.theme",
+        SettingValue::Text("default".into()),
+    );
+    workspace.key(key(KeyCode::Char('x'), KeyModifiers::CONTROL), &mut service);
+    workspace.key(key(KeyCode::Char('x'), KeyModifiers::CONTROL), &mut service);
+    settle(&mut workspace.configuration, &mut service);
+    let snap = workspace.configuration.snapshot.clone().unwrap();
+    assert_eq!(
+        snap.values["tui.theme"].draft,
+        snap.values["tui.theme"].saved
+    );
+    assert_eq!(fs::read_to_string(root.0.join(".fluzo")).unwrap(), saved);
+
+    workspace.key(key(KeyCode::Esc, KeyModifiers::NONE), &mut service);
+    assert!(!workspace.configuration.open);
+    assert_eq!(fs::read_to_string(root.0.join(".fluzo")).unwrap(), saved);
 }

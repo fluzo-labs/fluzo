@@ -292,6 +292,46 @@ These checks do not establish human visual acceptance: scoped Ghostty/Alacritty
 review of the new settings surface remains pending. No C3, production runtime or
 broader UI-05/performance acceptance is claimed.
 
+## C3: developer preferences on the shared save/apply path
+
+The ordinary Developer Menu > Presentation settings entry is the S3 typed
+configuration editor described above, not a separate persistence path.
+Palette navigation, staged edits, Ctrl+S Save and Ctrl+A Apply leave the
+TUI only as owned `ConfigurationAction`s over the core
+`ConfigurationPort`; the single writer is the shared runtime configuration
+service, which revalidates every value against the registry before it
+touches `.fluzo`. The TUI performs no filesystem, TOML or runtime
+implementation access on this route.
+
+The value states stay distinct on this route. Theme preview is transient and
+local. Save writes the selected keys as future defaults: the snapshot
+reports `saved_origin = SavedFuture` while `effective` and `effective_ui`
+keep their pre-save values, so a saved value never implies active
+application. Apply through the shared worker changes the real effective
+presentation and `Workspace.poll` propagates the applied `effective_ui`
+projection into the live shell preferences. CLI-locked values remain
+locked: their drafts can be saved as future defaults but Apply returns
+`CliLocked` and the effective value stays the CLI value. Restart pending is
+listed truthfully as described above; nothing auto-restarts. Cancel (Ctrl+X
+twice) discards the draft without undoing an independently completed Save,
+and closing the view likewise retains completed writes. With
+`tui.dev_menu` disabled the Developer Menu entry is absent from the palette
+and unreachable by filtering. Synthetic demo state (playback scripts,
+notification-preview text) lives only in the isolated demo shell and is
+never written to `.fluzo`.
+
+Route-level evidence: `developer_menu_route_saves_and_applies_only_selected_ui_preferences`
+and `developer_menu_route_cancel_and_close_never_undo_a_completed_save` in
+`crates/fluzo-cli/tests/configuration.rs` drive the actual palette
+keyboard-only against the real service and real files, asserting comment and
+unrelated-key preservation, saved-future versus active-effective state,
+CLI-lock precedence, session-applied propagation, redacted change records
+(values never appear in `changes`) and the absence of synthetic persisted
+content. `developer_menu_entry_is_hidden_when_developer_preferences_are_disabled`
+in `crates/fluzo-tui/src/workspace.rs` covers the gating. This is
+automation evidence, not human visual acceptance; the Ghostty/Alacritty
+review note above still applies.
+
 ## S2 offline setup
 
 `fluzo` opens offline welcome/setup when the selected workspace has no `.fluzo`.
