@@ -242,7 +242,7 @@ P3 references #55 without closing it.
   - The full `python3 -B -m unittest discover -s scripts -p 'test_*.py'` suite was not re-run at this state; only the wizard subset was.
 - Approval reference: the plan's approval annotation covers content and destination of the plan, not acceptance of this implementation. `Review` remains `pending`.
 
-### P2 evidence (implemented, verification passed, review pending)
+### P2 evidence (implemented, verification passed, review accepted)
 
 - Tested state: uncommitted working tree on `feat/endpoint-consent-p2`, based on `origin/main` at `66047d96058e5209910698994f1b233e52fb0890`, the merged P1. Tracked diff SHA-256 `db23d73afa9044f2be005a8528493e0029e94cb839fa4ef331107865c93cf9d8`, captured `2026-10-09T15:48:44Z`: 532 insertions and 45 deletions across `crates/fluzo-tui/src/model_wizard.rs` and `scripts/test_model_wizard.py`. Results belong to that working state, not to HEAD.
 - Implementation shape: `Step::Notice` sits between `Endpoint` and `Loading`. `query()` now submits a `Probe` instead of a discovery `Request`, so the warning is reached while no socket exists; the catalog request is submitted only by `submit_discovery()`, reached after a loopback classification or an explicit acceptance. `pending` became `Option<Pending>` (`Probe` / `Discover`) because a pending probe and a pending discovery request must be cancellable distinctly and `poll` must tell a notice from a result.
