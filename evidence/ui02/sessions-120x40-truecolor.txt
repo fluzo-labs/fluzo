@@ -1,0 +1,48 @@
+ui02-evidence: sessions-120x40-truecolor
+source-revision: 40577a5f48627474eea53d0b78143c20e226a3ed
+viewport: 120x40 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+generator: scripts/ui02_evidence.py
+sha256-body: 3752283cd4e94fbbf7ac8dde4ca8fb30f353d4b496f4b868363d3dc7ac29d1f0
+--- sanitized cell grid below; no escape sequences ---
+            ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                 █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.               █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                        ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                        Demo session 1
+
+                                                                                        ~
+
+                                                                                        ◇ GTP-6 Astra
+                         ╭────────────────────────────────────────────────────────────────────╮ithub Copilot
+                         │ Sessions | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │ning X-High
+                         │                                                                    │━━━━─── 75% (303.8K)
+                         │ Demo session                                                       │━────── $50.00
+                         │ Persistent sessions are not implemented.                           │scale: $100 (demo)
+                         │ Esc returns; current draft is preserved.                           │le data / offline
+                         │                                                                    │
+                         │                                                                    │d files
+                         │                                                                    │s changed
+                         │                                                                    │
+                         │                                                                    │ate: Pending
+                         │                                                                    │/ offline demo
+                         │                                                                    │ime connected
+                         │                                                                    │
+                         │                                                                    │
+                         │                                                                    │
+                         │                                                                    │
+                         │                                                                    │
+                         │ Esc close                                                          │
+                         ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                   demo following
+

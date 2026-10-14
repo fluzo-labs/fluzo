@@ -455,6 +455,23 @@ format/check/build/Clippy with warnings denied, dependency/skill checks and the
 isolated offline LSP fixture. Commands are the full validation list in the C2 logic
 section below. Remote CI and live inference were not run for this branch.
 
+## UI-02 C4 acceptance evidence
+
+[UI02_ACCEPTANCE_EVIDENCE.md](UI02_ACCEPTANCE_EVIDENCE.md) is the current
+requirement-to-implementation-to-test-to-evidence matrix for the UI-02 parent
+([#7](https://github.com/fluzo-labs/fluzo/issues/7)), produced by C4
+([#39](https://github.com/fluzo-labs/fluzo/issues/39)) at source revision
+`40577a5f48627474eea53d0b78143c20e226a3ed`. It binds each parent criterion and
+each approved R1 controls, preview, persistence and isolation contract to named
+tests plus one evidence class, records the Ghostty 1.3.1-arch2.2 and Alacritty
+0.17.0 environments actually checked on the evidence machine, keeps the
+exploratory 30-FPS single-key and burst p95 numbers as findings rather than PRD 49
+results, and lists what still needs maintainer eyes. Committed sanitized cell-grid
+dumps live in `evidence/ui02/` and regenerate with
+`python3 -B scripts/ui02_evidence.py --verify`. Read that file instead of
+inferring coverage from the chronological notes below; nothing in this document
+accepts UI-02.
+
 ## UI-02 stabilization contract
 
 This local increment stabilizes the existing visual demo for
