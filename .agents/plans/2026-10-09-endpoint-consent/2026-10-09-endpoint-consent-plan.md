@@ -158,7 +158,7 @@ Hypotheses not yet verified:
   - No wording claims a property the implementation does not have, in particular the exact bound of the trust-on-first-use window.
 - Actions:
   - [x] Update `CONFIGURATION.md` and `TUI.md` in this repository.
-  - [ ] Prepare the `fluzo-docs` amendment pointer as a separate change and obtain its own approval before publishing. **Out of scope for this change:** `fluzo-labs/fluzo-docs` is not cloned on this machine and the amendment needs its own PR and its own approval there. Recorded as pending, not dropped.
+  - [x] Prepare the `fluzo-docs` amendment pointer as a separate change and obtain its own approval before publishing. Proposed in [fluzo-labs/fluzo-docs#14](https://github.com/fluzo-labs/fluzo-docs/pull/14); it lives in a different repository and still needs its own approval there.
   - [x] Run `python3 scripts/check_dev_setup.py` and the documentation-link checks and record results.
   - [x] Present evidence and stop for review.
 - Verification: local link and setup checks from the repository root, plus a read-back of the published `fluzo-docs` revision after that separate change lands.
@@ -169,8 +169,8 @@ Hypotheses not yet verified:
 | Phase | Implementation | Verification | Review | Evidence |
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | accepted | Merged into `main` as `66047d96058e5209910698994f1b233e52fb0890` (PR #61); see the P1 evidence section for the tested state and acceptance reference |
-| P2 | implemented | passed | accepted | Accepted by the user on 2026-10-14 from the explicit directive "acepto P2", recorded in the acceptance note below; not a self-approval. P2 evidence below: 11 wizard tests (8 new), 262 workspace tests, 3 wizard PTY tests, 73 script tests, clean fmt/clippy at the working state fingerprinted `db23d73afa9044f2be005a8528493e0029e94cb839fa4ef331107865c93cf9d8`, captured 2026-10-09T15:48:44Z. Landed locally as `7ddca6a` on `feat/endpoint-consent-p2`; merge into `main` still pending review of P3. |
-| P3 | implemented | passed | pending | Documentation of the accepted contract landed in this repository: `TUI.md` gains the "Model wizard cleartext warning step" section, and `CONFIGURATION.md`, `APPLICATION.md`, `AGENTS.md` and the CLI help text were completed where the accepted behavior was understated. Verification: `cargo fmt --all -- --check` clean, `cargo test -p fluzo-tui --locked --offline model_wizard` 11 passed, `python3 scripts/check_dev_setup.py` OK, ad-hoc relative-link scan 26 links / none broken. The `fluzo-docs` PRD 26.1 pointer stays open and outside this change. See the P3 evidence section; `Review` is a human gate and has not been given. |
+| P2 | implemented | passed | accepted | Accepted by the user on 2026-10-14 from the explicit directive "acepto P2", recorded in the acceptance note below; not a self-approval. P2 evidence below: 11 wizard tests (8 new), 262 workspace tests, 3 wizard PTY tests, 73 script tests, clean fmt/clippy at the working state fingerprinted `db23d73afa9044f2be005a8528493e0029e94cb839fa4ef331107865c93cf9d8`, captured 2026-10-09T15:48:44Z. Merged into `main` as `ffabfea4a2d2ad5bf42dbb373e217950df32ca50` (PR #62) on 2026-10-14. |
+| P3 | implemented | passed | pending | Documentation of the accepted contract landed in this repository: `TUI.md` gains the "Model wizard cleartext warning step" section, and `CONFIGURATION.md`, `APPLICATION.md`, `AGENTS.md` and the CLI help text were completed where the accepted behavior was understated. Verification: `cargo fmt --all -- --check` clean, `cargo test -p fluzo-tui --locked --offline model_wizard` 11 passed, `python3 scripts/check_dev_setup.py` OK, ad-hoc relative-link scan 26 links / none broken. The `fluzo-docs` PRD 26.1 pointer is now proposed in [fluzo-labs/fluzo-docs#14](https://github.com/fluzo-labs/fluzo-docs/pull/14) and stays open until it is approved there. See the P3 evidence section; `Review` is a human gate and has not been given. |
 
 Implementation, verification and review are distinct states. A selected commit message is not acceptance. `has_completed_all_phases` stays `false` until every phase is implemented, required verification passes, all reviews are accepted, and global criteria including any required merge are satisfied.
 
@@ -186,20 +186,18 @@ and it covers P2 only. P3 still stops for its own review.
 
 ## Next step
 
-P2 is closed out: implemented, verified, and accepted by the user on 2026-10-14.
-It is committed as `7ddca6a` on `feat/endpoint-consent-p2` and is not yet merged
-into `main`.
+P1 and P2 are merged into `main`. **P3: Documentation of the accepted contract**
+is merged in this repository as `ffabfea4a2d2ad5bf42dbb373e217950df32ca50`
+(PR #62), and its `Review` stays `pending` until a maintainer accepts it.
 
-**P3: Documentation of the accepted contract** is the active phase. It is
-implemented and verified in this repository (see the P3 evidence section), and
-its `Review` stays `pending` until a maintainer accepts it.
+The last P3 criterion, replacing the "not yet surfaced" note in the PRD 26.1
+amendment with a pointer to the closed implementation, is now proposed in
+[fluzo-labs/fluzo-docs#14](https://github.com/fluzo-labs/fluzo-docs/pull/14).
+It lives in a separate repository and needs its own approval there.
 
-One P3 criterion remains open by design and is deliberately outside this change:
-replacing the "not yet surfaced" note in the PRD 26.1 amendment with a pointer
-to the closed implementation. That text lives in `fluzo-labs/fluzo-docs`, which
-is not cloned on this machine and needs its own PR and its own approval there.
-For that reason `has_completed_all_phases` stays `false`, and the pull request for
-P3 references #55 without closing it.
+No further implementation is planned here. `has_completed_all_phases` stays
+`false` until the P3 review is accepted and that documentation pull request is
+merged; only then can #55 be closed.
 
 ## Evidence and tracking
 
@@ -297,7 +295,7 @@ P3 references #55 without closing it.
   - `python3 scripts/check_dev_setup.py` → "Resolved foundation graph, toolchain, LSP config and 12 skills checked."
 - Documentation-link check: no link checker exists in `scripts/`. An ad-hoc scan of every relative Markdown link in the repository-root documents was run instead: 26 relative links, none broken. It is not a standing check and is not wired into CI.
 - Not changed, recorded deliberately:
-  - The `fluzo-docs` PRD 26.1 pointer stays open and out of scope: different repository, not cloned here, its own approval required.
+  - The `fluzo-docs` PRD 26.1 pointer is proposed in [fluzo-labs/fluzo-docs#14](https://github.com/fluzo-labs/fluzo-docs/pull/14): a different repository with its own approval, still open.
   - `crates/fluzo-tui/src/model_wizard.rs:361` still reads "Leaving URL with Tab/Enter sends this Authorization header to that endpoint." Strictly the header travels with the discovery request, not the probe. It is accepted P2 product copy, so it is flagged here rather than rewritten inside a documentation change.
 - Limitations: this is documentation evidence. No test asserts the prose, and nothing here certifies the notice's visual quality, which remains the human gate recorded in P2.
 - Approval reference: the plan's approval annotation covers the plan's content and destination, not acceptance of this phase. `Review` remains `pending`.
