@@ -6,7 +6,7 @@ use crate::settings::{
     SettingDescriptor, SettingOrigin, SettingValue, TuiSettings, ValidationError,
 };
 
-pub const CONFIGURATION_PROTOCOL: u32 = 5;
+pub const CONFIGURATION_PROTOCOL: u32 = 6;
 pub const MAX_EDITS: usize = 256;
 pub const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_REQUESTS: usize = 64;

@@ -30,8 +30,10 @@ CLI runs `LocalWorkspace`, Fluzo replaces `.fluzo` on Save and trusts Git
 instead of a backup copy. Outside edits are polled and surfaced as a banner
 offering reload or keep-ours. UI-03 S3 (#46 R2) adds the normal
 configuration-only shell and typed
-basic/advanced editing with protocol 5, owned descriptors, operation
-availability and bounded request reconciliation. Presentation Apply is separate.
+basic/advanced editing with protocol 6, owned descriptors, operation
+availability and bounded request reconciliation. The split is a registry-owned
+`SettingTier` carried by every descriptor, so the editor filters by shared
+metadata rather than hardcoding which keys are ordinary. Presentation Apply is separate.
 S3 human-review revisions replace the default setup form with a centered repository
 welcome/create dialog and human summaries. F3 adds models, F4 explicitly exposes
 advanced details, and separate confirmation still precedes file creation.
@@ -356,8 +358,10 @@ S3 focused checks use `cargo test -p fluzo-cli --test configuration --locked --o
 `python3 -B -m unittest discover -s scripts -p 'test_configuration.py'`.
 They compose actual controlled-host UI/service persistence, unit projections and
 ordinary-host PTYs separately. S3 does not add dependencies or a task runtime.
-The normal shell uses Ctrl+P; F1 explains settings controls. Setup F2 handoff is
-explicit. Service exhaustion retains outcomes and drafts without automatic replay
+The normal shell uses Ctrl+P; F1 explains settings controls and F4 toggles the
+editor between the registry's basic and advanced field tiers. `cargo test -p
+fluzo-core --locked --offline tiers` pins the registry-owned tier split. Setup F2
+handoff is explicit. Service exhaustion retains outcomes and drafts without automatic replay
 or replacement; reopening explicitly loses unsaved local drafts.
 
 S1 configuration checks use

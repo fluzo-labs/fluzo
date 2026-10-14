@@ -59,8 +59,15 @@ Help, replacement inputs, collection-name inputs and F4 advanced setup reuse the
 same frame and title rather than switching to a separate full-screen form. See
 TUI.md for layout, fallback profiles and pending human visual review.
 
-The editor uses owned descriptors from configuration protocol 5. Types, defaults,
+The editor uses owned descriptors from configuration protocol 6. Types, defaults,
 units, privacy, provenance, saved/draft/effective values and CLI locks are shown.
+Each descriptor also carries a `SettingTier` (`Basic` or `Advanced`) owned by the
+same registry: 14 ordinary fields (project name, agent model, decision toggle,
+theme, animation FPS, reduced motion, dev menu and the three desktop-notification
+fields) plus the four `models.<id>.*` collection members are `Basic`; every other
+field, including all of `context.*`, `harness.*`, `policy.*`, `storage.*`,
+`telemetry.*`, `capacity_pools.*` and `tools.*`, is `Advanced`. The tier only
+gates visibility; it never changes what is stored, validated or saved.
 Fixed schema values have no editable alternative. Models/pools have validated
 names and explicit add/remove operations; related changes validate together.
 Unchanged redacted/sanitized projections are never used as replacement input.
@@ -103,9 +110,14 @@ markers without color; Save and Apply remain explicit.
 
 Controls: type to search, Ctrl+U shows all fields, Tab/arrows select, Left/Right
 step numbers outside editing, Enter edits, Space selects
-Save/Apply keys, Ctrl+D restores the selected default in the draft, Ctrl+N adds a
+Save/Apply keys, Ctrl+D restores the registry default in the draft, Ctrl+N adds a
 model, Ctrl+P adds a pool and Delete stages collection removal. F1 explains all
-controls. Ctrl+V validates, Ctrl+S saves selected future values, Ctrl+A applies
+controls. F4 toggles the field list between basic and advanced tiers; the tier
+comes from the shared registry, the toggle never changes what is stored, and an
+empty basic list names F4 rather than showing nothing. Ctrl+D restores the
+registry default for the explicitly selected keys, or for the focused key when
+nothing is selected; it stays in the draft, never removes a staged collection and
+leaves sensitive values for individual editing. Ctrl+V validates, Ctrl+S saves selected future values, Ctrl+A applies
 selected presentation values. Without explicit selection, Save uses unsaved keys;
 Apply uses current edits plus previously validated, unlocked presentation/restart
 keys awaiting application. Explicit selection can still request an unavailable or

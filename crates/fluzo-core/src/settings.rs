@@ -20,6 +20,12 @@ pub enum ApplicationRule {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SettingTier {
+    Basic,
+    Advanced,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SettingOrigin {
     BuiltIn,
     Repository,
@@ -74,6 +80,7 @@ pub struct SettingDescriptor {
     pub description: String,
     pub privacy: Privacy,
     pub application: ApplicationRule,
+    pub tier: SettingTier,
 }
 
 trait SettingField {
@@ -208,7 +215,7 @@ trait Group {
 }
 
 macro_rules! group {
-    ($name:ident { $($field:ident: $type:ty = $default:expr => ($unit:literal, $constraint:ident, $privacy:ident, $application:ident, $description:literal)),+ $(,)? } $(, { $($nested:ident: $nested_type:ty),+ $(,)? })?) => {
+    ($name:ident { $($field:ident: $type:ty = $default:expr => ($unit:literal, $constraint:ident, $privacy:ident, $application:ident, $tier:ident, $description:literal)),+ $(,)? } $(, { $($nested:ident: $nested_type:ty),+ $(,)? })?) => {
         #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
         #[serde(default, deny_unknown_fields)]
         pub struct $name { $(pub $field: $type,)+ $($(pub $nested: $nested_type,)+)? }
@@ -229,6 +236,7 @@ macro_rules! group {
                     description: $description.to_owned(),
                     privacy: Privacy::$privacy,
                     application: ApplicationRule::$application,
+                    tier: SettingTier::$tier,
                 }, self.$field.value())),+].into_iter()
                     $( $(.chain(self.$nested.entries(&format!("{prefix}.{}", stringify!($nested)))))* )?
                     .collect()
@@ -238,102 +246,102 @@ macro_rules! group {
 }
 
 group!(ProjectSettings {
-    name: String = String::new() => ("", Any, Sensitive, FutureTasks, "Optional project display name")
+    name: String = String::new() => ("", Any, Sensitive, FutureTasks, Basic, "Optional project display name")
 });
 group!(AgentSettings {
-    runtime: AgentRuntime = AgentRuntime::Native => ("", Any, Public, Restart, "Built-in agent runtime"),
-    model: Option<String> = None => ("", Any, Sensitive, ExplicitApply, "Selected generative model alias; setup is required when absent")
+    runtime: AgentRuntime = AgentRuntime::Native => ("", Any, Public, Restart, Advanced, "Built-in agent runtime"),
+    model: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Basic, "Selected generative model alias; setup is required when absent")
 });
 group!(ModelSettings {
-    provider: Provider = Provider::OpenAiCompatible => ("", Any, Public, ExplicitApply, "Provider protocol, not an authorization to connect"),
-    base_url: Option<String> = None => ("", Any, Sensitive, ExplicitApply, "Chat Completions base URL supplied by the user"),
-    endpoint: Option<String> = None => ("", Any, Sensitive, ExplicitApply, "Laya endpoint supplied by the user"),
-    model: Option<String> = None => ("", Any, Sensitive, ExplicitApply, "Provider model identifier"),
-    auth: Authentication = Authentication::None => ("", Any, Public, ExplicitApply, "Authentication reference mode"),
-    api_key_env: Option<String> = None => ("", Any, CredentialReference, ExplicitApply, "Name of a credential environment variable, never its value"),
-    credential_ref: Option<CredentialReference> = None => ("", Any, CredentialReference, ExplicitApply, "Endpoint-scoped user-local credential reference"),
-    context_window: u64 = 32768 => ("tokens", Positive, Public, ExplicitApply, "Setup suggestion requiring confirmation for the model"),
-    max_output_tokens: u64 = 4096 => ("tokens", Positive, Public, ExplicitApply, "Maximum reserved response output"),
-    capacity_id: String = String::new() => ("", Any, Sensitive, ExplicitApply, "Shared identity for aliases of the same backend model"),
-    pool: String = String::new() => ("", Any, Sensitive, ExplicitApply, "Explicit capacity pool membership"),
-    max_in_flight: u32 = 1 => ("requests", Positive, Public, ExplicitApply, "Per-process model ceiling"),
-    connect_timeout_seconds: u64 = 10 => ("seconds", Positive, Public, ExplicitApply, "Provider connection deadline"),
-    first_output_timeout_seconds: u64 = 90 => ("seconds", Positive, Public, ExplicitApply, "Deadline for actual output, not headers"),
-    idle_stream_timeout_seconds: u64 = 30 => ("seconds", Positive, Public, ExplicitApply, "Maximum interval without model progress"),
-    request_timeout_seconds: u64 = 180 => ("seconds", Positive, Public, ExplicitApply, "Whole generative request deadline"),
-    currency: Option<String> = None => ("", Any, Public, ExplicitApply, "Three-letter currency for optional price data"),
-    input_price_microunits_per_million: Option<u64> = None => ("microunits/million tokens", Any, Public, ExplicitApply, "Conservative input price including cached input"),
-    output_price_microunits_per_million: Option<u64> = None => ("microunits/million tokens", Any, Public, ExplicitApply, "Conservative output price including reasoning")
+    provider: Provider = Provider::OpenAiCompatible => ("", Any, Public, ExplicitApply, Basic, "Provider protocol, not an authorization to connect"),
+    base_url: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Advanced, "Chat Completions base URL supplied by the user"),
+    endpoint: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Advanced, "Laya endpoint supplied by the user"),
+    model: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Basic, "Provider model identifier"),
+    auth: Authentication = Authentication::None => ("", Any, Public, ExplicitApply, Basic, "Authentication reference mode"),
+    api_key_env: Option<String> = None => ("", Any, CredentialReference, ExplicitApply, Advanced, "Name of a credential environment variable, never its value"),
+    credential_ref: Option<CredentialReference> = None => ("", Any, CredentialReference, ExplicitApply, Advanced, "Endpoint-scoped user-local credential reference"),
+    context_window: u64 = 32768 => ("tokens", Positive, Public, ExplicitApply, Basic, "Setup suggestion requiring confirmation for the model"),
+    max_output_tokens: u64 = 4096 => ("tokens", Positive, Public, ExplicitApply, Advanced, "Maximum reserved response output"),
+    capacity_id: String = String::new() => ("", Any, Sensitive, ExplicitApply, Advanced, "Shared identity for aliases of the same backend model"),
+    pool: String = String::new() => ("", Any, Sensitive, ExplicitApply, Advanced, "Explicit capacity pool membership"),
+    max_in_flight: u32 = 1 => ("requests", Positive, Public, ExplicitApply, Advanced, "Per-process model ceiling"),
+    connect_timeout_seconds: u64 = 10 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Provider connection deadline"),
+    first_output_timeout_seconds: u64 = 90 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Deadline for actual output, not headers"),
+    idle_stream_timeout_seconds: u64 = 30 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Maximum interval without model progress"),
+    request_timeout_seconds: u64 = 180 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Whole generative request deadline"),
+    currency: Option<String> = None => ("", Any, Public, ExplicitApply, Advanced, "Three-letter currency for optional price data"),
+    input_price_microunits_per_million: Option<u64> = None => ("microunits/million tokens", Any, Public, ExplicitApply, Advanced, "Conservative input price including cached input"),
+    output_price_microunits_per_million: Option<u64> = None => ("microunits/million tokens", Any, Public, ExplicitApply, Advanced, "Conservative output price including reasoning")
 });
 group!(CapacityPoolSettings {
-    max_in_flight: u32 = 1 => ("requests", Positive, Public, ExplicitApply, "Per-process pool ceiling, not physical server capacity"),
-    foreground_reserved_slots: u32 = 1 => ("requests", Positive, Public, ExplicitApply, "Capacity unavailable to shadow work"),
-    queue_capacity: u32 = 8 => ("requests", Positive, Public, ExplicitApply, "Maximum foreground waiters"),
-    queue_timeout_seconds: u64 = 30 => ("seconds", Positive, Public, ExplicitApply, "Queue deadline bounded by remaining task time")
+    max_in_flight: u32 = 1 => ("requests", Positive, Public, ExplicitApply, Advanced, "Per-process pool ceiling, not physical server capacity"),
+    foreground_reserved_slots: u32 = 1 => ("requests", Positive, Public, ExplicitApply, Advanced, "Capacity unavailable to shadow work"),
+    queue_capacity: u32 = 8 => ("requests", Positive, Public, ExplicitApply, Advanced, "Maximum foreground waiters"),
+    queue_timeout_seconds: u64 = 30 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Queue deadline bounded by remaining task time")
 });
 group!(DecisionSettings {
-    enabled: bool = false => ("", Any, Public, ExplicitApply, "Enable optional shadow observations after consent"),
-    mode: DecisionMode = DecisionMode::Shadow => ("", Any, Public, ExplicitApply, "Observations never route or execute work"),
-    model: Option<String> = None => ("", Any, Sensitive, ExplicitApply, "Selected Laya model alias"),
-    timeout_seconds: u64 = 5 => ("seconds", Positive, Public, ExplicitApply, "Whole observation deadline, without automatic retries"),
-    max_observations_per_task: u32 = 30 => ("observations", Positive, Public, ExplicitApply, "Observation budget"),
-    failure_pause_threshold: u32 = 3 => ("failures", Positive, Public, ExplicitApply, "Consecutive failures before pausing observations")
+    enabled: bool = false => ("", Any, Public, ExplicitApply, Basic, "Enable optional shadow observations after consent"),
+    mode: DecisionMode = DecisionMode::Shadow => ("", Any, Public, ExplicitApply, Advanced, "Observations never route or execute work"),
+    model: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Advanced, "Selected Laya model alias"),
+    timeout_seconds: u64 = 5 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Whole observation deadline, without automatic retries"),
+    max_observations_per_task: u32 = 30 => ("observations", Positive, Public, ExplicitApply, Advanced, "Observation budget"),
+    failure_pause_threshold: u32 = 3 => ("failures", Positive, Public, ExplicitApply, Advanced, "Consecutive failures before pausing observations")
 });
 group!(HarnessSettings {
-    max_turns: u32 = 30 => ("turns", Positive, Public, ExplicitApply, "Logical agent interactions per task"),
-    max_active_seconds: u64 = 1200 => ("seconds", Positive, Public, ExplicitApply, "Active elapsed task time excluding human waits"),
-    shell_timeout_seconds: u64 = 120 => ("seconds", Positive, Public, ExplicitApply, "Command deadline capped by remaining task time"),
-    provider_retries: u32 = 2 => ("retries", Any, Public, ExplicitApply, "Additional safe transient retries; never quota or capacity recovery"),
-    max_tool_calls: u32 = 100 => ("calls", Positive, Public, ExplicitApply, "Tool dispatch budget including verification"),
-    max_total_tokens: u64 = 200000 => ("tokens", Positive, Public, ExplicitApply, "Input and output budget including compaction"),
-    max_cost_microunits: Option<u64> = None => ("microunits", Positive, Public, ExplicitApply, "Optional monetary budget; requires currency and model prices"),
-    currency: Option<String> = None => ("", Any, Public, ExplicitApply, "Three-letter currency of the optional monetary budget")
+    max_turns: u32 = 30 => ("turns", Positive, Public, ExplicitApply, Advanced, "Logical agent interactions per task"),
+    max_active_seconds: u64 = 1200 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Active elapsed task time excluding human waits"),
+    shell_timeout_seconds: u64 = 120 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Command deadline capped by remaining task time"),
+    provider_retries: u32 = 2 => ("retries", Any, Public, ExplicitApply, Advanced, "Additional safe transient retries; never quota or capacity recovery"),
+    max_tool_calls: u32 = 100 => ("calls", Positive, Public, ExplicitApply, Advanced, "Tool dispatch budget including verification"),
+    max_total_tokens: u64 = 200000 => ("tokens", Positive, Public, ExplicitApply, Advanced, "Input and output budget including compaction"),
+    max_cost_microunits: Option<u64> = None => ("microunits", Positive, Public, ExplicitApply, Advanced, "Optional monetary budget; requires currency and model prices"),
+    currency: Option<String> = None => ("", Any, Public, ExplicitApply, Advanced, "Three-letter currency of the optional monetary budget")
 });
 group!(ShellSettings {
-    stdin: ShellInput = ShellInput::Closed => ("", Any, Public, ExplicitApply, "Child standard input is closed"),
-    termination_grace_seconds: u64 = 5 => ("seconds", Positive, Public, ExplicitApply, "Graceful termination deadline"),
-    inherit_env: Vec<String> = Vec::new() => ("", Any, Sensitive, ExplicitApply, "Explicit reviewed parent environment names"),
-    env: BTreeMap<String, String> = BTreeMap::from([("RUST_BACKTRACE".to_owned(), "1".to_owned())]) => ("", Any, Sensitive, ExplicitApply, "Non-secret literal tool environment, never interpolation")
+    stdin: ShellInput = ShellInput::Closed => ("", Any, Public, ExplicitApply, Advanced, "Child standard input is closed"),
+    termination_grace_seconds: u64 = 5 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Graceful termination deadline"),
+    inherit_env: Vec<String> = Vec::new() => ("", Any, Sensitive, ExplicitApply, Advanced, "Explicit reviewed parent environment names"),
+    env: BTreeMap<String, String> = BTreeMap::from([("RUST_BACKTRACE".to_owned(), "1".to_owned())]) => ("", Any, Sensitive, ExplicitApply, Advanced, "Non-secret literal tool environment, never interpolation")
 });
 group!(PolicySettings {
-    shell: Permission = Permission::Ask => ("", Any, Public, ExplicitApply, "Requested shell policy, not a user grant"),
-    tool_network: Permission = Permission::Deny => ("", Any, Public, ExplicitApply, "Requested tool network policy"),
-    git_commit: Permission = Permission::Ask => ("", Any, Public, ExplicitApply, "Requested Git commit policy"),
-    git_push: Permission = Permission::Ask => ("", Any, Public, ExplicitApply, "Requested Git push policy")
+    shell: Permission = Permission::Ask => ("", Any, Public, ExplicitApply, Advanced, "Requested shell policy, not a user grant"),
+    tool_network: Permission = Permission::Deny => ("", Any, Public, ExplicitApply, Advanced, "Requested tool network policy"),
+    git_commit: Permission = Permission::Ask => ("", Any, Public, ExplicitApply, Advanced, "Requested Git commit policy"),
+    git_push: Permission = Permission::Ask => ("", Any, Public, ExplicitApply, Advanced, "Requested Git push policy")
 });
 group!(ContextSettings {
-    compaction_threshold: f64 = 0.8 => ("fraction", Fraction, Public, ExplicitApply, "Fraction of available input capacity that triggers compaction"),
-    safety_reserve_tokens: u64 = 1024 => ("tokens", Positive, Public, ExplicitApply, "Minimum additional input safety reserve"),
-    safety_reserve_fraction: f64 = 0.05 => ("fraction", Fraction, Public, ExplicitApply, "Context fraction reserved in addition to response output"),
-    compaction_max_output_tokens: u64 = 2048 => ("tokens", Positive, Public, ExplicitApply, "Compaction summary output reservation"),
-    tool_context_max_bytes: u64 = 65536 => ("bytes", Positive, Public, ExplicitApply, "Tool content supplied to the model"),
-    tool_capture_max_bytes: u64 = 2097152 => ("bytes", Positive, Public, ExplicitApply, "Combined stdout and stderr capture ceiling")
+    compaction_threshold: f64 = 0.8 => ("fraction", Fraction, Public, ExplicitApply, Advanced, "Fraction of available input capacity that triggers compaction"),
+    safety_reserve_tokens: u64 = 1024 => ("tokens", Positive, Public, ExplicitApply, Advanced, "Minimum additional input safety reserve"),
+    safety_reserve_fraction: f64 = 0.05 => ("fraction", Fraction, Public, ExplicitApply, Advanced, "Context fraction reserved in addition to response output"),
+    compaction_max_output_tokens: u64 = 2048 => ("tokens", Positive, Public, ExplicitApply, Advanced, "Compaction summary output reservation"),
+    tool_context_max_bytes: u64 = 65536 => ("bytes", Positive, Public, ExplicitApply, Advanced, "Tool content supplied to the model"),
+    tool_capture_max_bytes: u64 = 2097152 => ("bytes", Positive, Public, ExplicitApply, Advanced, "Combined stdout and stderr capture ceiling")
 });
 group!(StorageSettings {
-    auto_expire: bool = false => ("", FixedFalse, Public, ExplicitApply, "Retained history never expires automatically"),
-    session_max_bytes: u64 = 10737418240 => ("bytes", Positive, Public, ExplicitApply, "History admission quota, not automatic deletion"),
-    diagnostic_max_bytes: u64 = 2147483648 => ("bytes", Positive, Public, ExplicitApply, "Local diagnostic capture quota"),
-    min_free_bytes: u64 = 1073741824 => ("bytes", Positive, Public, ExplicitApply, "Free-space admission reserve")
+    auto_expire: bool = false => ("", FixedFalse, Public, ExplicitApply, Advanced, "Retained history never expires automatically"),
+    session_max_bytes: u64 = 10737418240 => ("bytes", Positive, Public, ExplicitApply, Advanced, "History admission quota, not automatic deletion"),
+    diagnostic_max_bytes: u64 = 2147483648 => ("bytes", Positive, Public, ExplicitApply, Advanced, "Local diagnostic capture quota"),
+    min_free_bytes: u64 = 1073741824 => ("bytes", Positive, Public, ExplicitApply, Advanced, "Free-space admission reserve")
 });
 group!(TelemetrySettings {
-    export_enabled: bool = false => ("", Any, Public, ExplicitApply, "Opt-in export requiring separate destination consent"),
-    otlp_protocol: OtlpProtocol = OtlpProtocol::HttpProtobuf => ("", Any, Public, Restart, "Initial OTLP transport"),
-    otlp_endpoint: Option<String> = None => ("", Any, Sensitive, ExplicitApply, "User-selected OTLP endpoint; no default service is contacted"),
-    capture_content: bool = false => ("", Any, Sensitive, ExplicitApply, "Content capture requires separate consent")
+    export_enabled: bool = false => ("", Any, Public, ExplicitApply, Advanced, "Opt-in export requiring separate destination consent"),
+    otlp_protocol: OtlpProtocol = OtlpProtocol::HttpProtobuf => ("", Any, Public, Restart, Advanced, "Initial OTLP transport"),
+    otlp_endpoint: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Advanced, "User-selected OTLP endpoint; no default service is contacted"),
+    capture_content: bool = false => ("", Any, Sensitive, ExplicitApply, Advanced, "Content capture requires separate consent")
 });
 group!(TuiSettings {
-    theme: String = "default".to_owned() => ("", Any, Public, Presentation, "Presentation theme identifier"),
-    animation_fps: u32 = 60 => ("frames/second", Any, Public, Presentation, "Animation cadence; zero never disables input"),
-    reduced_motion: bool = false => ("", Any, Public, Presentation, "Reduce animated motion"),
-    dev_menu: bool = true => ("", Any, Public, Presentation, "Development presentation controls enabled by default during the MVP, without runtime privileges")
+    theme: String = "default".to_owned() => ("", Any, Public, Presentation, Basic, "Presentation theme identifier"),
+    animation_fps: u32 = 60 => ("frames/second", Any, Public, Presentation, Basic, "Animation cadence; zero never disables input"),
+    reduced_motion: bool = false => ("", Any, Public, Presentation, Basic, "Reduce animated motion"),
+    dev_menu: bool = true => ("", Any, Public, Presentation, Basic, "Development presentation controls enabled by default during the MVP, without runtime privileges")
 }, { notifications: NotificationSettings, flags: UiFlags });
 group!(NotificationSettings {
-    desktop_enabled: bool = false => ("", Any, Public, Presentation, "Opt-in desktop notifications"),
-    duration_seconds: u64 = 5 => ("seconds", Positive, Public, Presentation, "Transient notification duration"),
-    max_visible: u32 = 3 => ("notifications", Positive, Public, Presentation, "Maximum visible notification stack")
+    desktop_enabled: bool = false => ("", Any, Public, Presentation, Basic, "Opt-in desktop notifications"),
+    duration_seconds: u64 = 5 => ("seconds", Positive, Public, Presentation, Basic, "Transient notification duration"),
+    max_visible: u32 = 3 => ("notifications", Positive, Public, Presentation, Basic, "Maximum visible notification stack")
 });
 group!(UiFlags {
-    render_diagnostics: bool = false => ("", Any, Public, Presentation, "Display rendering diagnostics when implemented")
+    render_diagnostics: bool = false => ("", Any, Public, Presentation, Advanced, "Display rendering diagnostics when implemented")
 });
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -394,6 +402,7 @@ impl Settings {
                 description: "Supported configuration schema version".to_owned(),
                 privacy: Privacy::Public,
                 application: ApplicationRule::Restart,
+                tier: SettingTier::Advanced,
             },
             SettingValue::Integer(u64::from(self.schema_version)),
         )];
@@ -536,7 +545,61 @@ mod tests {
                 .unwrap();
             assert_eq!(template.default, descriptor.default);
             assert_eq!(template.kind, descriptor.kind);
+            assert_eq!(template.tier, descriptor.tier);
         }
+    }
+
+    #[test]
+    fn tiers_are_registry_owned_and_cover_the_ordinary_surface() {
+        use std::collections::BTreeSet;
+        let descriptors = Settings::default().descriptors();
+        let basic: BTreeSet<&str> = descriptors
+            .iter()
+            .filter(|descriptor| descriptor.tier == SettingTier::Basic)
+            .map(|descriptor| descriptor.key.as_str())
+            .collect();
+        assert_eq!(
+            basic,
+            [
+                "project.name",
+                "agent.model",
+                "decision.enabled",
+                "tui.theme",
+                "tui.animation_fps",
+                "tui.reduced_motion",
+                "tui.dev_menu",
+                "tui.notifications.desktop_enabled",
+                "tui.notifications.duration_seconds",
+                "tui.notifications.max_visible",
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+        );
+        let templates = Settings::collection_descriptors();
+        let model_basic: BTreeSet<&str> = templates
+            .iter()
+            .filter(|descriptor| {
+                descriptor.key.starts_with("models.<id>.") && descriptor.tier == SettingTier::Basic
+            })
+            .map(|descriptor| descriptor.key.as_str())
+            .collect();
+        assert_eq!(
+            model_basic,
+            [
+                "models.<id>.provider",
+                "models.<id>.model",
+                "models.<id>.auth",
+                "models.<id>.context_window",
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+        );
+        assert!(
+            Settings::default()
+                .descriptors()
+                .iter()
+                .any(|descriptor| descriptor.tier == SettingTier::Advanced)
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use fluzo_core::configuration::*;
 use fluzo_core::settings::{
-    Constraint, Privacy, SettingDescriptor, SettingKind, SettingValue, Settings,
+    Constraint, Privacy, SettingDescriptor, SettingKind, SettingTier, SettingValue, Settings,
 };
 use ratatui::{
     Frame,
@@ -47,6 +47,7 @@ pub struct ConfigurationView {
     pub filter: String,
     pub target: String,
     help: bool,
+    advanced: bool,
     selected: String,
     edits: BTreeMap<String, SettingValue>,
     collections: BTreeMap<String, bool>,
@@ -79,6 +80,7 @@ impl Default for ConfigurationView {
             filter: String::new(),
             target: String::new(),
             help: false,
+            advanced: false,
             selected: String::new(),
             edits: BTreeMap::new(),
             collections: BTreeMap::new(),
@@ -313,15 +315,79 @@ impl ConfigurationView {
         descriptors
     }
 
+    fn removing(&self, key: &str) -> bool {
+        self.collections
+            .iter()
+            .any(|(collection, add)| !add && key.starts_with(&format!("{collection}.")))
+    }
+
+    /// Restores the registry default for the explicit selection, or for the focused
+    /// key when nothing is checked. Draft only: no request is dispatched and no
+    /// collection removal is ever implied.
+    fn restore_defaults(&mut self) {
+        let bulk = !self.checked.is_empty();
+        let targets: Vec<String> = if bulk {
+            self.checked.iter().cloned().collect()
+        } else {
+            vec![self.selected.clone()]
+        };
+        let descriptors = self.descriptors();
+        let mut restored = 0usize;
+        let mut skipped = 0usize;
+        let mut sensitive = 0usize;
+        let mut capacity = false;
+        for key in targets {
+            let Some(descriptor) = descriptors.get(&key) else {
+                skipped += 1;
+                continue;
+            };
+            if bulk && descriptor.privacy != Privacy::Public {
+                sensitive += 1;
+                continue;
+            }
+            if !mutable(descriptor) || self.removing(&key) {
+                skipped += 1;
+                continue;
+            }
+            let current = self
+                .edits
+                .get(&key)
+                .cloned()
+                .or_else(|| {
+                    self.snapshot
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.values.get(&key))
+                        .map(|value| value.draft.clone())
+                })
+                .unwrap_or_else(|| descriptor.default.clone());
+            if current == descriptor.default {
+                skipped += 1;
+                continue;
+            }
+            if self.put(key, descriptor.default.clone()) {
+                restored += 1;
+            } else {
+                capacity = true;
+                break;
+            }
+        }
+        let status = format!(
+            "Restored {restored} default(s) in the draft; {skipped} skipped; {sensitive} sensitive left for individual editing. Nothing saved."
+        );
+        self.status = if capacity {
+            format!("Draft capacity reached. {status}")
+        } else {
+            status
+        };
+    }
+
     fn keys(&self) -> Vec<String> {
         self.descriptors()
-            .into_keys()
+            .into_iter()
+            .filter(|(_, descriptor)| self.advanced || descriptor.tier != SettingTier::Advanced)
+            .map(|(key, _)| key)
             .filter(|key| {
-                key.to_lowercase().contains(&self.filter.to_lowercase())
-                    && !self
-                        .collections
-                        .iter()
-                        .any(|(collection, add)| !add && key.starts_with(&format!("{collection}.")))
+                key.to_lowercase().contains(&self.filter.to_lowercase()) && !self.removing(key)
             })
             .collect()
     }
@@ -832,6 +898,16 @@ impl ConfigurationView {
             self.detail_scroll = 0;
             return;
         }
+        if key.code == KeyCode::F(4) {
+            self.advanced = !self.advanced;
+            self.status = if self.advanced {
+                "Advanced fields shown; F4 returns to basic fields. Draft unchanged.".into()
+            } else {
+                "Basic fields only; F4 shows advanced fields. Draft unchanged.".into()
+            };
+            self.select_first();
+            return;
+        }
         if self.help {
             match key.code {
                 KeyCode::Esc => self.help = false,
@@ -1020,13 +1096,7 @@ impl ConfigurationView {
                     self.editor = Editor::default();
                     self.replace_input = false;
                 }
-                KeyCode::Char('d') => {
-                    if let Some(descriptor) = self.descriptors().get(&self.selected)
-                        && mutable(descriptor)
-                    {
-                        self.put(self.selected.clone(), descriptor.default.clone());
-                    }
-                }
+                KeyCode::Char('d') => self.restore_defaults(),
                 KeyCode::Char('u') => {
                     self.filter.clear();
                     self.select_first();
@@ -1365,7 +1435,7 @@ impl ConfigurationView {
             .unwrap_or(0);
         let first = selected.saturating_sub(usize::from(list_height).saturating_sub(1));
         let descriptors = self.descriptors();
-        let lines: Vec<_> = keys
+        let mut lines: Vec<_> = keys
             .iter()
             .skip(first)
             .take(usize::from(list_height))
@@ -1418,6 +1488,27 @@ impl ConfigurationView {
                 row
             })
             .collect();
+        if lines.is_empty() {
+            let hidden = self.descriptors().into_values().any(|descriptor| {
+                descriptor.tier == SettingTier::Advanced
+                    && descriptor
+                        .key
+                        .to_lowercase()
+                        .contains(&self.filter.to_lowercase())
+                    && !self.removing(&descriptor.key)
+            });
+            if hidden {
+                let reason = if self.filter.is_empty() {
+                    "No basic fields are visible. Press F4 to show advanced fields.".to_owned()
+                } else {
+                    format!(
+                        "No basic fields match \"{}\". Press F4 to show advanced fields.",
+                        safe_text(&self.filter)
+                    )
+                };
+                lines.push(Line::styled(safe_text(&reason), theme.warning));
+            }
+        }
         frame.render_widget(
             Paragraph::new(lines),
             Rect::new(inner.x, inner.y + header_height, inner.width, list_height),
@@ -1495,8 +1586,10 @@ impl ConfigurationView {
                     "Left/Right choose | Enter stages | Esc cancels"
                 } else if matches!(self.input, Some(Input::Field(_))) {
                     "Enter stages | Esc cancels | Empty restores default"
+                } else if self.advanced {
+                    "Enter edit | Space select | Ctrl+D default | F4 basic | F1 help"
                 } else {
-                    "Enter edit | Left/Right step | Space select | F1 help"
+                    "Enter edit | Space select | Ctrl+D default | F4 advanced | F1 help"
                 },
             ),
             Line::from("Ctrl+S save | Ctrl+A apply | Ctrl+V validate | Esc back"),
@@ -1519,7 +1612,7 @@ impl ConfigurationView {
                 "Configuration help",
                 color,
             );
-            frame.render_widget(Paragraph::new("Configuration help\nType to search; Ctrl+U shows all basic/advanced fields.\nUp/Down/Tab select; Enter edits. Booleans and choices: Left/Right choose, Enter stages, Esc cancels. Numbers: Left/Right steps.\nSpace selects keys for Save/Apply; otherwise changed keys are used.\nCtrl+D stages the selected default; Delete stages collection removal.\nCtrl+N adds a model; Ctrl+P adds a pool. Update references together.\nCtrl+V validates; Ctrl+S saves future values; Ctrl+A applies presentation.\nCtrl+X twice cancels draft; Ctrl+R twice reloads and discards draft.\nEsc closes retaining draft. Pending writes may still complete.\nInline input: Enter stages; empty restores the default; Esc cancels. Ctrl+U clears; Shift+Enter inserts newline. Lists: one escaped item per line. Maps: escaped key=value per line. Escapes: \\n \\r \\t \\\\ \\=; \\e is an empty item.\nUnchanged redacted fields remain untouched; inputs replace whole values.\nThis workspace writes .fluzo itself, replacing an existing file when needed. When the file changes outside Fluzo a banner appears: Ctrl+R adopts the outside version and discards the draft; Ctrl+K keeps our edits, and Save then writes only the keys you edited over the outside file so unrelated outside keys survive.\nAt request exhaustion, reconcile outcomes then explicitly reopen; local drafts are not persisted automatically.\nPgUp/PgDn scroll help. F1 or Esc closes. Ctrl+C exits.").wrap(Wrap { trim: false }).scroll((self.detail_scroll, 0)).style(theme.base), inner);
+            frame.render_widget(Paragraph::new("Configuration help\nType to search; Ctrl+U shows all basic/advanced fields.\nUp/Down/Tab select; Enter edits. Booleans and choices: Left/Right choose, Enter stages, Esc cancels. Numbers: Left/Right steps.\nSpace selects keys for Save/Apply; otherwise changed keys are used. F4 toggles basic and advanced fields; the tier comes from the shared registry, and the split never changes what is stored.\nCtrl+D restores the registry default for the selected keys, or the focused key when nothing is selected. It affects the draft only, never deletes a collection, and leaves sensitive values for individual editing. Delete stages collection removal.\nCtrl+N adds a model; Ctrl+P adds a pool. Update references together.\nCtrl+V validates; Ctrl+S saves future values; Ctrl+A applies presentation.\nCtrl+X twice cancels draft; Ctrl+R twice reloads and discards draft.\nEsc closes retaining draft. Pending writes may still complete.\nInline input: Enter stages; empty restores the default; Esc cancels. Ctrl+U clears; Shift+Enter inserts newline. Lists: one escaped item per line. Maps: escaped key=value per line. Escapes: \\n \\r \\t \\\\ \\=; \\e is an empty item.\nUnchanged redacted fields remain untouched; inputs replace whole values.\nThis workspace writes .fluzo itself, replacing an existing file when needed. When the file changes outside Fluzo a banner appears: Ctrl+R adopts the outside version and discards the draft; Ctrl+K keeps our edits, and Save then writes only the keys you edited over the outside file so unrelated outside keys survive.\nAt request exhaustion, reconcile outcomes then explicitly reopen; local drafts are not persisted automatically.\nPgUp/PgDn scroll help. F1 or Esc closes. Ctrl+C exits.").wrap(Wrap { trim: false }).scroll((self.detail_scroll, 0)).style(theme.base), inner);
             frame.render_widget(
                 Paragraph::new("PgUp/PgDn scroll | F1 / Esc back").style(theme.accent),
                 Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),

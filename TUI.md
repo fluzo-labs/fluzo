@@ -257,7 +257,11 @@ explicit init stays in setup. No transition starts execution.
 
 Models, limits, pools, storage, telemetry, theme, notifications, devmenu and
 All / advanced entries share the typed editor. F1 explains keyboard controls;
-search and selection survive asynchronous projection updates. Composer, focus and
+F4 toggles the list between the registry's basic and advanced field tiers, the
+same F4 meaning the setup surface uses, and an empty basic list points at F4
+instead of rendering nothing. The toggle only changes visibility: it never
+changes what is stored, validated or saved. Search, selection and pending drafts
+survive asynchronous projection updates and tier switches. Composer, focus and
 scroll survive settings navigation. Display sanitization is separate from masking
 sensitive replacement inputs. Notifications duration/count use shared finite
 bounds; desktop preferences cannot create a notification or operational adapter.
