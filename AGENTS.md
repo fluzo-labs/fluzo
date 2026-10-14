@@ -386,6 +386,84 @@ inference-free checks; `--locked` is not an offline/network-isolation guarantee.
 Record actual commands/results and mark unavailable checks unverified. Update
 this list when subsequent milestones introduce commands or dependencies.
 
+## Concurrent agent operation
+
+Local inference is the binding constraint on how many agents run at once, not
+CPU, memory or pane count. The operator's measured Halo Strix figures are
+about 16.1 tok/s decode for a single request and about 12.38 tok/s per
+request at two concurrent requests. Four slots are enabled and were proven at
+roughly 7,800 input and 512 output tokens per request. Four long-running
+coding agents, and four full 128K conversations, are not proven. Consistent
+with the per-process admission rules, `/v1/models` and context length do not
+establish serving slots: these are operator-confirmed numbers and they move
+with the runtime, model and server configuration.
+
+Working ceiling: three concurrent lanes. Two autonomous workers plus one human
+lane, leaving one slot as headroom for verification runs and bursts. Running
+four saturates the server and slows the interactive session that reviews the
+work, which is the session that actually gates delivery. The small model
+carries titles and summaries off the local box, and that is what makes several
+Crush instances tolerable; it is not a local slot.
+
+Lane layout inside the Herdr workspace:
+
+```text
+workspace <repo>
+├── p1  orchestrator    human lane, keeps focus
+├── p2  <repo>-<phase>  worker on the active phase
+└── p3  <repo>-<area>   optional second worker
+```
+
+One workspace per repository. Splits take an explicit `--cwd` and `--no-focus`
+so the human's focus never moves. Each worker is renamed to
+`<repo>-<phase>`, because every Crush instance reports the same detected agent
+label and the sidebar is otherwise unreadable.
+
+Dispatch contract. Long instructions go in a file, never through keystrokes:
+
+```bash
+export HERDR_ENV="$(tr '\0' '\n' < /proc/$$/environ | sed -n 's/^HERDR_ENV=//p')"
+export HERDR_SOCKET_PATH="$(tr '\0' '\n' < /proc/$$/environ | sed -n 's/^HERDR_SOCKET_PATH=//p')"
+herdr pane send-text <pane> "Read /tmp/<task>.md and execute it end to end."
+herdr pane send-keys <pane> return
+herdr pane wait-output <pane> --regex "github\.com/[^ ]+/pull/[0-9]+" --timeout 900000
+```
+
+The task file carries everything the worker needs so it never has to ask:
+repository, branch and HEAD, plan path, issue, the maintainer's verbatim
+acceptance directive when one exists, the exact verification commands, the
+pull request rule (`Ref` rather than `Closes` while any criterion stays open)
+and the required final report.
+
+Phase gates keep the meaning the plan format gives them. `implemented`,
+`verification` and `review` are distinct states and are never collapsed into
+one. A criterion that lives in another repository keeps
+`has_completed_all_phases` at `false`, and the pull request references its
+issue instead of closing it.
+
+Autonomy boundary. An agent may search, read, implement, verify, commit, push,
+open a pull request and update the plan with real evidence without asking. A
+human must move `review` to `accepted`, merge, delete anything, probe a
+non-loopback endpoint, change configuration, and supply the formal approval
+from a second GitHub account.
+
+Known environment limitations, each with the workaround in use:
+
+| Limitation | Workaround |
+| --- | --- |
+| Crush's shell strips `HERDR_ENV`, `HERDR_PANE_ID` and `HERDR_SOCKET_PATH` from child environments although they exist in the process environment | re-export them from `/proc/$$/environ` before calling `herdr` |
+| `herdr agent prompt`, `wait` and `get` reject Crush with `not an active named agent` | drive the pane with `pane send-text` plus `send-keys return` |
+| `herdr agent start --kind` has no Crush kind | launch with `pane run` |
+| GitHub rejects approving your own pull request | post the review as a comment and merge by hand or from a second account |
+| `gh pr diff` has no per-path filter | use `git diff origin/main...HEAD -- <path>` |
+| Switching a shared checkout to another branch strands a worker mid-task | give each concurrent change its own `git worktree` |
+
+The queue that actually accumulates is human review, not the GPU. With four
+slots and two or three lanes the hardware is not the constraint; visual
+acceptance, live-environment reproduction and release evidence are. The
+efficient pattern keeps two workers producing while the maintainer drains
+gates rather than code.
+
 ## Skills and contribution completion
 
 See [SKILLS.md](SKILLS.md) for researched candidates, revision/license notes,
