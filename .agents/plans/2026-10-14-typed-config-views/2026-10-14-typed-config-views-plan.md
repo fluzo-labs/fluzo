@@ -252,10 +252,10 @@ Risks:
   is marked complete on fixture evidence alone; the closure semantics for #46 and
   #8 remain explicitly unapproved.
 - Actions:
-  - [ ] Build the matrix.
-  - [ ] Reconcile `TUI.md`, `CONFIGURATION.md`, `APPLICATION.md` and
+  - [x] Build the matrix.
+  - [x] Reconcile `TUI.md`, `CONFIGURATION.md`, `APPLICATION.md` and
         `AGENTS.md` with the final behavior.
-  - [ ] Stop for review; do not close the parent.
+  - [x] Stop for review; do not close the parent.
 - Verification: `python3 -m unittest discover -s scripts -p 'test_*.py'` plus
   the documentation review in `AGENTS.md`.
 - Risks and recovery: none technical; the risk is overstating acceptance, which the
@@ -267,7 +267,7 @@ Risks:
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | pending | 267 Rust tests, 73 Python tests, Clippy and fmt clean |
 | P2 | implemented | passed | pending | 269 Rust + 74 Python tests green; R2 matrix recorded below; one new min-size PTY case |
-| P3 | pending | not_run | pending | none yet |
+| P3 | implemented | passed | pending | matrix recorded below; docs verified consistent at this revision; no Rust touched |
 
 Implementation, successful verification and human acceptance are separate
 states. A selected commit message is not acceptance. `has_completed_all_phases`
@@ -276,12 +276,10 @@ and all reviews are accepted.
 
 ## Next step
 
-Review P1. The change is small, self-contained and reviewable as data (the tier
-literals in `settings.rs`) plus one interaction change (`F4` and `Ctrl+D` in the
-configuration editor). Reply "execute P2" only after P1 is accepted; otherwise
-say "stop". P2 is a large evidence-gathering phase and should not start while the
-tier split is still unreviewed, because a rejected split would invalidate the
-coverage tests written against it.
+Review P3. The matrix below is review material, not acceptance: it links
+every original #8 criterion to accepted S1/S2 records plus merged S3/P1/P2
+regressions, and lists what remains open. Reply only after review; the
+maintainer alone closes #46 and #8. P1 and P2 are merged (#65, #66).
 
 ## Evidence and tracking
 
@@ -367,6 +365,79 @@ bootstrap 4 + configuration 8, core 16, runtime 78 + http_simulator 12, tui
 passed, 0 failed (new minimum-size case included; repeated 3x stable).
 - `python3 -m unittest discover -s scripts -p 'test_*.py'`: 74 passed, 0 failed;
 live inference `not_run`.
+
+### P3: revision-linked parent acceptance matrix (UI-03 #8)
+
+Baseline: `origin/main` at `5a77ba5` (contains merged P1 #65 `e7e63a7` and
+P2 #66 `5a77ba5`). This matrix maps each original #8 acceptance criterion
+to accepted S1/S2 evidence plus merged S3 integration regressions. It is
+review material for the maintainer only: no criterion is marked complete on
+fixture evidence alone, and closure of #46 and #8 remains an explicitly
+unapproved operation from this plan.
+
+Accepted child records and integrated revisions:
+
+- S1 (#44, accepted and closed): shared save/apply service, PR #47 merged
+  `db754fcf87b326d24b9177aef84d99a2c66ef41b`; review corrections PR #48
+  merged `83c42b9378d55cbb0ee538d40312b8607a9ecb7f`; acceptance record
+  [#44 final S1 evidence](https://github.com/fluzo-labs/fluzo/issues/44#issuecomment-5926892613).
+- S2 (#45, accepted and closed): offline setup, PR #49 merged
+  `196140b23b088ea9f58993938956377efa1a4d16`; review corrections PR #50
+  merged `d03b60d84e7dcd225348baf2fe8888cbd22640d9`; acceptance record
+  on #45 (S2 accepted, parent #8 explicitly unchanged).
+- S3 normal-view integration (this issue #46, merged increments): PR #51
+  `724fa37` typed settings in the normal configuration workspace; PR #52
+  successive-change and deleted-collection fixes; PR #53 `7829d98` guided
+  first-run setup and local model discovery; PR #60 `881630c` explicit
+  sanitized restart-pending line; PR #61 `66047d9` endpoint-consent gate
+  for cleartext discovery; P1 #65 `e7e63a7` registry-owned tiers with
+  `F4`/`Ctrl+D`; P2 #66 `5a77ba5` R2 joint-evidence matrix (above).
+
+| Original #8 criterion | Accepted evidence at this revision | State |
+| --- | --- | --- |
+| Missing config opens setup | S1: runtime `discovery_distinguishes_missing_valid_invalid_and_inaccessible` (at `83c42b9`). S2: PTY `test_setup_save_requires_two_explicit_steps`, `test_setup_invalid_model_does_not_save` (at `d03b60d`). S3 integration: PTY `test_setup_to_settings_keeps_create_only_and_request_identity` (at `5a77ba5`). | Evidence assembled; parent closure pending maintainer |
+| Existing valid config skips it | S2: PTY `test_valid_configuration_skips_setup`, headless `test_headless_discovery_and_explicit_selection_preserve_files` (at `d03b60d`); S1 discovery classification above; S3 PTY `test_safe_screen_keeps_existing_configuration` (at `5a77ba5`). | Evidence assembled; parent closure pending maintainer |
+| Temporary-fixture save/reload, defaults, conflicts and CLI overrides tested without contacting models | S1 adapter (at `83c42b9`): `selected_save_apply_cancel_and_cli_are_independent`, `external_create_edit_remove_and_stale_versions_never_clobber`, `file_lock_symlink_hardlink_and_replacement_checks_fail_closed`, `cooperating_processes_cannot_write_while_directory_is_locked`. S2 round trips (at `d03b60d`): `setup_saves_complete_defaults_without_applying_cli_or_resolving_secrets`, `setup_replacement_preserves_exact_invalid_bytes_in_independent_backup`, `setup_backup_failures_and_collisions_preserve_original`, PTY `test_offline_provider_is_not_contacted_or_resolved`. S3 normal view: CLI `normal_view_real_save_apply_preserves_redacted_values_and_comments`, `collection_batch_and_all_value_types_round_trip_without_partial_save`, runtime `save_after_an_outside_edit_keeps_unrelated_outside_keys`, `reload_adopts_the_outside_version_and_clears_the_notice`. P1 defaults/tiers (at `e7e63a7`): core `canonical_defaults_and_metadata_agree`, `cargo test -p fluzo-core --locked --offline tiers`, TUI `restore_defaults_targets_the_explicit_selection_and_stays_in_the_draft`, `bulk_restore_skips_fixed_keys_without_staging_their_edits`. P2 joint matrix rows above cover reload, conflicts, CLI precedence and model-free operation end to end; every fixture keeps provider listeners unaccepted and live inference `not_run`. | Evidence assembled; parent closure pending maintainer |
+| Evidence and relevant documentation are linked from the completing PR or issue comment | This matrix links the S1/S2 acceptance comments, the merged S3/P1/P2 revisions and the named tests; `CONFIGURATION.md` (protocol 6, tiers, `F4`/`Ctrl+D`, write contract), `TUI.md` (S3 normal configuration, S2 setup, PTY/buffer coverage), `APPLICATION.md` (configuration port and protocol compatibility) and `AGENTS.md` carry the delivered contract. | Evidence assembled; parent closure pending maintainer |
+
+Open production requirements (explicitly NOT claimed by fixture evidence):
+
+- Human visual acceptance of the setup and settings surfaces in
+  Ghostty/Alacritty: pending human gate; buffers and PTYs do not substitute.
+- UI-02 C3 developer-menu route evidence: delivered in open PR #67, not
+  in this baseline; the parent must not count it until merged and reviewed.
+- Wayland physical-resize spike wording: open PR #68, not in this baseline.
+- Consent enforcement remains RUN-02 (#16); endpoint acceptance here is the
+  discovery gate only (#61).
+- Laya integration remains AGT-03 (#22); no live observation runs.
+- Production diagnostic transport remains OBS-01 (#13); change records and
+  projections are fixtures, not sink delivery.
+- Real TUI/headless runtime integration remains REL-01 (#24); the ordinary
+  shell runs against the configuration service, not a task runtime.
+- Operational application has no live adapter: `Unavailable` is the honest
+  outcome and restart never auto-triggers.
+- The coordinated-writer contract covers this tool's own workers; arbitrary
+  external editors and network filesystems are outside it.
+- Live inference: `not_run` throughout.
+
+Documentation reconciliation at `5a77ba5`: `CONFIGURATION.md`, `TUI.md`,
+`APPLICATION.md` and `AGENTS.md` already describe configuration protocol 6
+with the registry-owned basic/advanced tiers, `F4` toggling, `Ctrl+D`
+selection-scoped restore, the restart-pending line and the S1/S2 write and
+setup contracts, as merged through #65/#66. No stale protocol 4/5 wording or
+contradiction was found; no documentation change was required in this
+phase. C3-route documentation and spike wording arrive with their own open
+PRs (#67, #68) and are deliberately not pulled into this baseline.
+
+P3 verification, run 2026-10-15 on the pinned toolchain:
+
+- `python3 -B -m unittest discover -s scripts -p 'test_*.py'`: 74 passed,
+  0 failed; live inference `not_run`.
+- `python3 scripts/check_dev_setup.py`: passed (foundation graph,
+  toolchain, LSP config and 12 skills).
+- No Rust files changed; `cargo fmt --all -- --check` re-run clean anyway.
+- Documentation link check: every file and test name cited in this matrix
+  exists at this revision (verified by grep against the tree).
 
 - Issue: [fluzo-labs/fluzo#46](https://github.com/fluzo-labs/fluzo/issues/46)
   (open, parent #8).
