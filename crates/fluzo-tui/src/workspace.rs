@@ -373,6 +373,27 @@ mod tests {
     }
 
     #[test]
+    fn developer_menu_entry_is_hidden_when_developer_preferences_are_disabled() {
+        let mut workspace = Workspace::new("/fixture", false).unwrap();
+        let settings = fluzo_core::settings::TuiSettings {
+            dev_menu: false,
+            ..Default::default()
+        };
+        workspace.shell.preferences = Preferences::new(VisualOptions {
+            settings,
+            ascii: false,
+            ..Default::default()
+        })
+        .unwrap();
+        workspace.palette = true;
+        let names: Vec<&str> = workspace.actions().iter().map(|(name, _)| *name).collect();
+        assert!(!names.contains(&"Developer Menu"), "{names:?}");
+        assert!(names.contains(&"Configuration"), "{names:?}");
+        workspace.query = "developer".into();
+        assert!(workspace.actions().is_empty());
+    }
+
+    #[test]
     fn open_configuration_menu_lands_on_configuration_commands() {
         for ascii in [false, true] {
             let mut workspace = Workspace::new("/fixture", ascii).unwrap();

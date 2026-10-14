@@ -1,4 +1,9 @@
 pub mod configuration;
+/// Re-exported so a host can drive the TUI's public key handling without
+/// taking its own direct dependency on the terminal library.
+pub mod input {
+    pub use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+}
 pub mod identity;
 pub mod inspection;
 pub mod model_wizard;

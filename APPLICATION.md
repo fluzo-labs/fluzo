@@ -138,6 +138,14 @@ application. Protocol round trips, bounded queues, accepted/completed separation
 duplicate requests, stale versions and actual adapter effects are tested in
 `cargo test -p fluzo-runtime --lib --locked --offline configuration`.
 
+The UI-02 C3 developer-menu route uses exactly these port actions: palette
+navigation and staged edits stay local in the TUI, Ctrl+S and Ctrl+A emit
+Save and Apply requests carrying the expected version, and the
+saved-future versus active-effective distinction reaches the view only
+through the snapshot. No writer other than the shared runtime
+configuration service touches `.fluzo` on that route; see TUI.md and
+CONFIGURATION.md for the route-level integration tests.
+
 ## Acknowledgement, replay and cursors
 
 A command acknowledgement means accepted, never completed. The scenario host must
