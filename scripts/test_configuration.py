@@ -196,6 +196,78 @@ class ConfigurationTests(unittest.TestCase):
     def test_safe_screen_keeps_existing_configuration(self):
         self.exercise(terminal_environment={"TERM": "xterm-ghostty"}, safe_screen=True)
 
+    def test_settings_at_minimum_size_keyboard_only_restores_terminal(self):
+        with tempfile.TemporaryDirectory(prefix="fluzo-min60-pty-") as directory, socket.socket() as listener:
+            root = Path(directory)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            listener.setblocking(False)
+            endpoint = listener.getsockname()[1]
+            original = f"schema_version = 1\n[agent]\nmodel = 'coder'\n[capacity_pools.local]\n[models.coder]\nbase_url = 'http://127.0.0.1:{endpoint}/v1'\nmodel = 'fixture'\ncapacity_id = 'fixture'\npool = 'local'\nauth = 'env'\napi_key_env = 'ABSENT_FIXTURE'\n"
+            (root / ".fluzo").write_text(original)
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 60, 0, 0))
+            before = termios.tcgetattr(slave)
+            child = subprocess.Popen(
+                [self.binary, "--animation-fps", "0", "--no-dev-menu"], cwd=root,
+                env={"HOME": directory, "XDG_CONFIG_HOME": directory,
+                     "TERM": "xterm-256color", "NO_COLOR": "1"},
+                stdin=slave, stdout=slave, stderr=slave)
+            screen = Screen()
+            output = bytearray()
+
+            def wait(marker, budget=10):
+                deadline = time.monotonic() + budget
+                while marker not in screen.text():
+                    self.assertLess(time.monotonic(), deadline, f"Missing {marker!r}: {screen.text()!r}")
+                    if select.select([master], [], [], max(0, deadline - time.monotonic()))[0]:
+                        data = os.read(master, 65536)
+                        output.extend(data)
+                        self.assertLess(len(output), 2 * 1024 * 1024)
+                        screen.feed(data)
+
+            try:
+                wait(b"Configuration workspace")
+                self.assertNotIn(b"resize required", screen.text())
+                os.write(master, b"\x10")
+                wait(b"Providers")
+                os.write(master, b"Configuration\r")
+                wait(b"Commands / Configuration")
+                os.write(master, b"Theme\r")
+                wait(b"> tui.theme")
+                # Keyboard-only list navigation: clear the palette filter and
+                # move the selection up and back down over the basic-tier list.
+                os.write(master, b"\x15")
+                os.write(master, b"\x1b[A")
+                wait(b"> reduced motion")
+                os.write(master, b"\x1b[A")
+                wait(b"> tui.notifications.max_vis")
+                os.write(master, b"\x1b[B")
+                wait(b"> reduced motion")
+                # Keyboard-only edit of a boolean control; staging stays in the
+                # draft and exiting with Ctrl+C must never write the file.
+                os.write(master, b"\r")
+                wait(b"Left/Right choose")
+                os.write(master, b"\x1b[C")
+                os.write(master, b"\r")
+                wait(b"Local draft changed")
+                os.write(master, b"\x03")
+                child.wait(timeout=8)
+                self.assertEqual(child.returncode, 0)
+                self.assertEqual(termios.tcgetattr(slave), before)
+                self.assertEqual((root / ".fluzo").read_text(), original)
+                self.assertEqual(sorted(path.name for path in root.iterdir()), [".fluzo"])
+                self.assertNotIn(b"\x1b]52;", output)
+                self.assertNotIn(b"\x1b]777;", output)
+                with self.assertRaises(BlockingIOError):
+                    listener.accept()
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=8)
+                os.close(master)
+                os.close(slave)
+
     def test_outside_change_banner_offers_keep_ours_then_reload(self):
         original = "schema_version = 1\n[agent]\nmodel = 'coder'\n[capacity_pools.local]\n[models.coder]\nbase_url = 'http://127.0.0.1:9/v1'\nmodel = 'fixture'\ncapacity_id = 'fixture'\npool = 'local'\nauth = 'env'\napi_key_env = 'ABSENT_FIXTURE'\n"
         pulled = original + "# pulled from origin/main\n"
