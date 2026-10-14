@@ -42,7 +42,8 @@ settings opens the typed editor, not synthetic actions. Explicit disable is reta
 Repeated resize PTYs preserve dimensions and prohibit window-resize sequences,
 but the reported Ghostty/Wayland physical resize reset is not yet reproduced.
 The F3 model wizard reuses centered dialogs: Local/Frontier, provider, optional
-Authorization environment reference, URL blur query and multiple model selection.
+Authorization environment reference, URL blur query behind a cleartext warning
+for non-loopback endpoints, and multiple model selection.
 Core discovery protocol 3 carries only references and optional reported metadata;
 the runtime resolves headers for the selected endpoint. No secret is saved in repo
 configuration. No startup probes, redirects, retries or inference are enabled.

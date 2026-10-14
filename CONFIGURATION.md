@@ -275,9 +275,14 @@ contains Add model > Local / LAN. Centered dialogs reuse the shell's rounded fra
 gradient title, theme and retained background. Steps: Local or Frontier (unavailable
 until its separate story), LM Studio/Ollama/OpenAI Compatible, Authorization yes/no,
 optional environment reference, URL, multiple model selection, alias prefix/review.
-Leaving the URL using Tab, Enter or a mouse click outside the field queries once;
-typing, paste, resize and operating-system window focus never query. Esc goes back
-without querying and cancels pending work. All providers currently use /v1/models.
+Leaving the URL using Tab, Enter or a mouse click outside the field resolves the
+endpoint once. A loopback result goes straight to the catalog query; a private or
+public result stops at the wizard's cleartext warning step, which names the
+endpoint, the resolved addresses, the address class and whether a credential
+reference is attached, and waits for the operator to accept or decline. Typing,
+paste, resize and operating-system window focus never resolve or query. Esc goes
+back without querying and cancels pending work. All providers currently use
+/v1/models.
 
 This initial adapter accepts HTTP with a localhost, literal IPv4/IPv6 or DNS host,
 an optional port and optional /v1 suffix. The worker resolves DNS names itself and
@@ -285,7 +290,10 @@ keeps the original authority in the Host header, so virtual-host and dynamic-DNS
 catalogs route correctly. The resolved address class is not restricted, but it is
 checked before any socket is opened: a non-loopback endpoint requires an explicit
 per-run acceptance for that exact endpoint and class, and the class is rechecked
-at connect. Locality remains the operator's responsibility. HTTPS, custom paths,
+at connect. Locality remains the operator's responsibility. That acceptance is
+per run and held in process memory: it is neither a credential nor repository
+configuration, is never written to `.fluzo`, is not reused by a later process,
+and grants nothing beyond the catalog query it authorizes. HTTPS, custom paths,
 redirects, userinfo,
 query/fragment and percent escapes are rejected without downgrade. Optional
 Authorization uses a named environment variable

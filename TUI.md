@@ -38,14 +38,59 @@ checks do not substitute for human review. F3 now opens the explicit local/LAN
 model wizard in setup and ordinary settings; the normal palette also offers
 Add model > Local / LAN. The wizard uses the existing centered rounded dialogs and
 gradient titles. It asks Local/Frontier, provider, Authorization yes/no and optional
-environment reference, then URL. Tab/Enter or clicking outside URL fetches models;
-window-focus changes and paste do not. Space selects multiple IDs without losing
-selection during filtering. Context/output/slot columns show reported values or ?.
+environment reference, then URL. Tab/Enter or clicking outside URL resolves the
+endpoint before any catalog request, so a non-local server stops at the cleartext
+warning documented in the next section; window-focus changes and paste do not.
+Space selects multiple IDs without losing selection during filtering.
+Context/output/slot columns show reported values or ?.
 Alias/review stages atomically stage all selections, never save. Esc cancels
 pending discovery. HTTP localhost, private-IP and DNS catalogs support scoped
 Authorization headers from environment references; HTTPS and native enrichment
 remain unavailable.
 GitHub provider work is deferred to a later story.
+
+## Model wizard cleartext warning step
+
+A non-loopback endpoint stops the wizard at `4 / Cleartext warning` before a
+catalog request exists. Leaving the URL submits a probe instead of a discovery
+request: the probe resolves and classifies the endpoint without opening a
+socket, so the operator sees the warning before any part of the catalog request
+leaves the process. The resolver's own name query is the only network activity
+performed to reach that point. Loopback endpoints skip the step and go straight
+to discovery, so local use gains no new friction.
+
+The warning states what is being accepted. Its first line says the transport is
+cleartext HTTP because HTTPS is unsupported for discovery. It then names the
+exact endpoint, the addresses the host resolved to, and the address class
+(`private network` or `public internet`). Where the wizard was told to use an
+Authorization environment reference, the credential line reads `attached from
+NAME`; otherwise `not attached`. Only the reference name is shown, never the
+value it resolves to. Every dynamic value passes through the same display
+sanitizer as other configuration text, and a resolved-address list too wide for
+its row is truncated with an explicit `+N more` count rather than dropped.
+
+Enter and Tab accept that endpoint for the current run only and submit the
+catalog request bound to it. Esc declines, returns to the URL step and sends
+nothing: the probe is already resolved when the warning appears, so declining
+issues no cancel and stages no state. No other key and no mouse input acts on
+this step. Acceptance is held in process memory and is never written to `.fluzo`.
+
+Editing the URL after an acceptance invalidates it at every edit site, so a
+clear-and-retype that reproduces an already-accepted value is warned about again
+rather than trusted. Accepting one endpoint never authorizes another, and if the
+class resolved at connect differs from the accepted one the request aborts
+instead of reaching a different kind of address. The gap between the address
+shown and the address used is thereby bounded to a swap inside the same class;
+it is not eliminated. A host that resolves to nothing is reported as
+`unresolved` and cannot be accepted.
+
+Buffer regressions cover the step at 80x24, 120x40 and 160x50 with color off
+and on, the accept, decline and invalidation paths, sanitization of control and
+bidi text, and inertness to every other key. The deterministic PTY harness
+drives a loopback listener, so it proves the warning never appears on the local
+path and does not exercise the screen itself; visual quality of the notice
+remains a human review gate. See CONFIGURATION.md for the endpoint contract and
+APPLICATION.md for the protocol that carries the notice.
 
 ## Theme preview and unsaved changes
 

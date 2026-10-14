@@ -93,6 +93,7 @@ class ModelWizardTests(unittest.TestCase):
                 wait(b"fixture-coder")
                 wait(b"65536")
                 wait(b"8192")
+                self.assertNotIn(b"4 / Cleartext warning", output)
                 if multiple:
                     os.write(master, b" \x1b[B ")
                 os.write(master, b"\r")
