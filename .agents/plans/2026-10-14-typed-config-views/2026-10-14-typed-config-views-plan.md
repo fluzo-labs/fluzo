@@ -266,7 +266,7 @@ Risks:
 | Phase | Implementation | Verification | Review | Evidence |
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | pending | 267 Rust tests, 73 Python tests, Clippy and fmt clean |
-| P2 | pending | not_run | pending | none yet |
+| P2 | implemented | passed | pending | 269 Rust + 74 Python tests green; R2 matrix recorded below; one new min-size PTY case |
 | P3 | pending | not_run | pending | none yet |
 
 Implementation, successful verification and human acceptance are separate
@@ -302,6 +302,71 @@ P1 verification, run 2026-10-14 on the pinned toolchain with `--locked --offline
 Open for P1 review: the basic/advanced split itself, and the fact that the palette
 categories Harness, Pools, Storage and Telemetry now land on an empty list until
 `F4`, because those namespaces are entirely advanced-tier.
+
+### P2: R2 evidence matrix
+
+Baseline: `origin/main` at `e7e63a7` (includes merged P1 #65). Branch
+`feat/ui03-p2-evidence`. Each required R2 "Verification and final acceptance"
+item maps to named tests in this repository at this revision, or to a recorded
+non-automation reason. Test names are exact; run them with the focused suites
+documented in `AGENTS.md`.
+
+| R2 evidence item | Named tests |
+| --- | --- |
+| Ordinary startup to palette/settings with devmenu disabled; valid config without provider access | PTY `scripts/test_configuration.py::test_normal_settings_apply_cli_locks_resize_and_preserve_files` (launch `--no-dev-menu`, Ctrl+P palette into Configuration; fixture listener never accepted); TUI `workspace_has_no_synthetic_tasks_and_preserves_composer_across_settings`; PTY `scripts/test_setup.py::test_valid_configuration_skips_setup` |
+| Explicit transition from setup; unchanged isolated demo and non-interactive contracts | PTY `test_setup_to_settings_keeps_create_only_and_request_identity`; PTY `test_normal_shell_honors_terminal_color_capabilities` (setup-handoff subTest); CLI `crates/fluzo-cli/tests/bootstrap.rs::demo_is_explicit_isolated_and_never_reads_project_configuration` and `execution_and_unknown_arguments_never_report_success`; PTY `scripts/test_setup.py::test_headless_discovery_and_explicit_selection_preserve_files` |
+| Ordinary-host replacement refusal, including after creation | CLI `crates/fluzo-cli/tests/configuration.rs::create_only_policy_refuses_replacement_but_applies_presentation` (refusal projected before Save, file byte-identical); runtime `setup_creation_requires_current_confirmation_and_never_replaces`; runtime `cooperating_processes_cannot_write_while_directory_is_locked` |
+| Controlled-host UI Save/reload with independent file verification | PTY `test_outside_change_banner_offers_keep_ours_then_reload` (harness re-reads `.fluzo` after Save and Reload); CLI `normal_view_real_save_apply_preserves_redacted_values_and_comments`; runtime `save_after_an_outside_edit_keeps_unrelated_outside_keys` and `reload_adopts_the_outside_version_and_clears_the_notice` |
+| Registry coverage for all supported types and collections | TUI `registry_coverage_and_typed_inputs_include_collections_optional_and_escaped_maps`; CLI `collection_batch_and_all_value_types_round_trip_without_partial_save`; core `collection_metadata_is_tied_to_typed_fields` |
+| Multi-field validation | runtime `collection_edits_validate_together_and_selected_save_reloads`; runtime `rejected_batch_is_atomic_and_projections_are_sanitized_bounded` |
+| Defaults | core `canonical_defaults_and_metadata_agree`; TUI `restore_defaults_targets_the_explicit_selection_and_stays_in_the_draft`, `bulk_restore_skips_fixed_keys_without_staging_their_edits` |
+| Selected-key preservation | runtime `read_only_and_explicit_selection_are_enforced`; TUI `restore_defaults_never_removes_a_collection_and_keeps_the_focused_key_path` |
+| Redacted-value preservation | TUI `selected_default_cancel_and_redacted_input_never_reuse_projection`; CLI `normal_view_real_save_apply_preserves_redacted_values_and_comments` |
+| Payload-limit rejection without partial effects | TUI `oversized_batch_and_paste_never_split_or_submit`; runtime `rejected_batch_is_atomic_and_projections_are_sanitized_bounded` |
+| Actual presentation Apply; CLI precedence; saved/effective distinctions | PTY `test_normal_settings_apply_cli_locks_resize_and_preserve_files` (Applied/CliLocked/saved-vs-effective markers); runtime `selected_save_apply_cancel_and_cli_are_independent` (SavedFuture/ActiveSnapshot origins); CLI `review_regression_operational_save_does_not_poison_presentation_apply` |
+| Cancel after Save/Apply | runtime `selected_save_apply_cancel_and_cli_are_independent` (Cancel after Saved+Applied leaves the file untouched); TUI `exit_save_waits_for_completion_and_retains_draft_on_rejection` |
+| Unsupported operational changes; truthful restart-pending without selectable restart options | runtime `operational_apply_is_unavailable_and_restart_is_only_pending`; TUI `restart_pending_line_lists_exactly_the_snapshot_keys`, `restart_pending_empty_state_is_explicit`, `restart_pending_line_survives_an_unrelated_presentation_apply`, `restart_pending_line_stays_readable_across_sizes_and_fallbacks`, `restart_pending_keys_are_sanitized_like_other_configuration_text` |
+| Conflicts | TUI `read_only_capacity_conflict_and_unknown_keep_drafts`; CLI `conflict_and_operational_apply_do_not_change_effective_or_replay`; runtime `external_create_edit_remove_and_stale_versions_never_clobber` |
+| Failed and uncertain writes | runtime `file_failures_preserve_or_reconcile_without_claiming_rollback`; CLI `editor_reconciles_real_write_failure_without_partial_file_changes` |
+| Late completion after closing a view | TUI `typing_is_local_and_late_validation_after_close_never_dispatches_save`, `reopen_before_late_validation_does_not_restore_save_intent`, `failures_and_closed_view_completion_are_not_replayed`, `f4_toggle_preserves_a_pending_request_and_its_identity` |
+| Request-record exhaustion; no automatic retry or service replacement | CLI `request_exhaustion_is_projected_without_evicting_results`; runtime `worker_port_bounds_replay_and_quiesce_preserve_completion`, `lost_acknowledgement_and_worker_disconnect_never_replay_effects`, `queue_saturation_is_nonblocking_and_acknowledgement_is_not_completion` |
+| Minimum-size fallback, 80x24, 120x40, 160x50 buffers; keyboard, hostile content, fallback rendering | TUI `layouts_keyboard_and_hostile_text_remain_bounded` (40x10 refusal through 160x50, ASCII, injected escape content); TUI `every_configuration_surface_uses_shared_dialogs_and_preserves_background` (60x16/80x24/120x40/160x50 x color/ASCII modes) |
+| Focused PTYs: keyboard navigation, paste, resize, preserved input/focus, terminal restoration | PTY `test_normal_settings_apply_cli_locks_resize_and_preserve_files` (160x50/120x40/80x24 resize loop, bracketed paste, termios restoration, no clipboard/notify sequences); PTY `test_settings_at_minimum_size_keyboard_only_restores_terminal` (new: 60x16 minimum, keyboard-only palette→settings→list navigation→boolean stage→exit with zero writes, NO_COLOR fallback, termios restoration, provider listener never accepted); PTY `scripts/test_setup.py::test_setup_resize_preserves_draft`, `test_setup_signal_restores_terminal` |
+
+Recorded non-automation reasons:
+
+- Scoped human review of the new configuration surfaces: human gate by R2
+definition; not automatable. Recorded as pending, not claimed by buffers or PTYs.
+- "Verify forbidden effects with appropriately scoped instrumentation": the
+fixture-listener-never-accept plus isolated HOME/XDG/temp root and byte-exact
+file re-reads prove absence toward the fixture and the workspace only; absence
+of all network traffic is not provable from one silent listener, per
+`HTTP_SIMULATOR.md`.
+- Live inference: `not_run` (not authorized for this phase).
+
+Failed attempts during P2 (new 60x16 PTY case, all in the test itself, no
+production change):
+
+1. Expected `> agent.model` after Ctrl+U: wrong, `select_first` retains the
+still-visible selection, so the selection stayed on `tui.theme`.
+2. Expected `> max visible`: wrong, only Boolean rows render the short label;
+non-boolean rows render the full key.
+3. Expected the full `> tui.notifications.max_visible` row: wrong, the list
+column truncates long keys at 60 columns; the test now matches the rendered
+prefix.
+
+P2 verification, run 2026-10-14 on the pinned toolchain with `--locked --offline`:
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo test --workspace --locked --offline`: 269 passed, 0 failed (cli 2 +
+bootstrap 4 + configuration 8, core 16, runtime 78 + http_simulator 12, tui
+149; doc-tests 0).
+- `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`: clean.
+- `python3 scripts/check_dev_setup.py`: passed.
+- `python3 -B -m unittest discover -s scripts -p 'test_configuration.py'`: 7
+passed, 0 failed (new minimum-size case included; repeated 3x stable).
+- `python3 -m unittest discover -s scripts -p 'test_*.py'`: 74 passed, 0 failed;
+live inference `not_run`.
 
 - Issue: [fluzo-labs/fluzo#46](https://github.com/fluzo-labs/fluzo/issues/46)
   (open, parent #8).
