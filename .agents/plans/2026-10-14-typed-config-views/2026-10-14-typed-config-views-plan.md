@@ -305,7 +305,9 @@ categories Harness, Pools, Storage and Telemetry now land on an empty list until
 
 - Issue: [fluzo-labs/fluzo#46](https://github.com/fluzo-labs/fluzo/issues/46)
   (open, parent #8).
-- Pull request: to be created from `feat/typed-config-views` with `Ref: #46`.
+- Pull request: [fluzo-labs/fluzo#65](https://github.com/fluzo-labs/fluzo/pull/65),
+  opened from `feat/typed-config-views` with `Ref: #46` so merging does not close
+  the issue.
   GitHub issues remain the authority for status; this document is a design
   snapshot, not a parallel board.
 - Untouched by this plan: the endpoint-consent plan, PR #62 and PR #63.
