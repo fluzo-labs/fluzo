@@ -458,6 +458,100 @@ class TerminalTests(unittest.TestCase):
     def test_external_termination_restores_terminal(self):
         self.exercise(True)
 
+    def drive_ui04(self, rows, cols):
+        """Drives the UI-04 task, permission and diff demo overlays in a real PTY."""
+        with tempfile.TemporaryDirectory(prefix="fluzo-ui04-") as directory:
+            root = Path(directory)
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+            before = termios.tcgetattr(slave)
+            child = subprocess.Popen([self.binary, "demo", "--interactive"],
+                                     stdin=slave, stdout=slave, stderr=slave,
+                                     cwd=root,
+                                     env={"HOME": directory, "XDG_CONFIG_HOME": directory,
+                                          "TERM": "xterm-256color", "NO_COLOR": "1"})
+            output = bytearray()
+            screen = Screen()
+
+            def wait_for(marker, timeout=8):
+                deadline = time.monotonic() + timeout
+                while marker not in screen.text():
+                    if time.monotonic() >= deadline:
+                        self.fail(f"Missing terminal marker {marker!r}; recent output="
+                                f"{bytes(output[-2000:])!r}")
+                    if select.select([master], [], [], max(0, deadline - time.monotonic()))[0]:
+                        data = os.read(master, 65536)
+                        self.assertTrue(data)
+                        output.extend(data)
+                        screen.feed(data)
+                        self.assertLess(len(output), 1024 * 1024)
+
+            def press(data, marker):
+                os.write(master, data)
+                wait_for(marker)
+
+            try:
+                wait_for(b"Ask anything")
+                self.assertNotEqual(termios.tcgetattr(slave), before)
+
+                # The task list opens on Ctrl+T and is labelled synthetic.
+                press(b"\x14", b"Tasks | offline demo")
+                press(b"\x1b[B", b"Tasks | offline demo")
+                press(b"\x1b[A", b"Tasks | offline demo")
+
+                # Selecting a task opens the detail and states it does not resume.
+                press(b"\r", b"Task detail | offline demo")
+                press(b"\r", b"never resumes it")
+
+                # Force stop always goes through a confirmation whose default is safe.
+                press(b"f", b"Force stop | confirm (synthetic)")
+                self.assertIn(b">  Keep running", screen.text())
+                self.assertNotIn(b">  Force stop anyway", screen.text())
+
+                # Esc dismisses the confirmation back to the detail, not the composer.
+                press(b"\x1b", b"Force stop dismissed")
+                self.assertIn(b"Task detail | offline demo", screen.text())
+                self.assertNotIn(b"Force stop | confirm", screen.text())
+
+                # Permission prompts default to Deny and Esc records no decision.
+                press(b"p", b"Permission | synthetic request")
+                self.assertIn(b">  Deny", screen.text())
+                self.assertIn(b"reference only", screen.text())
+                press(b"\x1b", b"closed without a decision")
+                self.assertNotIn(b"history:", screen.text())
+
+                # Enter on the default row records a denial, not an approval.
+                press(b"p", b"Permission | synthetic request")
+                press(b"\r", b"permission Denied for task")
+                self.assertIn(b"grant consumed", screen.text())
+
+                # Diff review states that it acts on nothing.
+                press(b"d", b"Diff & verification | offline demo")
+                self.assertIn(b"does not stage", screen.text())
+                press(b"\x1b[B", b"does not stage")
+                press(b"\x1b", b"Task detail | offline demo")
+
+                # Esc unwinds one level at a time and never dispatches.
+                press(b"\x1b", b"Task list; selection preserved")
+                press(b"\x1b", b"Task list closed")
+                wait_for(b"Ask anything")
+                os.write(master, b"\x03")
+                self.assertEqual(child.wait(timeout=8), 0)
+                self.assertEqual(termios.tcgetattr(slave), before)
+                self.assertEqual(list(Path(directory).iterdir()), [])
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=5)
+                os.close(master)
+                os.close(slave)
+
+    def test_ui04_task_permission_and_diff_overlays_at_minimum_size(self):
+        self.drive_ui04(24, 80)
+
+    def test_ui04_task_permission_and_diff_overlays_at_desktop_size(self):
+        self.drive_ui04(40, 120)
+
 
 if __name__ == "__main__":
     unittest.main()
