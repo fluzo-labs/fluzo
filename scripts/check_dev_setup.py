@@ -115,9 +115,9 @@ SQLX_PACKAGES = {
     ("futures-executor", "0.3.34"): {"default", "std"},
     ("futures-intrusive", "0.5.0"): {"alloc", "default", "parking_lot", "std"},
     ("futures-io", "0.3.34"): {"default", "std"},
-    ("futures-sink", "0.3.34"): set(),
+    ("futures-sink", "0.3.34"): {"alloc", "default", "std"},  # +OBS-01b opentelemetry activation
     ("futures-task", "0.3.34"): {"alloc", "std"},
-    ("futures-util", "0.3.34"): {"alloc", "futures-io", "futures-sink", "io", "memchr", "sink", "slab", "std"},
+    ("futures-util", "0.3.34"): {"alloc", "async-await", "async-await-macro", "futures-io", "futures-macro", "futures-sink", "io", "memchr", "sink", "slab", "std"},  # +OBS-01b opentelemetry activation
     ("generic-array", "0.14.7"): {"more_lengths"},
     ("hashbrown", "0.16.1"): {"allocator-api2", "default", "default-hasher", "equivalent", "inline-more", "raw-entry"},
     ("hashlink", "0.11.1"): set(),
@@ -225,6 +225,48 @@ DAT02B_PACKAGES = {
 }
 EXTERNAL["fluzo-runtime"] |= DAT02B_PACKAGES
 EXTERNAL["fluzo-cli"] |= DAT02B_PACKAGES
+# OBS-01b OTLP export dependency graph: reviewed transitive closure of
+# opentelemetry-proto 0.33.1 (gen-tonic-messages + trace + metrics +
+# logs) with prost 0.14. Feature sets are ceilings equal to the
+# activated features at review time. tracing/tracing-core were already
+# locked by the sqlx closure and keep their reviewed entries. The
+# wasm-target tail is walked by the graph checker even though it never
+# compiles on the Linux target. No git or vendored dependencies.
+OBS01B_PACKAGES = {
+    ("anyhow", "1.0.104"): {"default", "std"},
+    ("bumpalo", "3.20.3"): {"default"},
+    ("futures-macro", "0.3.34"): set(),
+    ("getrandom", "0.3.4"): {"std"},
+    ("itertools", "0.13.0"): {"default", "use_alloc", "use_std"},  # prost-derive codegen
+    ("js-sys", "0.3.106"): {"default", "std", "unsafe-eval"},
+    ("opentelemetry", "0.33.1"): {"futures", "futures-core", "futures-sink", "logs", "metrics", "pin-project-lite", "thiserror", "trace"},
+    ("opentelemetry-proto", "0.33.1"): {"gen-tonic-messages", "logs", "metrics", "prost", "trace"},
+    ("opentelemetry_sdk", "0.33.1"): {"logs", "metrics", "percent-encoding", "rand", "trace"},
+    ("portable-atomic", "1.15.0"): {"fallback"},
+    ("ppv-lite86", "0.2.21"): {"simd", "std"},
+    ("prost", "0.14.3"): {"default", "derive", "std"},
+    ("prost-derive", "0.14.4"): set(),
+    ("r-efi", "5.3.0"): set(),
+    ("rand", "0.9.5"): {"alloc", "os_rng", "small_rng", "std", "std_rng", "thread_rng"},
+    ("rand_chacha", "0.9.0"): {"std"},
+    ("rand_core", "0.9.5"): {"os_rng", "std"},
+    ("rustversion", "1.0.23"): set(),  # wasm-bindgen target tail
+    ("wasip2", "1.0.4+wasi-0.2.12"): set(),
+    ("wasm-bindgen", "0.2.129"): {"std"},
+    ("wasm-bindgen-macro", "0.2.129"): set(),
+    ("wasm-bindgen-macro-support", "0.2.129"): set(),
+    ("wasm-bindgen-shared", "0.2.129"): set(),
+    ("wit-bindgen", "0.57.1"): set(),
+    ("zerocopy", "0.8.63"): {"simd"},
+    ("zerocopy-derive", "0.8.63"): set(),
+}
+OBS01B_PACKAGE_NAMES = {name for name, _ in OBS01B_PACKAGES}
+EXTERNAL["fluzo-runtime"] |= OBS01B_PACKAGE_NAMES
+EXTERNAL["fluzo-cli"] |= OBS01B_PACKAGE_NAMES
+DIRECT_EXTERNAL["fluzo-runtime"] |= {"opentelemetry-proto", "prost", "tracing", "tracing-core"}
+# OBS-01b receiver conformance fixtures decode with the same pinned
+# generation; test-only direct additions.
+OBS01B_TEST_DIRECT = {"opentelemetry-proto", "prost"}
 TUI_PACKAGES = {
     ("allocator-api2", "0.2.21"): {"alloc"},
     ("bitflags", "2.13.2"): {"std"},
@@ -287,6 +329,7 @@ TUI_PACKAGES = {
     )},
 }
 REVIEWED_PACKAGES["syn"][1].add("extra-traits")
+REVIEWED_PACKAGES["syn"][1].add("visit-mut")  # +OBS-01b prost-derive codegen
 REVIEWED_PACKAGES["libc"][1].add("extra_traits")
 REVIEWED_PACKAGES["mio"][1].update({"default", "log"})
 REVIEWED_PACKAGES["windows-sys"][1].update({"Win32_System_Diagnostics", "Win32_System_Diagnostics_Debug"})
@@ -321,7 +364,7 @@ def validate_graph(metadata):
                 raise ValueError(f"Forbidden production path: direct build dependency in {package['name']}")
             if any(kind["kind"] == "dev" for kind in dependency["dep_kinds"]):
                 name = packages[dependency["pkg"]]["name"]
-                if package["name"] != "fluzo-runtime" or name not in SIMULATOR_DIRECT:
+                if package["name"] != "fluzo-runtime" or name not in SIMULATOR_DIRECT | OBS01B_TEST_DIRECT:
                     raise ValueError(f"Unreviewed test dependency: {package['name']} -> {name}")
         pending = [(identity, [package["name"]])]
         visited = set()
@@ -351,6 +394,8 @@ def validate_graph(metadata):
                 allowed_features = TUI_PACKAGES[identity]
             elif identity in SQLX_PACKAGES:
                 allowed_features = SQLX_PACKAGES[identity]
+            elif identity in OBS01B_PACKAGES:
+                allowed_features = OBS01B_PACKAGES[identity]
             elif name in REVIEWED_PACKAGES:
                 version, allowed_features = REVIEWED_PACKAGES[name]
                 if package["version"] != version:
