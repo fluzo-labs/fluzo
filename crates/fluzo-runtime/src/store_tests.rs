@@ -67,15 +67,18 @@ fn event(state_id: &str, payload: &str) -> EventRecord {
 /// Re-invokes this test binary as a child that runs the crash body for the
 /// given mode against the given root, then dies without cleanup.
 fn spawn_child(mode: &str, root: &Root, test: &str) -> process::Child {
-    // Capture child stderr to a file so an early child exit is diagnosable
-    // from the parent's failure instead of vanishing into a null device.
+    // Capture child stderr AND stdout to a file so an early child exit or
+    // a harness-replayed panic (libtest replays captured test output to
+    // stdout) is diagnosable from the parent's failure instead of
+    // vanishing into a null device.
     let stderr_file = fs::File::create(root.stderr_log()).unwrap();
+    let stdout_file = stderr_file.try_clone().expect("clone child output handle");
     Command::new(std::env::current_exe().unwrap())
         .arg(test)
         .arg("--exact")
         .env("FLUZO_STORE_CHILD", mode)
         .env("FLUZO_STORE_ROOT", &root.0)
-        .stdout(Stdio::null())
+        .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .spawn()
         .unwrap()
@@ -267,7 +270,10 @@ fn interrupted_commit_rolls_back_completely() {
     let mut store = expect_open(&rt, &root, "store open");
     rt.block_on(store.commit_unit(&[update("before", "1")], &[event("before", "e")]))
         .unwrap();
-    drop(store);
+    // Deterministic close: a dropped sqlx connection may still hold the
+    // WAL index lock when the child opens, which surfaces as a spurious
+    // BUSY failure only under runner scheduling.
+    rt.block_on(store.close_for_test()).unwrap();
     let mut child = spawn_child(
         "torn",
         &root,
@@ -316,7 +322,8 @@ fn torn_wal_tail_recovers_last_complete_transaction() {
     ))
     .unwrap();
     rt.block_on(store.checkpoint_for_test()).unwrap();
-    drop(store);
+    // Deterministic close before the child reopens (see interrupted_commit).
+    rt.block_on(store.close_for_test()).unwrap();
     let mut child = spawn_child(
         "wal-torn",
         &root,

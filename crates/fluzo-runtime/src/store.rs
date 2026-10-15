@@ -377,6 +377,16 @@ impl Store {
         &mut self.connection
     }
 
+    /// Test-only deterministic close. Dropping a sqlx connection defers
+    /// the real close to a background thread, so a child process that
+    /// reopens the same store right after a parent `drop` can hit
+    /// SQLITE_BUSY on the WAL index. Fixtures that hand a store to a
+    /// child must close it explicitly.
+    #[cfg(test)]
+    pub(crate) async fn close_for_test(self) -> Result<(), StoreError> {
+        self.connection.close().await.map_err(map_error)
+    }
+
     /// The durable migration audit trail, oldest first.
     pub async fn migration_log(&mut self) -> Result<Vec<MigrationRecord>, StoreError> {
         migrations::migration_log(&mut self.connection).await
