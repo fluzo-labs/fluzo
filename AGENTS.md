@@ -7,7 +7,9 @@ stage. The four-crate workspace, bootstrap help/version binary, pinned toolchain
 local skills, development checks and the FND-02 typed configuration library exist.
 See [CONFIGURATION.md](CONFIGURATION.md) for settings APIs and limits. FND-03 adds
 an owned application protocol and an in-memory scenario driver; see
-[APPLICATION.md](APPLICATION.md). SIM-01 adds test-only strict HTTP/SSE fixtures
+[APPLICATION.md](APPLICATION.md). DAT-01 adds the protected `.fluzodrive`
+repository store with a WAL/FULL/foreign-key-verified SQLite journal and
+atomic state/event commits; see [STORAGE.md](STORAGE.md). SIM-01 adds test-only strict HTTP/SSE fixtures
 and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
 UI-01 adds an explicit interactive demo shell, composer and palette; see
 [TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
@@ -338,7 +340,12 @@ host-controlled, never a side effect of inspection, polling or reconnecting. Pyt
 checks. The graph checker permits only the reviewed Serde/TOML dependency graph,
 versions, registry source and feature ceilings. SIM-01 adds pinned dev-only
 Hyper/Tokio/JSON dependencies and their reviewed transitive graph, with no new
-production paths. Core/TUI cannot import TOML;
+production paths. DAT-01 adds `sqlx 0.9.0` (runtime-tokio, sqlite-bundled) as a
+reviewed `fluzo-runtime` production path with its full transitive closure in a
+`(name, version)`-keyed policy; rusqlite is not in the offline cache and raw
+`libsqlite3-sys` use is ruled out by the workspace `unsafe_code` prohibition.
+Focused store checks: `cargo test -p fluzo-runtime --locked --offline store`.
+Core/TUI cannot import TOML;
 forbidden Fluzo paths remain checked transitively through normal/build edges.
 The LSP fixture vendors only locked cached dependencies into its disposable root,
 keeping an empty HOME/CARGO_HOME and no inherited user configuration.
