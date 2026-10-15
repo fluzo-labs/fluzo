@@ -13,7 +13,14 @@ atomic state/event commits; see [STORAGE.md](STORAGE.md). DAT-02a adds the
 store-owned artifact layer under `.fluzodrive/artifacts/`: bounded capture
 with truncation/redaction markers, finalization strictly before the atomic
 reference+state+event commit, and verified crash/orphan/corruption
-semantics; see [STORAGE.md](STORAGE.md). SIM-01 adds test-only strict HTTP/SSE fixtures
+semantics; see [STORAGE.md](STORAGE.md). DAT-02d adds `fluzo history
+list` and `fluzo history purge`: a read-only listing built from durable
+records, a dry-run that provably changes nothing, confirmation that no
+bypass flag can skip, shared artifacts preserved by re-owning them onto a
+surviving holder, attachment-blocked sessions, and idempotent retry of an
+interrupted purge; see [STORAGE.md](STORAGE.md). The telemetry archive is
+not purged here (DAT-02e #76) and no forensic-erasure claim is made.
+SIM-01 adds test-only strict HTTP/SSE fixtures
 and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
 OBS-01 adds the diagnostics contract's two implemented paths: the SQLite audit
 record committed atomically with its dependent state update, and a separate

@@ -1,4 +1,4 @@
-# Repository store, durable journal and migrations (DAT-01, DAT-02c)
+# Repository store, durable journal, migrations and history purge (DAT-01, DAT-02c, DAT-02d)
 
 `fluzo-runtime::store` implements the storage foundation required by PRD
 sections 21-24 and Architecture decision A03. It is the only component
@@ -219,10 +219,10 @@ re-finalized or returned as valid (`verify_artifact`,
 provenance, size, SHA-256, flags) supports shared-reference analysis for
 purge (DAT-02d) without scanning bytes.
 
-**Scope.** Reclamation of orphans, quotas and purge commands are
-DAT-02b/#75; the versioned migration framework is DAT-02c/#74. Real
-model/shell capture arrives with later EXEC work; the contract here is
-proven with fixture producers.
+**Scope.** Quotas are implemented by DAT-02b and the purge commands and
+orphan reclamation by DAT-02d, both below. The versioned migration
+framework is DAT-02c/#74. Real model/shell capture arrives with later
+EXEC work; the contract here is proven with fixture producers.
 
 ## Local telemetry purge (DAT-02e)
 
@@ -406,3 +406,175 @@ artifact content admitted before it lands, restart recomputation and
 stability, cross-repository independence, unsafe diagnostic record-name
 rejection, and the no-eviction proof under pressure, elapsed time and
 reopen.
+
+## History purge (DAT-02d)
+
+`fluzo history` reads the durable records of the current repository and,
+when confirmed, deletes them. It never starts an agent, never runs a tool
+and never contacts a provider. The surface is:
+
+```sh
+fluzo history list
+fluzo history purge --session <id> [--dry-run]
+fluzo history purge --all --yes
+```
+
+### What a session is here
+
+A session is one `state` row plus the `event` rows and `artifact` rows
+that reference it. The listing reports the id, kind, payload bytes,
+event count and bytes, artifact count and bytes, and whether the session
+is attached. Every number comes from the tables; nothing is estimated.
+
+Listing is read-only and never creates the drive. A workspace with no
+`.fluzodrive/state.sqlite3` reports `No sessions to purge.` rather than
+getting an empty database written for it.
+
+### Confirmation cannot be bypassed
+
+`Confirmation` has three values: `Prompted`, `ExplicitYes` and `None`.
+Deletion requires the first two. There is deliberately no bypass flag on
+this surface: a YOLO-style caller that has not confirmed gets
+`Confirmation::None`, which deletes nothing and returns
+`confirmation_required`. In a non-interactive context with no `--yes`
+the CLI returns that structured code immediately rather than blocking on
+input, and `--all` requires `--yes` outright.
+
+An affirmative answer means `y` or `yes`. Empty input, `n`, EOF and a
+closed stdin all decline. Declining is not an error: the command exits 0
+with `Purge cancelled; nothing deleted.`
+
+### Shared artifacts are preserved by re-owning them
+
+`artifact.state_id` is a single-owner foreign key and DAT-02a rules out
+cross-session deduplication, so a shared artifact cannot survive as a
+row of the session being purged: deleting that session row would violate
+the key. Sharing is therefore analysed on the recorded `content_hash`,
+the field DAT-02a persists for exactly this purpose, and a shared
+artifact is preserved by moving its ownership to a surviving holder.
+The row and the content file both stay, the purged session stops owning
+them, and no orphan is created.
+
+Sharing is evaluated against the sessions *not* being purged. Under
+`--all` every session is inside the purge set, so nothing is held from
+outside and all artifacts are exclusive and removed.
+
+Artifacts recorded with an empty `content_hash` (an omitted capture) have
+no content file: they are removed with the row and release nothing.
+
+### Two-step durability, and the retry that follows it
+
+Row removal commits first in one `BEGIN IMMEDIATE` unit per session.
+Content files are removed afterwards, outside the transaction, because
+holding the write lock across filesystem deletion would put an I/O wait
+inside the transaction, which the storage rules forbid.
+
+That gap means a crash can leave files with no committed row. Those are
+orphans, and `reclaim_orphan_artifact_files` finishes the job: it removes
+every artifact file with no committed reference and leaves everything a
+row still describes. It is safe to repeat, and because quota is
+recomputed from disk rather than accumulated, a repeat releases nothing
+twice. The CLI reports `files_pending` rather than claiming a complete
+release.
+
+File removal goes through the anchored managed root and refuses symlinks
+rather than following them, so a planted link cannot point the delete at
+user data outside `.fluzodrive/`. The reclaim pass applies the same
+rule.
+
+### Attachments
+
+`session_attachment(state_id, attached_at)` is a durable marker written
+by the process that attaches a session. Because it is durable, a later
+purging process sees it and refuses with `session_attached`, naming the
+blocking session. The listing shows `(attached)` so the operator can see
+why. Detaching releases it.
+
+### Quota release
+
+Quota is recomputed from the filesystem, so a purge needs no counter
+adjustment: after the artifact file is removed the recomputed usage is
+lower. The database file itself does not shrink on `DELETE` -- SQLite
+reuses free pages and only `VACUUM` returns them, which is outside this
+issue -- so the released bytes are the artifact files, and the point is
+that the reported number tracks the disk rather than a counter that
+could drift.
+
+### Refusals
+
+Every refusal means nothing was deleted: `no_such_session`,
+`session_attached`, `confirmation_required`, `nothing_to_purge`. The CLI
+prints a single-line JSON object with a stable `code` so a script can act
+on it without parsing prose.
+
+### Store lifetime per command
+
+One `fluzo history` command opens the store once, runs every step of
+that command against the same connection, and closes it explicitly.
+
+This is a correctness requirement, not tidiness. Dropping a connection
+defers the real close to a background thread, and a still-held WAL index
+lock makes the next opener fail with `SQLITE_BUSY` under the store's
+`busy_timeout = 0`. The first implementation opened the store once per
+step -- listing, plan, delete -- and dropped each one, so a command
+re-entered the WAL index while the previous connection was still
+unwinding. That is what made `history purge` fail on CI hardware while
+passing locally: the window is scheduling-dependent, and a faster local
+machine closed it before the next open.
+
+A single connection also means the preview and the delete see the same
+store generation. The delete still recomputes the plan rather than
+trusting the preview, because reference state is only authoritative at
+deletion time; it simply no longer needs a second connection to do it.
+
+`History::close` is called on every exit path, including refusals. A
+close failure is reported only when the command itself succeeded, so it
+never masks the primary failure, but the store is closed either way:
+leaving it held would turn one failure into two.
+
+`History::open` retries only the transient open-time `Busy` raised while
+a previous short-lived opener's WAL index lock is still being released,
+which is the same class the restore probe already accepts. It does not
+retry any write. A store held by a live writer stays held: after the
+bounded attempts the command still refuses with `Busy`, so the
+one-writer-per-workspace contract is unchanged.
+
+Every store failure carries the stage that produced it -- `open`, `list`,
+`plan`, `delete`, `reclaim` or `close` -- in the message, e.g.
+`storage unavailable at delete: Busy`. A bare `Busy` cannot be diagnosed
+after the fact, and those stages mean different things.
+
+### Verification
+
+```sh
+cargo test -p fluzo-runtime --lib --locked --offline purge
+python3 -B -m unittest discover -s scripts -p 'test_history.py'
+```
+
+The runtime suite covers listing from durable records and its read-only
+purity, dry-run byte identity, exclusive removal with the content file,
+shared preservation and re-ownership, `--all` scoping to one repository
+with a second repository proven byte-identical, refusal without
+confirmation returning promptly and deleting nothing, `Prompted` and
+`ExplicitYes` both authorizing, attachment blocking across a reopen,
+unknown session, empty selection, per-item partial failure with retry
+completing it, retry not releasing twice, symlink refusal with the
+target surviving, deletion-time reference resolution rather than
+preview-time, omitted artifacts, and quota release matching a fresh
+disk scan.
+
+The CLI suite drives the real binary: empty listing creating nothing,
+listing with sizes, argument validation, headless `confirmation_required`
+returning promptly, `--all` requiring `--yes`, dry-run preview deleting
+nothing, confirmed purge preserving a shared artifact, attached refusal
+naming the session, unknown session, configuration and user files
+untouched, and interactive decline / accept / empty-answer through a
+PTY.
+
+The facade contract has its own regression suite, because the failure it
+prevents only appears on some hardware and must not depend on timing luck:
+`cargo test -p fluzo-runtime --lib --locked --offline facade` and
+`... --locked --offline history`. It asserts that repeated command
+cycles (open, list, plan, purge, close) never meet a busy store, that an
+explicit close lets the next opener take the write lock immediately, and
+that a store failure names its stage.

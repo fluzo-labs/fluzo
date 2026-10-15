@@ -36,7 +36,7 @@ pub const BASELINE_VERSION: u32 = 1;
 
 /// Highest schema version this build understands. A store recorded above this
 /// value is never partially interpreted; opening it fails closed.
-pub const TARGET_VERSION: u32 = 4;
+pub const TARGET_VERSION: u32 = 5;
 
 /// How the caller wants the schema prepared during open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,6 +62,11 @@ pub enum MigrationStep {
     AddStateUpdatedAtAndKindIndex,
     /// v3 -> v4: add the `audit` table (OBS-01 required audit path).
     AddAuditTable,
+    /// v4 -> v5: add the `session_attachment` table (DAT-02d active and
+    /// attached session protection). Purge must refuse while a session is
+    /// attached, and "attached" has to survive the process that attached
+    /// it, so the marker cannot live only in caller memory.
+    AddSessionAttachment,
 }
 
 impl MigrationStep {
@@ -70,6 +75,7 @@ impl MigrationStep {
             Self::AddArtifactTable => 1,
             Self::AddStateUpdatedAtAndKindIndex => 2,
             Self::AddAuditTable => 3,
+            Self::AddSessionAttachment => 4,
         }
     }
 
@@ -78,6 +84,7 @@ impl MigrationStep {
             Self::AddArtifactTable => 2,
             Self::AddStateUpdatedAtAndKindIndex => 3,
             Self::AddAuditTable => 4,
+            Self::AddSessionAttachment => 5,
         }
     }
 
@@ -86,6 +93,7 @@ impl MigrationStep {
             Self::AddArtifactTable => "add artifact table",
             Self::AddStateUpdatedAtAndKindIndex => "add state.updated_at + state_kind_idx",
             Self::AddAuditTable => "add audit table",
+            Self::AddSessionAttachment => "add session_attachment table",
         }
     }
 }
@@ -98,6 +106,7 @@ pub const MIGRATIONS: &[MigrationStep] = &[
     MigrationStep::AddArtifactTable,
     MigrationStep::AddStateUpdatedAtAndKindIndex,
     MigrationStep::AddAuditTable,
+    MigrationStep::AddSessionAttachment,
 ];
 
 /// Terminal or in-flight state of a recorded migration attempt.
@@ -473,6 +482,7 @@ fn step_backup_matches_pre_migration(
         MigrationStep::AddArtifactTable => !has("artifact", tables),
         MigrationStep::AddStateUpdatedAtAndKindIndex => !has("updated_at", columns),
         MigrationStep::AddAuditTable => !has("audit", tables),
+        MigrationStep::AddSessionAttachment => !has("session_attachment", tables),
     }
 }
 
@@ -522,6 +532,18 @@ pub async fn apply(
                      correlation_id TEXT NOT NULL,
                      detail TEXT NOT NULL,
                      created_ms INTEGER NOT NULL
+                 )",
+            )
+            .execute(&mut *connection)
+            .await
+            .map_err(crate::store::map_error)?;
+            Ok(())
+        }
+        MigrationStep::AddSessionAttachment => {
+            sqlx::query(
+                "CREATE TABLE session_attachment (
+                     state_id TEXT PRIMARY KEY REFERENCES state(id),
+                     attached_at INTEGER NOT NULL
                  )",
             )
             .execute(&mut *connection)

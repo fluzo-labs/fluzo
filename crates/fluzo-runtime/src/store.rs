@@ -31,7 +31,7 @@ use crate::quota::{
 
 pub const DRIVE_DIRECTORY: &str = ".fluzodrive";
 pub const DATABASE_FILE: &str = "state.sqlite3";
-pub(crate) const SCHEMA_VERSION: &str = "4";
+pub(crate) const SCHEMA_VERSION: &str = "5";
 
 use crate::migrations::{self};
 
@@ -502,13 +502,21 @@ impl Store {
         &mut self.connection
     }
 
-    /// Test-only deterministic close. Dropping a sqlx connection defers
-    /// the real close to a background thread, so a child process that
-    /// reopens the same store right after a parent `drop` can hit
-    /// SQLITE_BUSY on the WAL index. Fixtures that hand a store to a
-    /// child must close it explicitly.
+    /// Test-only alias for the production deterministic close.
     #[cfg(test)]
     pub(crate) async fn close_for_test(self) -> Result<(), StoreError> {
+        self.close().await
+    }
+
+    /// Closes the connection synchronously instead of deferring it.
+    ///
+    /// Dropping a sqlx connection defers the real close to a background
+    /// thread, so a process that reopens the same store right after a
+    /// parent `drop` can hit SQLITE_BUSY on the WAL index. Any caller
+    /// that opens a store in order to hand it to a later open -- a
+    /// short-lived CLI, a fixture handing work to a child -- must close
+    /// it explicitly rather than dropping it.
+    pub async fn close(self) -> Result<(), StoreError> {
         self.connection.close().await.map_err(map_error)
     }
 
@@ -1166,6 +1174,19 @@ impl Store {
                  correlation_id TEXT NOT NULL,
                  detail TEXT NOT NULL,
                  created_ms INTEGER NOT NULL
+             )",
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_error)?;
+        // DAT-02d active/attached session protection. A session with a
+        // row here is being used and purge must refuse it by name. The
+        // marker is durable rather than in-memory because the process that
+        // attaches a session is not the process that later purges it.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS session_attachment (
+                 state_id TEXT PRIMARY KEY REFERENCES state(id),
+                 attached_at INTEGER NOT NULL
              )",
         )
         .execute(&mut *transaction)
