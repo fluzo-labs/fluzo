@@ -10,6 +10,7 @@ pub mod store;
 pub mod telemetry;
 pub mod telemetry_archive;
 pub mod telemetry_audit;
+pub mod telemetry_purge;
 
 #[cfg(test)]
 mod scenario_tests;
@@ -32,6 +33,10 @@ mod test_diagnostics;
 #[cfg(test)]
 #[path = "telemetry_tests.rs"]
 mod telemetry_tests;
+
+#[cfg(test)]
+#[path = "telemetry_purge_tests.rs"]
+mod telemetry_purge_tests;
 
 #[cfg(test)]
 #[path = "quota_integration_tests.rs"]

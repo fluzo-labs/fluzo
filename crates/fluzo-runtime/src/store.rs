@@ -253,7 +253,7 @@ impl Store {
     ) -> Result<Self, StoreError> {
         Self::validate_root(workspace_root)?;
         let drive_directory = workspace_root.join(DRIVE_DIRECTORY);
-        let drive_handle = Self::anchor_drive(&drive_directory)?;
+        let drive_handle = Self::anchor_drive_with(&drive_directory, true)?;
         let database_path = drive_directory.join(DATABASE_FILE);
         Self::verify_database_file(&database_path)?;
 
@@ -534,7 +534,7 @@ impl Store {
     pub async fn restore(workspace_root: &Path, backup_path: &Path) -> Result<Self, StoreError> {
         Self::validate_root(workspace_root)?;
         let drive_directory = workspace_root.join(DRIVE_DIRECTORY);
-        let drive_handle = Self::anchor_drive(&drive_directory)?;
+        let drive_handle = Self::anchor_drive_with(&drive_directory, true)?;
         let backups = migrations::ensure_backup_directory(&drive_directory)?;
         if backup_path.parent() != Some(backups.as_path()) {
             return Err(StoreError::UnsupportedPath);
@@ -932,7 +932,14 @@ impl Store {
         Ok(())
     }
 
-    fn anchor_drive(drive_directory: &Path) -> Result<File, StoreError> {
+    /// Opens the drive directory anchored from `/`. When `create` is false
+    /// the drive must already exist: a missing drive returns `Inaccessible`
+    /// instead of being created. The purge uses `create = false` so a
+    /// dry-run never creates `.fluzodrive` or any database file.
+    pub(crate) fn anchor_drive_with(
+        drive_directory: &Path,
+        create: bool,
+    ) -> Result<File, StoreError> {
         let parent = drive_directory
             .parent()
             .ok_or(StoreError::UnsupportedPath)?;
@@ -966,6 +973,9 @@ impl Store {
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if !create {
+                        return Err(StoreError::Inaccessible);
+                    }
                     fs::DirBuilder::new()
                         .mode(0o700)
                         .create(&anchored)
@@ -1044,39 +1054,7 @@ impl Store {
     /// local diagnostic archive so containment is implemented once.
     #[cfg(target_os = "linux")]
     pub(crate) fn anchor_class(&self, class_dir: &str, create: bool) -> Result<File, StoreError> {
-        use std::os::fd::AsRawFd;
-        use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
-        let base = PathBuf::from(format!("/proc/self/fd/{}", self.drive_handle.as_raw_fd()))
-            .join(class_dir);
-        match fs::symlink_metadata(&base) {
-            Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                    return Err(StoreError::Conflict);
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if !create {
-                    return Err(StoreError::Inaccessible);
-                }
-                fs::DirBuilder::new()
-                    .mode(0o700)
-                    .create(&base)
-                    .map_err(|_| StoreError::Conflict)?;
-            }
-            Err(_) => return Err(StoreError::Inaccessible),
-        }
-        let handle = OpenOptions::new()
-            .read(true)
-            .custom_flags(ANCHOR_FLAGS)
-            .open(&base)
-            .map_err(|_| StoreError::Conflict)?;
-        let current = fs::symlink_metadata(self.drive_directory.join(class_dir))
-            .map_err(|_| StoreError::Conflict)?;
-        let held = handle.metadata().map_err(|_| StoreError::Conflict)?;
-        if current.dev() != held.dev() || current.ino() != held.ino() {
-            return Err(StoreError::Conflict);
-        }
-        Ok(handle)
+        anchor_class_in(&self.drive_handle, &self.drive_directory, class_dir, create)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -1225,6 +1203,63 @@ pub(crate) fn last_connect_error() -> String {
                 .unwrap_or_else(|| "none recorded by this process".to_owned())
         })
         .unwrap_or_else(|_| "diagnostic lock poisoned".to_owned())
+}
+
+/// Opens (creating when absent) one managed class directory under an
+/// already-anchored drive handle with the same fd-anchored,
+/// symlink-rejecting discipline used for the drive itself. Extracted from
+/// `Store::anchor_class` so the telemetry purge can anchor the diagnostic
+/// directory from its own read-only drive handle without opening the
+/// database.
+#[cfg(target_os = "linux")]
+pub(crate) fn anchor_class_in(
+    drive_handle: &File,
+    drive_directory: &Path,
+    class_dir: &str,
+    create: bool,
+) -> Result<File, StoreError> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+    let base = PathBuf::from(format!("/proc/self/fd/{}", drive_handle.as_raw_fd())).join(class_dir);
+    match fs::symlink_metadata(&base) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(StoreError::Conflict);
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if !create {
+                return Err(StoreError::Inaccessible);
+            }
+            fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&base)
+                .map_err(|_| StoreError::Conflict)?;
+        }
+        Err(_) => return Err(StoreError::Inaccessible),
+    }
+    let handle = OpenOptions::new()
+        .read(true)
+        .custom_flags(ANCHOR_FLAGS)
+        .open(&base)
+        .map_err(|_| StoreError::Conflict)?;
+    let current =
+        fs::symlink_metadata(drive_directory.join(class_dir)).map_err(|_| StoreError::Conflict)?;
+    let held = handle.metadata().map_err(|_| StoreError::Conflict)?;
+    if current.dev() != held.dev() || current.ino() != held.ino() {
+        return Err(StoreError::Conflict);
+    }
+    Ok(handle)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn anchor_class_in(
+    _drive_handle: &File,
+    _drive_directory: &Path,
+    _class_dir: &str,
+    _create: bool,
+) -> Result<File, StoreError> {
+    Err(StoreError::UnsupportedPath)
 }
 
 pub(crate) fn map_error(error: sqlx::Error) -> StoreError {
