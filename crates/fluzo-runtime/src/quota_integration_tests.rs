@@ -18,12 +18,23 @@ struct Root(PathBuf);
 
 impl Root {
     fn new(tag: &str) -> Self {
-        let path = std::env::temp_dir().join(format!(
+        // Canonicalize the temp base so a symlinked TMPDIR cannot make
+        // the fixture root's identity differ from what the store sees,
+        // and force 0700 explicitly so the runner's umask cannot widen
+        // or narrow the fixture's permissions (#81 discipline).
+        let base = std::env::temp_dir();
+        let base = base.canonicalize().unwrap_or(base);
+        let path = base.join(format!(
             "fluzo-quota-{tag}-{}-{}",
             process::id(),
             NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
         Self(path)
     }
     fn drive(&self) -> PathBuf {
@@ -68,13 +79,14 @@ fn capture(id: &str, state_id: &str, content: &[u8]) -> CaptureRequest {
 }
 
 fn open_with(root: &Root, limits: QuotaLimits) -> Store {
-    runtime()
-        .block_on(Store::open_quotated_with_probe(
+    let rt = runtime();
+    crate::test_diagnostics::expect_open(&root.0, "quota store open", || {
+        rt.block_on(Store::open_quotated_with_probe(
             &root.0,
             limits,
             FixedFreeSpace(1 << 40),
         ))
-        .unwrap()
+    })
 }
 
 /// Closes a store deterministically and reopens it under `limits`.
@@ -558,7 +570,10 @@ fn nothing_is_evicted_by_pressure_time_or_reopen() {
 #[test]
 fn the_bounded_diagnostic_contract_requires_an_attached_guard() {
     let root = Root::new("noguard");
-    let mut store = runtime().block_on(Store::open(&root.0)).unwrap();
+    let rt = runtime();
+    let mut store = crate::test_diagnostics::expect_open(&root.0, "unguarded store open", || {
+        rt.block_on(Store::open(&root.0))
+    });
     assert_eq!(
         store.append_diagnostic("a.log", b"x").unwrap_err(),
         StoreError::QuotaNotConfigured
