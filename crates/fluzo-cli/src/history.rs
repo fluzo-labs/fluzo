@@ -58,13 +58,17 @@ fn list(workspace: &Path) -> ExitCode {
         println!("No sessions to purge.");
         return ExitCode::SUCCESS;
     }
-    let sessions = match history::list(workspace) {
-        Ok(sessions) => sessions,
-        Err(error) => return failure(error.code(), &error.to_string()),
-    };
+    run_command(|session| list_body(session, workspace), workspace)
+}
+
+fn list_body(
+    session: &mut history::History,
+    workspace: &Path,
+) -> Result<ExitCode, history::HistoryError> {
+    let sessions = session.list()?;
     if sessions.is_empty() {
         println!("No sessions to purge.");
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     }
     println!("Sessions in {}", workspace.to_string_lossy());
     for session in &sessions {
@@ -81,7 +85,36 @@ fn list(workspace: &Path) -> ExitCode {
     }
     let total: i64 = sessions.iter().map(|s| s.total_bytes()).sum();
     println!("Total: {} sessions, {}", sessions.len(), human(total));
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Runs a command body against the open store, then closes the store
+/// deterministically.
+///
+/// The close is not optional cleanup: dropping the connection defers the
+/// real close to a background thread, and a still-held WAL index lock
+/// makes the next opener fail with SQLITE_BUSY. A close failure is only
+/// surfaced when the body succeeded, so it never masks the primary
+/// failure; on the error path the store is still closed, because leaving
+/// it held would turn one failure into two.
+fn run_command(
+    body: impl FnOnce(&mut history::History) -> Result<ExitCode, history::HistoryError>,
+    workspace: &Path,
+) -> ExitCode {
+    let mut session = match history::History::open(workspace) {
+        Ok(session) => session,
+        Err(error) => return failure(error.code(), &error.to_string()),
+    };
+    match body(&mut session) {
+        Ok(code) => match session.close() {
+            Ok(()) => code,
+            Err(error) => failure(error.code(), &error.to_string()),
+        },
+        Err(error) => {
+            let _ = session.close();
+            failure(error.code(), &error.to_string())
+        }
+    }
 }
 
 fn purge(workspace: &Path, request: Request) -> ExitCode {
@@ -91,27 +124,33 @@ fn purge(workspace: &Path, request: Request) -> ExitCode {
             "history purge --all requires --yes; nothing deleted.",
         );
     }
+    run_command(|session| purge_body(session, &request), workspace)
+}
+
+fn purge_body(
+    session: &mut history::History,
+    request: &Request,
+) -> Result<ExitCode, history::HistoryError> {
     let ids: Vec<String> = if request.all {
-        match history::list(workspace) {
-            Ok(sessions) => sessions.iter().map(|s| s.id.clone()).collect(),
-            Err(error) => return failure(error.code(), &error.to_string()),
-        }
+        session
+            .list()?
+            .iter()
+            .map(|session| session.id.clone())
+            .collect()
     } else {
         request.ids.clone()
     };
     if ids.is_empty() {
         println!("No sessions to purge.");
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     }
     // The preview shown to the operator is the same computation the
-    // delete will redo; the delete never trusts this one.
-    let plan = match history::plan(workspace, &ids) {
-        Ok(plan) => plan,
-        Err(error) => return failure(error.code(), &error.to_string()),
-    };
+    // delete redoes on the same connection; the delete never trusts an
+    // earlier one.
+    let plan = session.plan(&ids)?;
     if request.dry_run {
         print_plan(&plan, "Dry run: nothing was deleted.");
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     }
     let confirmation = if request.yes {
         Confirmation::ExplicitYes
@@ -120,21 +159,18 @@ fn purge(workspace: &Path, request: Request) -> ExitCode {
             Prompt::Confirmed => Confirmation::Prompted,
             Prompt::Declined => {
                 println!("Purge cancelled; nothing deleted.");
-                return ExitCode::SUCCESS;
+                return Ok(ExitCode::SUCCESS);
             }
             Prompt::Unavailable => {
-                return failure(
+                return Ok(failure(
                     "confirmation_required",
                     "history purge needs confirmation and this is not an interactive terminal; \
                      pass --yes to confirm. Nothing deleted.",
-                );
+                ));
             }
         }
     };
-    let outcome = match history::purge(workspace, &ids, confirmation) {
-        Ok(outcome) => outcome,
-        Err(error) => return failure(error.code(), &error.to_string()),
-    };
+    let outcome = session.purge(&ids, confirmation)?;
     print_plan(&outcome.plan, "Purged.");
     if outcome.files_pending.is_empty() {
         println!(
@@ -153,7 +189,7 @@ fn purge(workspace: &Path, request: Request) -> ExitCode {
             outcome.files_pending.join(", ")
         );
     }
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
 
 enum Prompt {

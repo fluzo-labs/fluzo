@@ -502,13 +502,21 @@ impl Store {
         &mut self.connection
     }
 
-    /// Test-only deterministic close. Dropping a sqlx connection defers
-    /// the real close to a background thread, so a child process that
-    /// reopens the same store right after a parent `drop` can hit
-    /// SQLITE_BUSY on the WAL index. Fixtures that hand a store to a
-    /// child must close it explicitly.
+    /// Test-only alias for the production deterministic close.
     #[cfg(test)]
     pub(crate) async fn close_for_test(self) -> Result<(), StoreError> {
+        self.close().await
+    }
+
+    /// Closes the connection synchronously instead of deferring it.
+    ///
+    /// Dropping a sqlx connection defers the real close to a background
+    /// thread, so a process that reopens the same store right after a
+    /// parent `drop` can hit SQLITE_BUSY on the WAL index. Any caller
+    /// that opens a store in order to hand it to a later open -- a
+    /// short-lived CLI, a fixture handing work to a child -- must close
+    /// it explicitly rather than dropping it.
+    pub async fn close(self) -> Result<(), StoreError> {
         self.connection.close().await.map_err(map_error)
     }
 

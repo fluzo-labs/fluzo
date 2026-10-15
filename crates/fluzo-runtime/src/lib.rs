@@ -48,6 +48,10 @@ mod quota_integration_tests;
 #[path = "purge_tests.rs"]
 mod purge_tests;
 
+#[cfg(test)]
+#[path = "history_tests.rs"]
+mod history_tests;
+
 use fluzo_core::RuntimeAvailability;
 
 pub fn availability() -> RuntimeAvailability {

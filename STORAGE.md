@@ -507,6 +507,43 @@ Every refusal means nothing was deleted: `no_such_session`,
 prints a single-line JSON object with a stable `code` so a script can act
 on it without parsing prose.
 
+### Store lifetime per command
+
+One `fluzo history` command opens the store once, runs every step of
+that command against the same connection, and closes it explicitly.
+
+This is a correctness requirement, not tidiness. Dropping a connection
+defers the real close to a background thread, and a still-held WAL index
+lock makes the next opener fail with `SQLITE_BUSY` under the store's
+`busy_timeout = 0`. The first implementation opened the store once per
+step -- listing, plan, delete -- and dropped each one, so a command
+re-entered the WAL index while the previous connection was still
+unwinding. That is what made `history purge` fail on CI hardware while
+passing locally: the window is scheduling-dependent, and a faster local
+machine closed it before the next open.
+
+A single connection also means the preview and the delete see the same
+store generation. The delete still recomputes the plan rather than
+trusting the preview, because reference state is only authoritative at
+deletion time; it simply no longer needs a second connection to do it.
+
+`History::close` is called on every exit path, including refusals. A
+close failure is reported only when the command itself succeeded, so it
+never masks the primary failure, but the store is closed either way:
+leaving it held would turn one failure into two.
+
+`History::open` retries only the transient open-time `Busy` raised while
+a previous short-lived opener's WAL index lock is still being released,
+which is the same class the restore probe already accepts. It does not
+retry any write. A store held by a live writer stays held: after the
+bounded attempts the command still refuses with `Busy`, so the
+one-writer-per-workspace contract is unchanged.
+
+Every store failure carries the stage that produced it -- `open`, `list`,
+`plan`, `delete`, `reclaim` or `close` -- in the message, e.g.
+`storage unavailable at delete: Busy`. A bare `Busy` cannot be diagnosed
+after the fact, and those stages mean different things.
+
 ### Verification
 
 ```sh
@@ -533,3 +570,11 @@ nothing, confirmed purge preserving a shared artifact, attached refusal
 naming the session, unknown session, configuration and user files
 untouched, and interactive decline / accept / empty-answer through a
 PTY.
+
+The facade contract has its own regression suite, because the failure it
+prevents only appears on some hardware and must not depend on timing luck:
+`cargo test -p fluzo-runtime --lib --locked --offline facade` and
+`... --locked --offline history`. It asserts that repeated command
+cycles (open, list, plan, purge, close) never meet a busy store, that an
+explicit close lets the next opener take the write lock immediately, and
+that a store failure names its stage.
