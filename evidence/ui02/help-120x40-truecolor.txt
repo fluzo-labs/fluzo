@@ -1,0 +1,48 @@
+ui02-evidence: help-120x40-truecolor
+source-revision: 40577a5f48627474eea53d0b78143c20e226a3ed
+viewport: 120x40 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+generator: scripts/ui02_evidence.py
+sha256-body: b4072b32aebc08e2f44cb5cab69a0db5a73e52afe79463fbc116d980d003f0d1
+--- sanitized cell grid below; no escape sequences ---
+            ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                 █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.               █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                        ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                        Demo session 1
+
+                                                                                        ~
+
+                                                                                        ◇ GTP-6 Astra
+                         ╭────────────────────────────────────────────────────────────────────╮ithub Copilot
+                         │ Help 1/3 ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │ning X-High
+                         │                                                                    │━━━━─── 75% (303.8K)
+                         │ Context Shortcut             Action                                │━────── $50.00
+                         │ Global  Ctrl+P               Commands                              │scale: $100 (demo)
+                         │ Global  Ctrl+G               Toggle help                           │le data / offline
+                         │ Global  Ctrl+C               Quit safely                           │
+                         │ Global  Esc / Alt+Esc        Close / cancel                        │d files
+                         │ Global  Tab                  Editor / chat focus                   │s changed
+                         │ Global  Ctrl+B               Toggle sidebar                        │
+                         │ Global  Ctrl+D               Session details                       │ate: Pending
+                         │ Global  Ctrl+L / Ctrl+M      Model information                     │/ offline demo
+                         │ Global  Ctrl+S               Session information                   │ime connected
+                         │ Global  Ctrl+End             Follow output                         │
+                         │ Editor  Enter                Send demo preview                     │
+                         │ Editor  Shift+Enter          Insert newline                        │
+                         │ Editor  / (empty draft)      Commands                              │
+                         │                                                                    │
+                         │ PgUp/PgDn: pages   Ctrl+G / Esc: close                             │
+                         ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • pgup/pgdn pages • ctrl+c quit • ctrl+g help                                                 demo following
+

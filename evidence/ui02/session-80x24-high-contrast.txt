@@ -1,0 +1,32 @@
+ui02-evidence: session-80x24-high-contrast
+source-revision: 40577a5f48627474eea53d0b78143c20e226a3ed
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu --theme high-contrast
+generator: scripts/ui02_evidence.py
+sha256-body: 723ee8270324d303f0a61953a2099b8e8c22c39867e084f532d38ee10f78ee0a
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+ Demo state: Pending · NORMAL · offline
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.
+
+
+
+
+
+
+
+
+
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models ...       demo following
+

@@ -1,0 +1,48 @@
+ui02-evidence: session-120x40-nocolor
+source-revision: 40577a5f48627474eea53d0b78143c20e226a3ed
+viewport: 120x40 cells
+color-mode: nocolor (COLORTERM=truecolor, NO_COLOR=1, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+generator: scripts/ui02_evidence.py
+sha256-body: 3263ae6decd49607ce70408592cc465a1f187b80158a2f66a6c707e58b787a08
+--- sanitized cell grid below; no escape sequences ---
+            ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                 █▀▀▀▀ █     █   █ ▀▀▀█▀ ▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.               █▀▀▀  █     █   █  ▄▀   █   █
+                                                                                        ▀     ▀▀▀▀▀  ▀▀▀  ▀▀▀▀▀  ▀▀▀
+
+                                                                                        Demo session 1
+
+                                                                                        ~
+
+                                                                                        ◇ GTP-6 Astra
+                                                                                          via Github Copilot
+                                                                                          Reasoning X-High
+                                                                                          ━━━━━━━━━─── 75% (303.8K)
+                                                                                          ━━━━━━────── $50.00
+                                                                                          Cost scale: $100 (demo)
+                                                                                          Example data / offline
+
+                                                                                        Modified files
+                                                                                        No files changed
+
+                                                                                        Demo state: Pending
+                                                                                        NORMAL / offline demo
+                                                                                        No runtime connected
+
+
+
+
+
+
+
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models • ctrl+b sidebar • shift+enter newline ...        demo following
+
