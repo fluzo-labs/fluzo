@@ -9,7 +9,11 @@ See [CONFIGURATION.md](CONFIGURATION.md) for settings APIs and limits. FND-03 ad
 an owned application protocol and an in-memory scenario driver; see
 [APPLICATION.md](APPLICATION.md). DAT-01 adds the protected `.fluzodrive`
 repository store with a WAL/FULL/foreign-key-verified SQLite journal and
-atomic state/event commits; see [STORAGE.md](STORAGE.md). SIM-01 adds test-only strict HTTP/SSE fixtures
+atomic state/event commits; see [STORAGE.md](STORAGE.md). DAT-02a adds the
+store-owned artifact layer under `.fluzodrive/artifacts/`: bounded capture
+with truncation/redaction markers, finalization strictly before the atomic
+reference+state+event commit, and verified crash/orphan/corruption
+semantics; see [STORAGE.md](STORAGE.md). SIM-01 adds test-only strict HTTP/SSE fixtures
 and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
 UI-01 adds an explicit interactive demo shell, composer and palette; see
 [TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
@@ -345,6 +349,12 @@ reviewed `fluzo-runtime` production path with its full transitive closure in a
 `(name, version)`-keyed policy; rusqlite is not in the offline cache and raw
 `libsqlite3-sys` use is ruled out by the workspace `unsafe_code` prohibition.
 Focused store checks: `cargo test -p fluzo-runtime --locked --offline store`.
+DAT-02a adds `sha2 0.11.0` (alloc-only) as a reviewed `fluzo-runtime`
+production path for artifact content hashing, with its closure
+(digest 0.11.3, crypto-common 0.2.2, hybrid-array 0.4.15, cpufeatures 0.3.1,
+block-buffer 0.12.1) in the same `(name, version)`-keyed policy; the older
+sha2 0.10.9 graph remains only through sqlx. Focused artifact checks:
+`cargo test -p fluzo-runtime --locked --offline artifact`.
 Core/TUI cannot import TOML;
 forbidden Fluzo paths remain checked transitively through normal/build edges.
 The LSP fixture vendors only locked cached dependencies into its disposable root,

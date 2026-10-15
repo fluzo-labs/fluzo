@@ -73,6 +73,50 @@ and task/attempt/operation state machines are later DAT/EXEC child work
 and are not implemented or implied here. No credentials, provider
 endpoints or conversation content belong in the journal.
 
+## Artifacts (DAT-02a)
+
+Artifact bytes live under the managed root `.fluzodrive/artifacts/` and
+are written only through the store-owned, drive-anchored writer
+(`fluzo-runtime::artifact`). No other component writes there. Artifact
+ids are validated to a single safe path component (no separators, no
+leading dot, bounded length); content files are opened `O_NOFOLLOW`, so
+symlinks are never followed in either direction.
+
+**Finalization order (durability-separated).** Step 1,
+`finalize_artifact`: redact, bound, write a staging file `0600`, fsync,
+rename into place and fsync the directory. The finalized file is
+complete, size-recorded and immutable; a duplicate finalize or a
+re-capture of a committed id is refused. Step 2,
+`commit_artifact_reference`: re-checks the finalized bytes (present and
+hash-matching) and then inserts the `artifact` reference row together
+with the owning state updates and journal events in one `BEGIN
+IMMEDIATE` unit. A reference can never commit without its finalized
+content, and reference/state/event are atomic (foreign key on
+`artifact.state_id`).
+
+**Bounded capture.** The finite per-output limit is 1 MiB
+(`MAX_ARTIFACT_BYTES`). Larger inputs are stored as the leading prefix
+and marked `Truncated`. Redaction of caller-supplied secret literals
+happens before persistence in both content and record fields and is
+marked `Redacted`. Intentionally absent content is recorded as `Omitted`
+with no content file. No marker is ever implied silently.
+
+**Verified crash semantics.** A crash after the content write but before
+the reference commit leaves a detectable, reclaimable orphan
+(`detect_orphaned_artifacts`); never a dangling reference. A crash
+after the reference commit implies the finalized content is present and
+verifies. A torn or removed content file behind a committed reference
+reports `Corrupt` with a reason and is never silently repaired,
+re-finalized or returned as valid (`verify_artifact`,
+`read_artifact_content`). The persisted record (id, owning state, kind,
+provenance, size, SHA-256, flags) supports shared-reference analysis for
+purge (DAT-02d) without scanning bytes.
+
+**Scope.** Reclamation of orphans, quotas and purge commands are
+DAT-02b/#75; the versioned migration framework is DAT-02c/#74. Real
+model/shell capture arrives with later EXEC work; the contract here is
+proven with fixture producers.
+
 ## Focused checks
 
 ```sh
@@ -84,3 +128,14 @@ units, foreign-key whole-unit rollback, interrupted commit, torn WAL
 recovery, writer-lock refusal and recovery, disk-full fail-closed,
 symlink/file/hard-link drive rejection, and post-open drive replacement
 detection.
+
+```sh
+cargo test -p fluzo-runtime --locked --offline artifact
+```
+
+Covers: finalization-before-reference ordering, byte-level independent
+verification, truncation and redaction markers, omitted capture,
+finalized immutability, reference-requires-finalized-content, whole-unit
+atomicity with state and events, orphan detection and reclaim after an
+interrupted commit, post-reference-commit durability, missing/torn/symlinked
+content corruption reporting without repair, and id confinement.
