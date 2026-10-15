@@ -15,6 +15,14 @@ with truncation/redaction markers, finalization strictly before the atomic
 reference+state+event commit, and verified crash/orphan/corruption
 semantics; see [STORAGE.md](STORAGE.md). SIM-01 adds test-only strict HTTP/SSE fixtures
 and a Linux private-network profile; see [HTTP_SIMULATOR.md](HTTP_SIMULATOR.md).
+OBS-01 adds the diagnostics contract's two implemented paths: the SQLite audit
+record committed atomically with its dependent state update, and a separate
+bounded rotating JSONL archive under `.fluzodrive/telemetry/`, behind one
+capture boundary with redaction, bounded queue, drop accounting and degraded-sink
+reporting. Pinned GenAI semantic conventions, token accounting and the
+retry/final split are typed in core. OTLP HTTP/protobuf export is deferred to
+#88 because the offline cache cannot supply an HTTP exporter; see
+[OBSERVABILITY.md](OBSERVABILITY.md).
 UI-01 adds an explicit interactive demo shell, composer and palette; see
 [TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
 The current visual iteration follows Crush-style responsive conversation layout,
