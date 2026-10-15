@@ -1,3 +1,4 @@
+pub mod artifact;
 pub mod config;
 pub mod configuration;
 mod configuration_file;
@@ -7,6 +8,10 @@ pub mod store;
 
 #[cfg(test)]
 mod scenario_tests;
+
+#[cfg(test)]
+#[path = "artifact_tests.rs"]
+mod artifact_tests;
 
 #[cfg(test)]
 #[path = "store_tests.rs"]

@@ -19,10 +19,10 @@ use sqlx::{Connection, Row};
 
 pub const DRIVE_DIRECTORY: &str = ".fluzodrive";
 pub const DATABASE_FILE: &str = "state.sqlite3";
-pub(crate) const SCHEMA_VERSION: &str = "1";
+pub(crate) const SCHEMA_VERSION: &str = "2";
 
 // O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC, matching the configuration writer.
-const ANCHOR_FLAGS: i32 = 0x20000 | 0x10000 | 0x800;
+pub(crate) const ANCHOR_FLAGS: i32 = 0x20000 | 0x10000 | 0x800;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StoreError {
@@ -66,7 +66,7 @@ pub struct StoredEvent {
 pub struct Store {
     pub(crate) connection: sqlx::SqliteConnection,
     pub(crate) drive_directory: PathBuf,
-    drive_handle: File,
+    pub(crate) drive_handle: File,
 }
 
 impl Store {
@@ -339,7 +339,7 @@ impl Store {
         Ok(())
     }
 
-    fn verify_drive(&self) -> Result<(), StoreError> {
+    pub(crate) fn verify_drive(&self) -> Result<(), StoreError> {
         let current =
             fs::symlink_metadata(&self.drive_directory).map_err(|_| StoreError::Conflict)?;
         let held = self
@@ -423,16 +423,39 @@ impl Store {
         .execute(&mut *transaction)
         .await
         .map_err(map_error)?;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS artifact (
+                 id TEXT PRIMARY KEY,
+                 state_id TEXT NOT NULL REFERENCES state(id),
+                 kind TEXT NOT NULL,
+                 provenance TEXT NOT NULL,
+                 stored_bytes INTEGER NOT NULL,
+                 content_hash TEXT NOT NULL,
+                 capture_flags TEXT NOT NULL
+             )",
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_error)?;
         sqlx::query("INSERT OR IGNORE INTO store_meta (key, value) VALUES ('schema_version', ?1)")
             .bind(SCHEMA_VERSION)
             .execute(&mut *transaction)
             .await
             .map_err(map_error)?;
+        // Bootstrap-stage marker update for stores created before the artifact
+        // table existed. The versioned migration framework is DAT-02c (#74).
+        sqlx::query(
+            "UPDATE store_meta SET value = ?1 WHERE key = 'schema_version' AND value <> ?1",
+        )
+        .bind(SCHEMA_VERSION)
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_error)?;
         transaction.commit().await.map_err(map_error)
     }
 }
 
-fn map_error(error: sqlx::Error) -> StoreError {
+pub(crate) fn map_error(error: sqlx::Error) -> StoreError {
     if let sqlx::Error::Database(database) = &error {
         // SQLite reports extended result codes (e.g. SQLITE_CONSTRAINT_FOREIGNKEY
         // = 781); the primary class is the low byte.

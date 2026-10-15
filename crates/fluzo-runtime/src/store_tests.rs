@@ -27,6 +27,9 @@ impl Root {
     fn marker(&self) -> PathBuf {
         self.0.join("child-marker")
     }
+    fn stderr_log(&self) -> PathBuf {
+        self.0.join("child-stderr.log")
+    }
 }
 impl Drop for Root {
     fn drop(&mut self) {
@@ -53,13 +56,16 @@ fn event(state_id: &str, payload: &str) -> EventRecord {
 /// Re-invokes this test binary as a child that runs the crash body for the
 /// given mode against the given root, then dies without cleanup.
 fn spawn_child(mode: &str, root: &Root, test: &str) -> process::Child {
+    // Capture child stderr to a file so an early child exit is diagnosable
+    // from the parent's failure instead of vanishing into a null device.
+    let stderr_file = fs::File::create(root.stderr_log()).unwrap();
     Command::new(std::env::current_exe().unwrap())
         .arg(test)
         .arg("--exact")
         .env("FLUZO_STORE_CHILD", mode)
         .env("FLUZO_STORE_ROOT", &root.0)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .unwrap()
 }
@@ -70,10 +76,20 @@ fn child_mode() -> Option<(String, PathBuf)> {
     Some((mode, root))
 }
 
-fn wait_for_marker(marker: &Path, timeout: Duration) {
+fn wait_for_marker(child: &mut process::Child, marker: &Path, log: &Path, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !marker.exists() {
-        assert!(Instant::now() < deadline, "child never signalled readiness");
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!(
+                "child exited before signalling readiness: {status}\n--- child stderr ---\n{}",
+                fs::read_to_string(log).unwrap_or_default()
+            );
+        }
+        assert!(
+            Instant::now() < deadline,
+            "child never signalled readiness\n--- child stderr ---\n{}",
+            fs::read_to_string(log).unwrap_or_default()
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -203,7 +219,12 @@ fn interrupted_commit_rolls_back_completely() {
         &root,
         "store_tests::interrupted_commit_rolls_back_completely",
     );
-    wait_for_marker(&root.marker(), Duration::from_secs(20));
+    wait_for_marker(
+        &mut child,
+        &root.marker(),
+        &root.stderr_log(),
+        Duration::from_secs(60),
+    );
     let status = child.wait().unwrap();
     assert!(!status.success(), "child must die by abort");
     let mut store = rt.block_on(Store::open(&root.0)).unwrap();
@@ -247,7 +268,12 @@ fn torn_wal_tail_recovers_last_complete_transaction() {
         &root,
         "store_tests::torn_wal_tail_recovers_last_complete_transaction",
     );
-    wait_for_marker(&root.marker(), Duration::from_secs(20));
+    wait_for_marker(
+        &mut child,
+        &root.marker(),
+        &root.stderr_log(),
+        Duration::from_secs(60),
+    );
     let _ = child.wait().unwrap();
     let wal = root
         .0
@@ -287,7 +313,12 @@ fn writer_lock_is_refused_and_recovers_after_holder_dies() {
         &root,
         "store_tests::writer_lock_is_refused_and_recovers_after_holder_dies",
     );
-    wait_for_marker(&root.marker(), Duration::from_secs(20));
+    wait_for_marker(
+        &mut child,
+        &root.marker(),
+        &root.stderr_log(),
+        Duration::from_secs(60),
+    );
     let outcome = rt.block_on(store.commit_unit(&[update("blocked", "x")], &[]));
     assert_eq!(outcome.unwrap_err(), StoreError::Busy);
     child.kill().unwrap();

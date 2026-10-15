@@ -88,18 +88,22 @@ SQLX_PACKAGES = {
     ("autocfg", "1.5.1"): set(),
     ("base64", "0.22.1"): {"alloc"},
     ("block-buffer", "0.10.4"): set(),
+    ("block-buffer", "0.12.1"): set(),  # DAT-02a sha2 0.11 closure
     ("cassowary", "0.3.0"): set(),
     ("cc", "1.6.0"): set(),
     ("cfg-if", "1.0.5"): set(),
     ("cpufeatures", "0.2.17"): set(),
+    ("cpufeatures", "0.3.1"): set(),  # DAT-02a sha2 0.11 closure
     ("crc", "3.4.0"): set(),
     ("crc-catalog", "2.5.0"): set(),
     ("crossbeam-queue", "0.3.14"): {"alloc", "default", "std"},
     ("crossbeam-utils", "0.8.23"): {"std"},
     ("crossterm_winapi", "0.9.1"): set(),
     ("crypto-common", "0.1.7"): {"std"},
+    ("crypto-common", "0.2.2"): set(),  # DAT-02a sha2 0.11 closure
     ("darling_macro", "0.24.1"): set(),
     ("digest", "0.10.7"): {"alloc", "block-buffer", "core-api", "default", "std"},
+    ("digest", "0.11.3"): {"alloc", "block-api", "default"},  # DAT-02a sha2 0.11 closure
     ("displaydoc", "0.2.7"): set(),
     ("dotenvy", "0.15.7"): set(),
     ("event-listener", "5.4.2"): {"default", "parking", "std"},
@@ -118,6 +122,7 @@ SQLX_PACKAGES = {
     ("hashbrown", "0.16.1"): {"allocator-api2", "default", "default-hasher", "equivalent", "inline-more", "raw-entry"},
     ("hashlink", "0.11.1"): set(),
     ("heck", "0.5.0"): set(),
+    ("hybrid-array", "0.4.15"): set(),  # DAT-02a sha2 0.11 closure (crypto-common 0.2 dep)
     ("hex", "0.4.3"): {"alloc", "default", "std"},
     ("icu_collections", "2.3.0"): set(),
     ("icu_locale_core", "2.3.0"): {"zerovec"},
@@ -146,6 +151,7 @@ SQLX_PACKAGES = {
     ("ryu", "1.0.23"): set(),
     ("scopeguard", "1.2.0"): set(),
     ("sha2", "0.10.9"): {"default", "std"},
+    ("sha2", "0.11.0"): {"alloc"},  # DAT-02a direct artifact content hashing
     ("shlex", "2.0.1"): {"default", "std"},
     ("signal-hook-registry", "1.4.8"): set(),
     ("slab", "0.4.12"): {"std"},
@@ -167,7 +173,7 @@ SQLX_PACKAGES = {
     ("tracing", "0.1.44"): {"attributes", "default", "log", "std", "tracing-attributes"},
     ("tracing-attributes", "0.1.31"): set(),
     ("tracing-core", "0.1.36"): {"once_cell", "std"},
-    ("typenum", "1.20.1"): set(),
+    ("typenum", "1.20.1"): {"const-generics"},  # widened: sha2 0.11 activates const-generics
     ("unicode-segmentation", "1.13.3"): set(),
     ("url", "2.5.8"): {"default", "std"},
     ("utf8_iter", "1.0.4"): set(),
@@ -193,10 +199,11 @@ SQLX_PACKAGES = {
     ("zerovec", "0.11.8"): {"derive", "yoke"},
     ("zerovec-derive", "0.11.6"): set(),
 }
-SQLX_PACKAGE_NAMES = {"sqlx", "allocator-api2", "atoi", "autocfg", "base64", "bitflags", "block-buffer", "bytes", "cc", "cfg-if", "cpufeatures", "crc", "crc-catalog", "crossbeam-queue", "crossbeam-utils", "crypto-common", "digest", "displaydoc", "dotenvy", "either", "equivalent", "event-listener", "find-msvc-tools", "flume", "foldhash", "form_urlencoded", "futures-channel", "futures-core", "futures-executor", "futures-intrusive", "futures-io", "futures-sink", "futures-task", "futures-util", "generic-array", "hashbrown", "hashlink", "heck", "hex", "icu_collections", "icu_locale_core", "icu_normalizer", "icu_normalizer_data", "icu_properties", "icu_properties_data", "icu_provider", "idna", "idna_adapter", "indexmap", "itoa", "libc", "libsqlite3-sys", "litemap", "lock_api", "log", "memchr", "mio", "num-traits", "once_cell", "parking", "parking_lot", "parking_lot_core", "percent-encoding", "pin-project-lite", "pkg-config", "potential_utf", "proc-macro2", "quote", "redox_syscall", "scopeguard", "serde", "serde_core", "serde_derive", "serde_json", "sha2", "shlex", "slab", "smallvec", "socket2", "spin", "sqlx-core", "sqlx-macros", "sqlx-macros-core", "sqlx-sqlite", "stable_deref_trait", "syn", "synstructure", "thiserror", "thiserror-impl", "tinystr", "tokio", "tokio-macros", "tokio-stream", "tracing", "tracing-attributes", "tracing-core", "typenum", "unicode-ident", "url", "utf8_iter", "vcpkg", "version_check", "wasi", "windows-link", "windows-sys", "writeable", "yoke", "yoke-derive", "zerofrom", "zerofrom-derive", "zerotrie", "zerovec", "zerovec-derive", "zmij"}
+SQLX_PACKAGE_NAMES = {"sqlx", "allocator-api2", "atoi", "autocfg", "base64", "bitflags", "block-buffer", "bytes", "cc", "cfg-if", "cpufeatures", "crc", "crc-catalog", "crossbeam-queue", "crossbeam-utils", "crypto-common", "digest", "displaydoc", "dotenvy", "either", "equivalent", "event-listener", "find-msvc-tools", "flume", "foldhash", "form_urlencoded", "futures-channel", "futures-core", "futures-executor", "futures-intrusive", "futures-io", "futures-sink", "futures-task", "futures-util", "generic-array", "hashbrown", "hashlink", "heck", "hex", "hybrid-array", "icu_collections", "icu_locale_core", "icu_normalizer", "icu_normalizer_data", "icu_properties", "icu_properties_data", "icu_provider", "idna", "idna_adapter", "indexmap", "itoa", "libc", "libsqlite3-sys", "litemap", "lock_api", "log", "memchr", "mio", "num-traits", "once_cell", "parking", "parking_lot", "parking_lot_core", "percent-encoding", "pin-project-lite", "pkg-config", "potential_utf", "proc-macro2", "quote", "redox_syscall", "scopeguard", "serde", "serde_core", "serde_derive", "serde_json", "sha2", "shlex", "slab", "smallvec", "socket2", "spin", "sqlx-core", "sqlx-macros", "sqlx-macros-core", "sqlx-sqlite", "stable_deref_trait", "syn", "synstructure", "thiserror", "thiserror-impl", "tinystr", "tokio", "tokio-macros", "tokio-stream", "tracing", "tracing-attributes", "tracing-core", "typenum", "unicode-ident", "url", "utf8_iter", "vcpkg", "version_check", "wasi", "windows-link", "windows-sys", "writeable", "yoke", "yoke-derive", "zerofrom", "zerofrom-derive", "zerotrie", "zerovec", "zerovec-derive", "zmij"}
 EXTERNAL["fluzo-runtime"] |= SQLX_PACKAGE_NAMES
 EXTERNAL["fluzo-cli"] |= SQLX_PACKAGE_NAMES
 DIRECT_EXTERNAL["fluzo-runtime"] |= {"sqlx"}
+DIRECT_EXTERNAL["fluzo-runtime"] |= {"sha2"}  # DAT-02a artifact content hashing
 TUI_PACKAGES = {
     ("allocator-api2", "0.2.21"): {"alloc"},
     ("bitflags", "2.13.2"): {"std"},
@@ -214,6 +221,7 @@ TUI_PACKAGES = {
     ("foldhash", "0.1.5"): set(),
     ("hashbrown", "0.15.5"): {"allocator-api2", "default", "default-hasher", "equivalent", "inline-more", "raw-entry"},
     ("heck", "0.5.0"): set(),
+    ("hybrid-array", "0.4.15"): set(),  # DAT-02a sha2 0.11 closure (crypto-common 0.2 dep)
     ("ident_case", "1.0.1"): set(),
     ("indoc", "2.0.7"): set(),
     ("instability", "0.3.14"): set(),
