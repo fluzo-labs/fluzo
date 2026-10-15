@@ -6,6 +6,9 @@ pub mod migrations;
 pub mod model_discovery;
 pub mod scenario;
 pub mod store;
+pub mod telemetry;
+pub mod telemetry_archive;
+pub mod telemetry_audit;
 
 #[cfg(test)]
 mod scenario_tests;
@@ -24,6 +27,10 @@ mod store_tests;
 
 #[cfg(test)]
 mod test_diagnostics;
+
+#[cfg(test)]
+#[path = "telemetry_tests.rs"]
+mod telemetry_tests;
 
 use fluzo_core::RuntimeAvailability;
 
