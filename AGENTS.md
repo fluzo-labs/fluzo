@@ -39,7 +39,18 @@ component with `O_NOFOLLOW` relative to a held descriptor and refuses
 traversal, protected names, symlinks in any position, non-regular inodes
 and hard-linked targets. It is not an OS sandbox and excludes only
 cooperating processes. User-change protection is deferred to #97 because it
-needs a Git working-tree baseline that does not exist yet.
+needs a Git working-tree baseline that does not exist yet. RUN-02 adds the
+permission decision layer; see [POLICY.md](POLICY.md). Repository-origin
+values may narrow a permission and may never widen one — a rejected
+broadening is recorded rather than dropped. Grant matching is exact
+equality on subject, workspace and backend, with no prefix or subset
+matching anywhere. One-time consumption is a state transition performed
+before dispatch, and an unconfirmed outcome keeps the grant spent. Session
+YOLO converts only `AskUser`, is attributed to the mode in audit, has no
+settings key, and is never restored by resume. Headless hosts declare
+their capability up front, so an approval need returns a structured
+outcome instead of waiting; `ApprovalUnavailable` is distinct from
+`Denied`.
 UI-01 adds an explicit interactive demo shell, composer and palette; see
 [TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
 The current visual iteration follows Crush-style responsive conversation layout,
@@ -437,6 +448,18 @@ spawned by its parent. These tests use
 the real filesystem and real process locks, not mocks, and require no
 network. Running `cargo test -p fluzo-runtime --lib --locked --offline
 child_role` alone proves nothing.
+
+RUN-02 focused checks use
+`cargo test -p fluzo-core --lib --locked --offline policy`,
+`cargo test -p fluzo-runtime --lib --locked --offline authorization` and
+`cargo test -p fluzo-runtime --lib --locked --offline session_auth`. The
+headless non-blocking contract is proven by the child process in
+`session_auth_tests::headless_child`, which receives a stdin pipe the
+parent keeps open and never writes to; the child must decide and exit
+without reading it, and the parent fails on deadline rather than trusting
+a generous timeout. That child is `#[ignore]`d and only runs when spawned
+by its parent; running it alone fails its role assertion. These tests are
+pure or process-based and need no network.
 
 Run the narrowest relevant tests after a change, then the applicable workspace
 checks. Define supported feature combinations explicitly rather than assuming
