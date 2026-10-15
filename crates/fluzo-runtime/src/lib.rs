@@ -2,6 +2,7 @@ pub mod artifact;
 pub mod config;
 pub mod configuration;
 mod configuration_file;
+pub mod confinement;
 pub mod history;
 pub mod migrations;
 pub mod model_discovery;
@@ -13,6 +14,7 @@ pub mod telemetry;
 pub mod telemetry_archive;
 pub mod telemetry_audit;
 pub mod telemetry_purge;
+pub mod workspace;
 
 #[cfg(test)]
 mod scenario_tests;
