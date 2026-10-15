@@ -1,4 +1,5 @@
 pub mod artifact;
+pub mod authorization;
 pub mod config;
 pub mod configuration;
 mod configuration_file;
@@ -9,6 +10,7 @@ pub mod model_discovery;
 pub mod purge;
 pub mod quota;
 pub mod scenario;
+pub mod session_auth;
 pub mod store;
 pub mod telemetry;
 pub mod telemetry_archive;
@@ -18,6 +20,14 @@ pub mod workspace;
 
 #[cfg(test)]
 mod scenario_tests;
+
+#[cfg(test)]
+#[path = "authorization_tests.rs"]
+mod authorization_tests;
+
+#[cfg(test)]
+#[path = "session_auth_tests.rs"]
+mod session_auth_tests;
 
 #[cfg(test)]
 #[path = "artifact_tests.rs"]
