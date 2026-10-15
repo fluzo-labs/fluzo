@@ -29,7 +29,17 @@ capture boundary with redaction, bounded queue, drop accounting and degraded-sin
 reporting. Pinned GenAI semantic conventions, token accounting and the
 retry/final split are typed in core. OTLP HTTP/protobuf export is deferred to
 #88 because the offline cache cannot supply an HTTP exporter; see
-[OBSERVABILITY.md](OBSERVABILITY.md).
+[OBSERVABILITY.md](OBSERVABILITY.md). RUN-01 adds workspace identity, the
+cross-process writer lock at `.fluzodrive/writer.lock` and the native file
+confinement jail; see [WORKSPACE.md](WORKSPACE.md). Ownership is a held
+`flock` descriptor, not a database row, because `BEGIN IMMEDIATE` releases
+at commit and an approval wait spans the gap. Stale owners are reconciled
+from the lock result, never inferred from PID liveness. The jail opens every
+component with `O_NOFOLLOW` relative to a held descriptor and refuses
+traversal, protected names, symlinks in any position, non-regular inodes
+and hard-linked targets. It is not an OS sandbox and excludes only
+cooperating processes. User-change protection is deferred to #97 because it
+needs a Git working-tree baseline that does not exist yet.
 UI-01 adds an explicit interactive demo shell, composer and palette; see
 [TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
 The current visual iteration follows Crush-style responsive conversation layout,
@@ -416,6 +426,17 @@ gate. Outside-change checks use
 `cargo test -p fluzo-tui --locked --offline configuration` and the PTY case
 `test_outside_change_banner_offers_keep_ours_then_reload` in
 `scripts/test_configuration.py`.
+
+RUN-01 focused checks use
+`cargo test -p fluzo-runtime --lib --locked --offline workspace` and
+`cargo test -p fluzo-runtime --lib --locked --offline confinement`. The
+ownership fixtures spawn real child processes through a pipe barrier, so
+they need no sleep-based synchronization; the child role test
+`workspace::tests::child_role` is `#[ignore]`d and only runs when
+spawned by its parent. These tests use
+the real filesystem and real process locks, not mocks, and require no
+network. Running `cargo test -p fluzo-runtime --lib --locked --offline
+child_role` alone proves nothing.
 
 Run the narrowest relevant tests after a change, then the applicable workspace
 checks. Define supported feature combinations explicitly rather than assuming
