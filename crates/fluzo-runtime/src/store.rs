@@ -9,7 +9,14 @@
 //! directory reuses the configuration writer's fail-closed discipline:
 //! fd-anchored traversal, symlink rejection, hard-link rejection and a
 //! parent identity recheck before each commit.
+//!
+//! DAT-02c adds the schema migration path in [`crate::migrations`]: explicit
+//! ordered versioned steps applied only under an explicit
+//! [`MigrationPolicy`], a checkpoint-consistent backup taken and verified
+//! before any schema mutation, durable migration audit rows in this store,
+//! and an explicit [`Store::restore`] for operator recovery.
 
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
@@ -19,7 +26,14 @@ use sqlx::{Connection, Row};
 
 pub const DRIVE_DIRECTORY: &str = ".fluzodrive";
 pub const DATABASE_FILE: &str = "state.sqlite3";
-pub(crate) const SCHEMA_VERSION: &str = "2";
+pub(crate) const SCHEMA_VERSION: &str = "3";
+
+use crate::migrations::{self};
+
+pub use crate::migrations::{
+    BACKUP_DIRECTORY, BASELINE_VERSION, MIGRATIONS, MigrationPolicy, MigrationRecord,
+    MigrationState, MigrationStep, TARGET_VERSION,
+};
 
 // O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC, matching the configuration writer.
 pub(crate) const ANCHOR_FLAGS: i32 = 0x20000 | 0x10000 | 0x800;
@@ -35,6 +49,42 @@ pub enum StoreError {
     Corrupt,
     Constraint,
     Io,
+    /// The store records a schema version above `TARGET_VERSION`. Never
+    /// partially interpreted: the open is refused.
+    SchemaTooNew,
+    /// The store is below the target version and the policy forbids migrating.
+    MigrationRequired,
+    /// The pre-migration backup did not survive verification, so the
+    /// migration was not attempted and the schema is unchanged.
+    BackupVerificationFailed,
+    /// A migration step failed. The store is intact but the recorded attempt
+    /// is not terminal, so reopen refuses until an operator acts.
+    MigrationFailed,
+    /// A recorded migration never reached a terminal state (crash boundary).
+    /// The pre-migration backup is the recovery path.
+    MigrationInterrupted,
+}
+
+impl fmt::Display for StoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::UnsupportedPath => "unsupported store path",
+            Self::Inaccessible => "store is inaccessible",
+            Self::Conflict => "store path conflicts with a safe owner",
+            Self::PragmaNotEnforced => "required durability PRAGMA not enforced",
+            Self::Busy => "store write lock is held elsewhere",
+            Self::Full => "store storage is full",
+            Self::Corrupt => "store is corrupt",
+            Self::Constraint => "store constraint violated",
+            Self::Io => "store I/O failure",
+            Self::SchemaTooNew => "store schema is newer than this build supports",
+            Self::MigrationRequired => "store schema migration is required",
+            Self::BackupVerificationFailed => "pre-migration backup failed verification",
+            Self::MigrationFailed => "schema migration failed",
+            Self::MigrationInterrupted => "schema migration did not finish",
+        };
+        formatter.write_str(text)
+    }
 }
 
 /// One current-state row written as part of a logical unit.
@@ -67,23 +117,28 @@ pub struct Store {
     pub(crate) connection: sqlx::SqliteConnection,
     pub(crate) drive_directory: PathBuf,
     pub(crate) drive_handle: File,
+    /// Schema version this store was opened at. `commit_unit` needs it
+    /// because `updated_at` only exists from v3 on, and a store opened under
+    /// `Preserve` legitimately sits below the migration target.
+    schema_version: u32,
 }
 
 impl Store {
     /// Opens (creating when absent) the workspace journal under a protected
-    /// `.fluzodrive` directory. Fails closed before any write when the
-    /// directory, the database file or the parent identity is unsafe.
+    /// `.fluzodrive` directory, applying the explicit forward migration path.
+    /// Fails closed before any write when the directory, the database file or
+    /// the parent identity is unsafe.
     pub async fn open(workspace_root: &Path) -> Result<Self, StoreError> {
-        if !cfg!(all(target_os = "linux", target_arch = "x86_64")) || !workspace_root.is_absolute()
-        {
-            return Err(StoreError::UnsupportedPath);
-        }
-        if workspace_root
-            .components()
-            .any(|part| !matches!(part, Component::RootDir | Component::Normal(_)))
-        {
-            return Err(StoreError::UnsupportedPath);
-        }
+        Self::open_with_policy(workspace_root, MigrationPolicy::Migrate).await
+    }
+
+    /// Opens the store under an explicit migration policy. Migrations are
+    /// applied only here, only by the store owner, and only forward.
+    pub async fn open_with_policy(
+        workspace_root: &Path,
+        policy: MigrationPolicy,
+    ) -> Result<Self, StoreError> {
+        Self::validate_root(workspace_root)?;
         let drive_directory = workspace_root.join(DRIVE_DIRECTORY);
         let drive_handle = Self::anchor_drive(&drive_directory)?;
         let database_path = drive_directory.join(DATABASE_FILE);
@@ -100,12 +155,311 @@ impl Store {
             .await
             .map_err(|_| StoreError::Inaccessible)?;
         Self::verify_pragmas(&mut connection).await?;
-        Self::migrate(&mut connection).await?;
-        Ok(Self {
+        let mut store = Self {
             connection,
             drive_directory,
             drive_handle,
-        })
+            schema_version: 0,
+        };
+        store.prepare_schema(policy).await?;
+        store.schema_version = migrations::recorded_version(&mut store.connection)
+            .await?
+            .unwrap_or(0);
+        Ok(store)
+    }
+
+    /// Rejects paths this store will not operate on. Shared by open and
+    /// restore so both apply the identical discipline.
+    fn validate_root(workspace_root: &Path) -> Result<(), StoreError> {
+        if !cfg!(all(target_os = "linux", target_arch = "x86_64")) || !workspace_root.is_absolute()
+        {
+            return Err(StoreError::UnsupportedPath);
+        }
+        if workspace_root
+            .components()
+            .any(|part| !matches!(part, Component::RootDir | Component::Normal(_)))
+        {
+            return Err(StoreError::UnsupportedPath);
+        }
+        Ok(())
+    }
+
+    /// Brings the schema to the state the policy allows, refusing closed
+    /// otherwise.
+    ///
+    /// A brand-new store is created directly at the target version, so it
+    /// never needs a migration and no backup is taken of an empty database.
+    /// An existing store is compared against the target: above it is always
+    /// refused, below it is migrated only under `Migrate`.
+    async fn prepare_schema(&mut self, policy: MigrationPolicy) -> Result<(), StoreError> {
+        // No marker table at all means this is a brand-new store rather than
+        // an unrecognised one, so build the current shape and stop.
+        if !migrations::has_table(&mut self.connection, "store_meta").await? {
+            return Self::create_baseline(&mut self.connection).await;
+        }
+        // A previous attempt that never reached a terminal state means the
+        // schema may be half-migrated. Refuse rather than guess, whatever
+        // the policy: no read-only inspection may ride over a broken step.
+        // The audit table is only read when it already exists, because a
+        // read-only policy must not write at all.
+        if migrations::has_table(&mut self.connection, "migration_run").await?
+            && let Some(record) = migrations::latest_run(&mut self.connection).await?
+        {
+            match record.state {
+                MigrationState::Running => return Err(StoreError::MigrationInterrupted),
+                MigrationState::Failed => return Err(StoreError::MigrationFailed),
+                MigrationState::Succeeded | MigrationState::Restored => {}
+            }
+        }
+        let current = migrations::recorded_version(&mut self.connection)
+            .await?
+            .ok_or(StoreError::Corrupt)?;
+        if current > migrations::TARGET_VERSION {
+            return Err(StoreError::SchemaTooNew);
+        }
+        if current == migrations::TARGET_VERSION {
+            return Ok(());
+        }
+        match policy {
+            MigrationPolicy::ReadOnly => Err(StoreError::MigrationRequired),
+            MigrationPolicy::Preserve => Ok(()),
+            MigrationPolicy::Migrate => {
+                // Only now, and only because we are about to migrate, is the
+                // audit table created. It records history and is deliberately
+                // not part of the versioned schema evolution, so an older
+                // store can be audited before it is migrated.
+                migrations::ensure_audit_table(&mut self.connection).await?;
+                self.run_migrations(current).await
+            }
+        }
+    }
+
+    /// Applies the registered forward steps from `current` to the target,
+    /// one at a time. Each step is backed up and verified before its DDL, and
+    /// its start is committed durably before the DDL runs, so a crash leaves
+    /// a non-terminal record that reopen refuses to ignore.
+    async fn run_migrations(&mut self, mut current: u32) -> Result<(), StoreError> {
+        while current < migrations::TARGET_VERSION {
+            let Some(step) = migrations::step_for(current) else {
+                // No registered step for this version: refuse rather than
+                // guess at a path forward.
+                return Err(StoreError::MigrationFailed);
+            };
+            self.verify_drive()?;
+            let backup = migrations::take_backup(
+                &mut self.connection,
+                &self.drive_directory,
+                step.from_version(),
+                step.to_version(),
+            )
+            .await?;
+            if let Err(error) = migrations::verify_backup(&backup, step.from_version(), step).await
+            {
+                // The schema was never touched. Record the refusal so the
+                // operator can see why the store will not come up.
+                let _ = migrations::record_run(
+                    &mut self.connection,
+                    step.from_version(),
+                    step.to_version(),
+                    MigrationState::Failed,
+                    Some(&backup.to_string_lossy()),
+                    Some("backup verification failed; migration not attempted"),
+                )
+                .await;
+                return Err(error);
+            }
+            let run_id = migrations::record_run(
+                &mut self.connection,
+                step.from_version(),
+                step.to_version(),
+                MigrationState::Running,
+                Some(&backup.to_string_lossy()),
+                None,
+            )
+            .await?;
+            #[cfg(test)]
+            if migrations::CRASH_AFTER_RUNNING_RECORD.load(std::sync::atomic::Ordering::SeqCst) {
+                // The test harness captures the child's streams and an abort
+                // discards them, so the crash point is announced through a
+                // file the parent can read back.
+                let _ = fs::write(
+                    self.drive_directory.join(migrations::CRASH_MARKER_FILE),
+                    b"crashed on the durable running record",
+                );
+                std::process::abort();
+            }
+            match self.apply_step_and_commit(step, run_id).await {
+                Ok(()) => current = step.to_version(),
+                Err(error) => {
+                    let reason = error.to_string();
+                    let _ = migrations::finish_run(
+                        &mut self.connection,
+                        run_id,
+                        MigrationState::Failed,
+                        Some(&reason),
+                    )
+                    .await;
+                    // The underlying driver error belongs in the audit row;
+                    // the caller only needs to know the migration failed.
+                    return Err(StoreError::MigrationFailed);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies one step, bumps the version marker and marks the run
+    /// successful in a single transaction: the step either fully lands or
+    /// not at all.
+    async fn apply_step_and_commit(
+        &mut self,
+        step: MigrationStep,
+        run_id: i64,
+    ) -> Result<(), StoreError> {
+        let mut transaction = self
+            .connection
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(map_error)?;
+        migrations::apply(&mut transaction, step).await?;
+        sqlx::query("UPDATE store_meta SET value = ?1 WHERE key = 'schema_version'")
+            // The step's own target, never the overall TARGET_VERSION: with
+            // more than one registered step a jump to the final marker would
+            // leave the intermediate shape claiming to be the last one.
+            .bind(step.to_version().to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(map_error)?;
+        sqlx::query("UPDATE migration_run SET state = ?2, error = NULL WHERE id = ?1")
+            .bind(run_id)
+            .bind(MigrationState::Succeeded.as_str())
+            .execute(&mut *transaction)
+            .await
+            .map_err(map_error)?;
+        transaction.commit().await.map_err(map_error)
+    }
+
+    /// The schema version this store is recorded at.
+    pub async fn schema_version(&mut self) -> Result<u32, StoreError> {
+        Ok(self.schema_version)
+    }
+
+    /// Test-only handle to the live connection, for fixtures that must hold
+    /// the write lock or take a backup through the migration helpers.
+    #[cfg(test)]
+    pub(crate) fn connection_for_test(&mut self) -> &mut sqlx::SqliteConnection {
+        &mut self.connection
+    }
+
+    /// The durable migration audit trail, oldest first.
+    pub async fn migration_log(&mut self) -> Result<Vec<MigrationRecord>, StoreError> {
+        migrations::migration_log(&mut self.connection).await
+    }
+
+    /// Explicitly restores the live store from a pre-migration backup taken
+    /// by this module, returning it to the exact state captured in that
+    /// backup.
+    ///
+    /// Nothing calls this automatically. A failed or interrupted migration
+    /// only refuses to open and reports the backup path; the operator must
+    /// name the backup to restore. Restoring discards everything the live
+    /// store gained after the backup was taken, which is why it is never
+    /// inferred.
+    ///
+    /// The backup must be a plain regular file inside this drive's own
+    /// `backups/` directory: no symlinks, no hard links, no arbitrary path.
+    /// It is verified before anything is replaced, and the replacement is a
+    /// staged rename inside the drive so it is atomic.
+    pub async fn restore(workspace_root: &Path, backup_path: &Path) -> Result<Self, StoreError> {
+        Self::validate_root(workspace_root)?;
+        let drive_directory = workspace_root.join(DRIVE_DIRECTORY);
+        let drive_handle = Self::anchor_drive(&drive_directory)?;
+        let backups = migrations::ensure_backup_directory(&drive_directory)?;
+        if backup_path.parent() != Some(backups.as_path()) {
+            return Err(StoreError::UnsupportedPath);
+        }
+        let metadata = fs::symlink_metadata(backup_path).map_err(|_| StoreError::Inaccessible)?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(StoreError::Conflict);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 {
+                return Err(StoreError::Conflict);
+            }
+        }
+        let restored_version = migrations::verify_restore_backup(backup_path).await?;
+
+        // Prove the live store is not held by another writer before we
+        // replace it underneath them.
+        Self::assert_live_store_is_free(&drive_directory).await?;
+
+        let database = drive_directory.join(DATABASE_FILE);
+        let staging = drive_directory.join(format!("{DATABASE_FILE}.restore"));
+        fs::copy(backup_path, &staging).map_err(|_| StoreError::Io)?;
+        let staged = OpenOptions::new()
+            .write(true)
+            .open(&staging)
+            .map_err(|_| StoreError::Io)?;
+        staged.sync_all().map_err(|_| StoreError::Io)?;
+        drop(staged);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&staging, fs::Permissions::from_mode(0o600))
+                .map_err(|_| StoreError::Io)?;
+        }
+        // Any leftover WAL/shared-memory files belong to the store being
+        // replaced, not to the snapshot, so they must not survive the swap.
+        let _ = fs::remove_file(drive_directory.join(format!("{DATABASE_FILE}-wal")));
+        let _ = fs::remove_file(drive_directory.join(format!("{DATABASE_FILE}-shm")));
+        fs::rename(&staging, &database).map_err(|_| StoreError::Io)?;
+
+        // `Preserve` so the operator sees exactly what was restored rather
+        // than a silently re-migrated store.
+        let mut store = Self::open_with_policy(workspace_root, MigrationPolicy::Preserve).await?;
+        store.verify_drive()?;
+        migrations::ensure_audit_table(&mut store.connection).await?;
+        migrations::record_run(
+            &mut store.connection,
+            restored_version,
+            restored_version,
+            MigrationState::Restored,
+            Some(&backup_path.to_string_lossy()),
+            None,
+        )
+        .await?;
+        drop(drive_handle);
+        Ok(store)
+    }
+
+    /// Takes and releases the write lock on the live database to prove no
+    /// other writer holds it. Returns `Busy` rather than replacing a store
+    /// that is in use.
+    async fn assert_live_store_is_free(drive_directory: &Path) -> Result<(), StoreError> {
+        let database = drive_directory.join(DATABASE_FILE);
+        if fs::symlink_metadata(&database).is_err() {
+            return Ok(());
+        }
+        let options = SqliteConnectOptions::new()
+            .filename(&database)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Full)
+            .foreign_keys(true)
+            .busy_timeout(Duration::ZERO);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .map_err(|_| StoreError::Inaccessible)?;
+        let locked = match connection.begin_with("BEGIN IMMEDIATE").await {
+            Ok(transaction) => transaction.rollback().await.is_err(),
+            Err(_) => true,
+        };
+        drop(connection);
+        if locked {
+            return Err(StoreError::Busy);
+        }
+        Ok(())
     }
 
     /// Commits state updates and journal records for one logical unit in a
@@ -122,18 +476,36 @@ impl Store {
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(map_error)?;
+        let now = migrations::epoch_seconds();
         for update in updates {
-            sqlx::query(
-                "INSERT INTO state (id, kind, payload, revision) VALUES (?1, ?2, ?3, 1)
-                 ON CONFLICT(id) DO UPDATE SET kind = excluded.kind,
-                     payload = excluded.payload, revision = state.revision + 1",
-            )
-            .bind(&update.id)
-            .bind(&update.kind)
-            .bind(&update.payload)
-            .execute(&mut *transaction)
-            .await
-            .map_err(map_error)?;
+            if self.schema_version >= 3 {
+                sqlx::query(
+                    "INSERT INTO state (id, kind, payload, revision, updated_at)
+                     VALUES (?1, ?2, ?3, 1, ?4)
+                     ON CONFLICT(id) DO UPDATE SET kind = excluded.kind,
+                         payload = excluded.payload, revision = state.revision + 1,
+                         updated_at = excluded.updated_at",
+                )
+                .bind(&update.id)
+                .bind(&update.kind)
+                .bind(&update.payload)
+                .bind(now)
+                .execute(&mut *transaction)
+                .await
+                .map_err(map_error)?;
+            } else {
+                sqlx::query(
+                    "INSERT INTO state (id, kind, payload, revision) VALUES (?1, ?2, ?3, 1)
+                     ON CONFLICT(id) DO UPDATE SET kind = excluded.kind,
+                         payload = excluded.payload, revision = state.revision + 1",
+                )
+                .bind(&update.id)
+                .bind(&update.kind)
+                .bind(&update.payload)
+                .execute(&mut *transaction)
+                .await
+                .map_err(map_error)?;
+            }
         }
         for event in events {
             sqlx::query("INSERT INTO event (state_id, kind, payload) VALUES (?1, ?2, ?3)")
@@ -390,7 +762,11 @@ impl Store {
         Ok(())
     }
 
-    async fn migrate(connection: &mut sqlx::SqliteConnection) -> Result<(), StoreError> {
+    /// Creates the baseline schema at the current target version. A brand-new
+    /// store is built directly at `TARGET_VERSION` so it never needs a
+    /// migration; stores written by an earlier build reach the same shape by
+    /// the explicit steps in `crate::migrations`.
+    async fn create_baseline(connection: &mut sqlx::SqliteConnection) -> Result<(), StoreError> {
         let mut transaction = connection
             .begin_with("BEGIN IMMEDIATE")
             .await
@@ -406,12 +782,17 @@ impl Store {
                  id TEXT PRIMARY KEY,
                  kind TEXT NOT NULL,
                  payload TEXT NOT NULL,
-                 revision INTEGER NOT NULL
+                 revision INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL DEFAULT 0
              )",
         )
         .execute(&mut *transaction)
         .await
         .map_err(map_error)?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS state_kind_idx ON state(kind)")
+            .execute(&mut *transaction)
+            .await
+            .map_err(map_error)?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS event (
                  seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -442,15 +823,6 @@ impl Store {
             .execute(&mut *transaction)
             .await
             .map_err(map_error)?;
-        // Bootstrap-stage marker update for stores created before the artifact
-        // table existed. The versioned migration framework is DAT-02c (#74).
-        sqlx::query(
-            "UPDATE store_meta SET value = ?1 WHERE key = 'schema_version' AND value <> ?1",
-        )
-        .bind(SCHEMA_VERSION)
-        .execute(&mut *transaction)
-        .await
-        .map_err(map_error)?;
         transaction.commit().await.map_err(map_error)
     }
 }
