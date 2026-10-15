@@ -242,6 +242,68 @@ Resolved design questions (decisions, not observations):
 - Human review of this PR is still required; `has_completed_all_phases`
   stays `false` until that happens.
 
+## P4: CI failure diagnosis and store-lifetime fix (implemented)
+
+The first CI run of this PR failed consistently (twice, same test, same
+error) on `scripts/test_history.py::
+test_confirmed_purge_removes_exclusive_and_preserves_shared` with
+`{"code":"storage_unavailable","message":"storage unavailable: Busy"}`.
+Every local run passed, including under CPU load and pinned to 1 and 2
+CPUs.
+
+Diagnosis, in order of elimination:
+
+- The error is `StoreError::Busy`, which the store raises only because it
+  is deliberately configured with `busy_timeout = 0`. Nothing in the
+  purge path waits.
+- The failing call was the *second* purge in the test (gamma), not the
+  first, so the store had already been opened and closed once by the CLI.
+- A 200-iteration same-process probe (open, read, drop, reopen) showed
+  zero Busy. A 300-iteration variant that took the write lock on the
+  second open also showed zero. The trigger is therefore not observable
+  in one process.
+- The CLI opened the store once per step of a single command -- listing,
+  plan, delete -- and dropped each connection instead of closing it.
+  Dropping defers the real close to a background thread, so the next
+  open re-entered the WAL index while the previous connection was still
+  unwinding. The repo already documents this hazard at the store's
+  test-only close helper; the facade simply never used it.
+
+Fix:
+
+- One `History` owns one runtime and one open store. A command opens
+  once, runs every step against that connection, and closes it
+  explicitly on every exit path including refusals.
+- `Store::close_for_test` becomes production `Store::close`, since the
+  capability is needed outside fixtures.
+- `History::open` retries only the transient open-time `Busy` raised
+  while a previous short-lived opener's lock is still being released --
+  the same class the restore probe already accepts. No write path
+  retries, and a store held by a live writer still refuses after the
+  bounded attempts, so the one-writer-per-workspace contract is
+  unchanged.
+- Every store failure carries its stage (`open`, `list`, `plan`,
+  `delete`, `reclaim`, `close`). The original failure could not be
+  placed; those stages mean different things. Same self-diagnosing
+  discipline as #81.
+- Four facade regression tests added, because the failure depends on
+  scheduling and must not be left to luck: repeated command cycles never
+  meet a busy store; explicit close lets the next opener write
+  immediately; store failures name their stage; drive absence is
+  reported rather than created.
+
+Rebased onto `main` (`d84e3dd`) after #90, #91 and #93 merged; the only
+conflict was the CLI help text and subcommand dispatch, resolved by
+keeping both the telemetry and history surfaces.
+
+Verification after the fix: `cargo fmt --all -- --check`, `cargo clippy
+--workspace --all-targets --locked --offline -- -D warnings`, `cargo
+test --workspace --locked --offline` (207 runtime-lib, 179 tui, 31 core,
+12 http_simulator, 10, 4, 2 -- all pass), `python3 -B -m unittest
+discover -s scripts -p 'test_*.py'` (89 pass), `python3
+scripts/check_dev_setup.py`. CI run 38766453797: `foundation` success,
+including the previously failing case and the new facade cycle test.
+
 ## Next step
 
 Human review of the pull request. If the re-ownership model for shared
@@ -253,6 +315,8 @@ blocked in this issue. DAT-02e (#76) remains the next eligible child of
 ## Evidence and tracking
 
 - Issue: <https://github.com/fluzo-labs/fluzo/issues/75> (parent #12).
-- Pull request: to be created with `Ref: #75`.
+- Pull request: <https://github.com/fluzo-labs/fluzo/pull/92> (`Ref: #75`).
+- CI: run 38766453797 (`Development foundation`) success on
+  `a0316a7`.
 - GitHub issues and the Fluzo Delivery project remain the state authority;
   this document is a design snapshot, not a parallel board.
