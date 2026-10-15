@@ -36,7 +36,7 @@ pub const BASELINE_VERSION: u32 = 1;
 
 /// Highest schema version this build understands. A store recorded above this
 /// value is never partially interpreted; opening it fails closed.
-pub const TARGET_VERSION: u32 = 3;
+pub const TARGET_VERSION: u32 = 4;
 
 /// How the caller wants the schema prepared during open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,6 +60,8 @@ pub enum MigrationStep {
     AddArtifactTable,
     /// v2 -> v3: add `state.updated_at` and the `state_kind_idx` index.
     AddStateUpdatedAtAndKindIndex,
+    /// v3 -> v4: add the `audit` table (OBS-01 required audit path).
+    AddAuditTable,
 }
 
 impl MigrationStep {
@@ -67,6 +69,7 @@ impl MigrationStep {
         match self {
             Self::AddArtifactTable => 1,
             Self::AddStateUpdatedAtAndKindIndex => 2,
+            Self::AddAuditTable => 3,
         }
     }
 
@@ -74,6 +77,7 @@ impl MigrationStep {
         match self {
             Self::AddArtifactTable => 2,
             Self::AddStateUpdatedAtAndKindIndex => 3,
+            Self::AddAuditTable => 4,
         }
     }
 
@@ -81,6 +85,7 @@ impl MigrationStep {
         match self {
             Self::AddArtifactTable => "add artifact table",
             Self::AddStateUpdatedAtAndKindIndex => "add state.updated_at + state_kind_idx",
+            Self::AddAuditTable => "add audit table",
         }
     }
 }
@@ -92,6 +97,7 @@ impl MigrationStep {
 pub const MIGRATIONS: &[MigrationStep] = &[
     MigrationStep::AddArtifactTable,
     MigrationStep::AddStateUpdatedAtAndKindIndex,
+    MigrationStep::AddAuditTable,
 ];
 
 /// Terminal or in-flight state of a recorded migration attempt.
@@ -466,6 +472,7 @@ fn step_backup_matches_pre_migration(
     match step {
         MigrationStep::AddArtifactTable => !has("artifact", tables),
         MigrationStep::AddStateUpdatedAtAndKindIndex => !has("updated_at", columns),
+        MigrationStep::AddAuditTable => !has("audit", tables),
     }
 }
 
@@ -502,6 +509,24 @@ pub async fn apply(
                 .execute(&mut *connection)
                 .await
                 .map_err(crate::store::map_error)?;
+            Ok(())
+        }
+        MigrationStep::AddAuditTable => {
+            sqlx::query(
+                "CREATE TABLE audit (
+                     id TEXT PRIMARY KEY,
+                     category TEXT NOT NULL,
+                     subject TEXT NOT NULL,
+                     action TEXT NOT NULL,
+                     outcome TEXT NOT NULL,
+                     correlation_id TEXT NOT NULL,
+                     detail TEXT NOT NULL,
+                     created_ms INTEGER NOT NULL
+                 )",
+            )
+            .execute(&mut *connection)
+            .await
+            .map_err(crate::store::map_error)?;
             Ok(())
         }
     }

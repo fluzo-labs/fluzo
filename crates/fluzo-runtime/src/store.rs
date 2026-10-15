@@ -26,7 +26,7 @@ use sqlx::{Connection, Row};
 
 pub const DRIVE_DIRECTORY: &str = ".fluzodrive";
 pub const DATABASE_FILE: &str = "state.sqlite3";
-pub(crate) const SCHEMA_VERSION: &str = "3";
+pub(crate) const SCHEMA_VERSION: &str = "4";
 
 use crate::migrations::{self};
 
@@ -872,6 +872,24 @@ impl Store {
                  stored_bytes INTEGER NOT NULL,
                  content_hash TEXT NOT NULL,
                  capture_flags TEXT NOT NULL
+             )",
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_error)?;
+        // OBS-01 required SQLite audit path. Audit rows are committed in
+        // the same durable unit as the work they authorize or record and
+        // are never produced by the diagnostic sinks.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS audit (
+                 id TEXT PRIMARY KEY,
+                 category TEXT NOT NULL,
+                 subject TEXT NOT NULL,
+                 action TEXT NOT NULL,
+                 outcome TEXT NOT NULL,
+                 correlation_id TEXT NOT NULL,
+                 detail TEXT NOT NULL,
+                 created_ms INTEGER NOT NULL
              )",
         )
         .execute(&mut *transaction)
