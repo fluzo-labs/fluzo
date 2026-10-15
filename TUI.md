@@ -1598,7 +1598,7 @@ severity and notice sanitisation. `scripts/test_tui.py` adds a PTY driver run at
 24x80 and 40x120 that walks the list, the detail, a force-stop confirmation,
 a permission prompt with both `Esc` and `Enter`, and the diff, asserting the
 safe defaults are selected and that the terminal restores its exact termios.
-Full workspace results: 298 Rust tests pass, the 78-test Python suite passes,
+Full workspace results: 298 Rust tests pass, the 76-test Python suite passes,
 `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets
 -D warnings` are clean, and `python3 scripts/check_dev_setup.py` passes.
 
