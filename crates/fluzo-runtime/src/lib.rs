@@ -3,9 +3,14 @@ pub mod configuration;
 mod configuration_file;
 pub mod model_discovery;
 pub mod scenario;
+pub mod store;
 
 #[cfg(test)]
 mod scenario_tests;
+
+#[cfg(test)]
+#[path = "store_tests.rs"]
+mod store_tests;
 
 use fluzo_core::RuntimeAvailability;
 
