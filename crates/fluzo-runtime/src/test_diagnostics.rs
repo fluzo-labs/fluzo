@@ -12,8 +12,9 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use std::time::Duration;
 
-use crate::store::{DATABASE_FILE, DRIVE_DIRECTORY, StoreError};
+use crate::store::{DATABASE_FILE, DRIVE_DIRECTORY, Store, StoreError};
 
 pub(crate) const FIXTURE_LOG: &str = "fixture-diagnostics.log";
 
@@ -136,4 +137,51 @@ pub(crate) fn note_recovered(root: &Path, context: &str, attempt: u32) {
         format!("[fluzo-diag] {context}: recovered on attempt {attempt} after transient failures");
     println!("{text}");
     append_to_log(root, &text);
+}
+
+/// Opens a store with bounded backoff on environment-flake errors
+/// (`Inaccessible`/`Io`/`Busy`) only, mirroring the #81 store/migration
+/// fixture discipline. Every failed attempt is logged with a full
+/// environment report before the retry, so a recovery stays visible
+/// evidence. Semantic refusals are never retried. The actual open is a
+/// closure so callers with different open signatures (plain, quotated,
+/// migration-policy) share one self-diagnosing path instead of each
+/// keeping a bare `unwrap()` that hides the runner environment on a
+/// transient `SQLITE_BUSY`.
+pub(crate) fn expect_open<F>(root: &Path, context: &str, mut open: F) -> Store
+where
+    F: FnMut() -> Result<Store, StoreError>,
+{
+    let max_attempts = 4;
+    let mut delay = Duration::from_millis(50);
+    for attempt in 1..=max_attempts {
+        match open() {
+            Ok(store) => {
+                if attempt > 1 {
+                    note_recovered(root, context, attempt);
+                }
+                return store;
+            }
+            Err(error)
+                if attempt < max_attempts
+                    && matches!(
+                        error,
+                        StoreError::Inaccessible | StoreError::Io | StoreError::Busy
+                    ) =>
+            {
+                report_and_log(
+                    root,
+                    &format!("{context} (attempt {attempt}, retrying)"),
+                    error,
+                );
+                std::thread::sleep(delay);
+                delay *= 2;
+            }
+            Err(error) => {
+                report_and_log(root, &format!("{context}: expected open to succeed"), error);
+                panic!("{context}: open failed with {error:?}");
+            }
+        }
+    }
+    unreachable!("loop returns on every attempt");
 }

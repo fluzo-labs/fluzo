@@ -16,12 +16,25 @@ struct Root(PathBuf);
 
 impl Root {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
+        // Canonicalize the temp base so a symlinked TMPDIR cannot make
+        // the fixture root's identity differ from what the ledger
+        // scans, and force 0700 explicitly so the runner's umask
+        // cannot widen or narrow the fixture's permissions (#81
+        // discipline; this fixture never opens a Store, but the raw
+        // temp root carried the same latent exposure).
+        let base = std::env::temp_dir();
+        let base = base.canonicalize().unwrap_or(base);
+        let path = base.join(format!(
             "fluzo-quota-{}-{}",
             process::id(),
             NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
         Self(path)
     }
 
