@@ -224,11 +224,51 @@ DAT-02b/#75; the versioned migration framework is DAT-02c/#74. Real
 model/shell capture arrives with later EXEC work; the contract here is
 proven with fixture producers.
 
+## Local telemetry purge (DAT-02e)
+
+`fluzo telemetry purge --local --dry-run | --yes` clears this
+repository's local diagnostic stores under `.fluzodrive/telemetry/`,
+which are distinct from the DAT-01 history journal:
+
+- the **diagnostic archive** — the bounded JSONL segments
+  (`segment-*.jsonl`) written by `JsonlArchive`;
+- the **pending export buffers** — the per-record files captured through
+  `Store::append_diagnostic`, awaiting a remote backend the deferred
+  OTLP export (#88) has not connected.
+
+**Quiesce before delete.** The core safety property is that no deletion
+happens under a live writer. The purge scans and validates the managed
+root first, then stops and drains the in-process diagnostic hub. A sink
+that cannot drain within the deadline yields `ActiveWriter { component }`
+and nothing is deleted. A dry-run performs no quiesce and no deletion.
+
+**Anchored containment.** The purge reuses the store's fd-anchored,
+symlink-rejecting discipline via `anchor_drive_with(create = false)` and
+the free `anchor_class_in`. A dry-run never creates `.fluzodrive`, the
+telemetry directory or any database file. Every entry is inspected with
+`symlink_metadata` (never following a link); a symlink, directory or any
+non-regular file fails the whole scan closed (`UnsafeRoot`) so a tampered
+layout can never cause a delete outside the root. Removal goes through
+`/proc/self/fd/<fd>` inside the verified handle.
+
+**Confirmation and accounting.** `--yes` is required to delete even in
+YOLO; a caller that cannot confirm returns `confirmation_required` and
+deletes nothing. The result reports the DAT-02b diagnostics-class bytes
+before and after (the ledger recomputes from the filesystem, so the drop
+is structural) and names what was not cleared — remote backend copies
+and shared aggregates stay under their own ownership; the purge never
+claims to erase remote data. A second purge removes nothing (idempotent).
+
+**Independence.** The purge never opens a database write and never
+touches `.fluzo`, credentials or unrelated volumes; the database file is
+byte-for-byte unchanged across a telemetry purge.
+
 ## Focused checks
 
 ```sh
 cargo test -p fluzo-runtime --locked --offline store
 cargo test -p fluzo-runtime --locked --offline migration_tests
+cargo test -p fluzo-runtime --locked --offline telemetry_purge
 ```
 
 Store covers: PRAGMA enforcement, private drive creation, atomic
