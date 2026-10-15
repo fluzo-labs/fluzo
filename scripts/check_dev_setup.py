@@ -204,6 +204,27 @@ EXTERNAL["fluzo-runtime"] |= SQLX_PACKAGE_NAMES
 EXTERNAL["fluzo-cli"] |= SQLX_PACKAGE_NAMES
 DIRECT_EXTERNAL["fluzo-runtime"] |= {"sqlx"}
 DIRECT_EXTERNAL["fluzo-runtime"] |= {"sha2"}  # DAT-02a artifact content hashing
+DIRECT_EXTERNAL["fluzo-runtime"] |= {"rustix"}  # DAT-02b free-space reserve probe
+# DAT-02b: rustix and its already-locked closure. Only `fs`/`std`
+# features are activated on the crate crossterm already pulled in; no new
+# package enters the workspace. The windows-targets tail is walked by the
+# graph checker even though it never compiles on the Linux target.
+DAT02B_PACKAGES = {
+    "rustix",
+    "errno",
+    "linux-raw-sys",
+    "windows-targets",
+    "windows_aarch64_gnullvm",
+    "windows_aarch64_msvc",
+    "windows_i686_gnu",
+    "windows_i686_gnullvm",
+    "windows_i686_msvc",
+    "windows_x86_64_gnu",
+    "windows_x86_64_gnullvm",
+    "windows_x86_64_msvc",
+}
+EXTERNAL["fluzo-runtime"] |= DAT02B_PACKAGES
+EXTERNAL["fluzo-cli"] |= DAT02B_PACKAGES
 TUI_PACKAGES = {
     ("allocator-api2", "0.2.21"): {"alloc"},
     ("bitflags", "2.13.2"): {"std"},
@@ -235,7 +256,10 @@ TUI_PACKAGES = {
     ("paste", "1.0.15"): set(),
     ("ratatui", "0.29.0"): {"crossterm"},
     ("redox_syscall", "0.5.18"): {"default", "userspace"},
-    ("rustix", "0.38.44"): {"alloc", "libc-extra-traits", "std", "stdio", "termios"},
+    # DAT-02b adds `fs` for the statvfs free-space reserve probe. The
+    # crate was already locked transitively via crossterm; no new package
+    # or closure entry is introduced.
+    ("rustix", "0.38.44"): {"alloc", "fs", "libc-extra-traits", "std", "stdio", "termios"},
     ("rustversion", "1.0.23"): set(),
     ("ryu", "1.0.23"): set(),
     ("scopeguard", "1.2.0"): set(),

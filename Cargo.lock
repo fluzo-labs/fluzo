@@ -349,6 +349,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rustix",
  "serde",
  "serde_json",
  "sha2 0.11.0",

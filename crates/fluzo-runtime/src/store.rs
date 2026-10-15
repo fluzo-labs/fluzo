@@ -24,6 +24,11 @@ use std::time::Duration;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
 use sqlx::{Connection, Row};
 
+use crate::quota::{
+    Admission, DIAGNOSTICS_DIRECTORY, DiagnosticDisposition, FileSystemProbe, MountedFileSystem,
+    QuotaClass, QuotaLedger, QuotaLimits, QuotaStatus,
+};
+
 pub const DRIVE_DIRECTORY: &str = ".fluzodrive";
 pub const DATABASE_FILE: &str = "state.sqlite3";
 pub(crate) const SCHEMA_VERSION: &str = "4";
@@ -37,6 +42,38 @@ pub use crate::migrations::{
 
 // O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC, matching the configuration writer.
 pub(crate) const ANCHOR_FLAGS: i32 = 0x20000 | 0x10000 | 0x800;
+// O_NOFOLLOW | O_CLOEXEC for managed content files (no O_DIRECTORY).
+pub(crate) const NOFOLLOW_CLOEXEC: i32 = 0x20000 | 0x800;
+
+/// Upper bound for a diagnostic record name. Keeps the managed directory
+/// flat and the names inspectable.
+const MAX_DIAGNOSTIC_NAME_BYTES: usize = 128;
+
+/// Diagnostic record names are flat, dot-safe and never hidden files.
+fn is_safe_diagnostic_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_DIAGNOSTIC_NAME_BYTES
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+/// Lower bound on the bytes a commit unit adds to the journal: the
+/// row content it carries. Deliberately conservative in the direction
+/// that refuses earlier, which is the safe direction for an admission
+/// threshold.
+fn unit_bytes(updates: &[StateUpdate], events: &[EventRecord]) -> u64 {
+    let updates: u64 = updates
+        .iter()
+        .map(|update| (update.id.len() + update.kind.len() + update.payload.len()) as u64)
+        .sum();
+    let events: u64 = events
+        .iter()
+        .map(|event| (event.state_id.len() + event.kind.len() + event.payload.len()) as u64)
+        .sum();
+    updates.saturating_add(events)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StoreError {
@@ -63,6 +100,17 @@ pub enum StoreError {
     /// A recorded migration never reached a terminal state (crash boundary).
     /// The pre-migration backup is the recovery path.
     MigrationInterrupted,
+    /// DAT-02b: this repository's quota for the named class is reached, so
+    /// the work was refused before starting. Distinct from `Full`, which is
+    /// SQLite reporting a page-cap exhaustion during a write.
+    QuotaReached {
+        class: QuotaClass,
+        used: u64,
+        limit: u64,
+    },
+    /// The bounded local diagnostic capture contract needs an attached
+    /// quota guard; this store was opened without one.
+    QuotaNotConfigured,
 }
 
 impl fmt::Display for StoreError {
@@ -82,6 +130,8 @@ impl fmt::Display for StoreError {
             Self::BackupVerificationFailed => "pre-migration backup failed verification",
             Self::MigrationFailed => "schema migration failed",
             Self::MigrationInterrupted => "schema migration did not finish",
+            Self::QuotaReached { .. } => "repository storage quota reached",
+            Self::QuotaNotConfigured => "store has no quota guard attached",
         };
         formatter.write_str(text)
     }
@@ -121,6 +171,19 @@ pub struct Store {
     /// because `updated_at` only exists from v3 on, and a store opened under
     /// `Preserve` legitimately sits below the migration target.
     schema_version: u32,
+    quota: Option<QuotaLedger>,
+    last_admission: Option<Admission>,
+    diagnostics: DiagnosticCounters,
+}
+
+/// Visible degradation counters for bounded local diagnostic capture.
+/// Dropped records are counted, never silently discarded.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DiagnosticCounters {
+    pub written_records: u64,
+    pub written_bytes: u64,
+    pub dropped_records: u64,
+    pub dropped_bytes: u64,
 }
 
 impl Store {
@@ -137,6 +200,56 @@ impl Store {
     pub async fn open_with_policy(
         workspace_root: &Path,
         policy: MigrationPolicy,
+    ) -> Result<Self, StoreError> {
+        Self::open_inner(workspace_root, policy, None, MountedFileSystem).await
+    }
+
+    /// Opens the journal with this repository's storage quota attached.
+    /// Limits come from the repository's `.fluzo` typed settings, so one
+    /// project's quota never reaches another project's store.
+    pub async fn open_quotated(
+        workspace_root: &Path,
+        limits: QuotaLimits,
+    ) -> Result<Self, StoreError> {
+        Self::open_inner(
+            workspace_root,
+            MigrationPolicy::Migrate,
+            Some(limits),
+            MountedFileSystem,
+        )
+        .await
+    }
+
+    /// As `open_quotated`, with an explicit migration policy.
+    pub async fn open_quotated_with_policy(
+        workspace_root: &Path,
+        limits: QuotaLimits,
+        policy: MigrationPolicy,
+    ) -> Result<Self, StoreError> {
+        Self::open_inner(workspace_root, policy, Some(limits), MountedFileSystem).await
+    }
+
+    /// As `open_quotated`, with an injectable filesystem probe so the
+    /// free-space reserve path is deterministic without filling a disk.
+    pub async fn open_quotated_with_probe(
+        workspace_root: &Path,
+        limits: QuotaLimits,
+        probe: impl FileSystemProbe + Send + Sync + 'static,
+    ) -> Result<Self, StoreError> {
+        Self::open_inner(
+            workspace_root,
+            MigrationPolicy::Migrate,
+            Some(limits),
+            probe,
+        )
+        .await
+    }
+
+    async fn open_inner(
+        workspace_root: &Path,
+        policy: MigrationPolicy,
+        limits: Option<QuotaLimits>,
+        probe: impl FileSystemProbe + Send + Sync + 'static,
     ) -> Result<Self, StoreError> {
         Self::validate_root(workspace_root)?;
         let drive_directory = workspace_root.join(DRIVE_DIRECTORY);
@@ -167,11 +280,23 @@ impl Store {
                     other => other,
                 }
             })?;
+        // The quota ledger is built before the Self literal so the store
+        // carries it, but this introduces no fallible step outside the
+        // close-guarded block below: QuotaLedger::new only stores its
+        // drive path, limits and probe. verify_pragmas deliberately stays
+        // inside that block rather than being called here, so a pragma
+        // failure still closes the connection deterministically instead
+        // of deferring the real close to a background thread and leaving
+        // the WAL index lock held.
+        let quota = limits.map(|limits| QuotaLedger::new(drive_directory.clone(), limits, probe));
         let mut store = Self {
             connection,
             drive_directory,
             drive_handle,
             schema_version: 0,
+            quota,
+            last_admission: None,
+            diagnostics: DiagnosticCounters::default(),
         };
         // Every post-connect failure path closes the connection
         // deterministically. Dropping a sqlx connection defers the real
@@ -530,6 +655,7 @@ impl Store {
         events: &[EventRecord],
     ) -> Result<(), StoreError> {
         self.verify_drive()?;
+        self.admit_session_work(updates, events)?;
         let mut transaction = self
             .connection
             .begin_with("BEGIN IMMEDIATE")
@@ -576,6 +702,131 @@ impl Store {
                 .map_err(map_error)?;
         }
         transaction.commit().await.map_err(map_error)
+    }
+
+    /// DAT-02b session admission. Runs strictly before `BEGIN IMMEDIATE`
+    /// so a refusal leaves no partial audit state: nothing has been
+    /// written when the caller sees the typed refusal. The audit headroom
+    /// is what makes the refusal happen *before* the unit's own audit
+    /// rows are at risk rather than during them.
+    pub(crate) fn admit_session_work(
+        &mut self,
+        updates: &[StateUpdate],
+        events: &[EventRecord],
+    ) -> Result<(), StoreError> {
+        self.admit_session_bytes(unit_bytes(updates, events))
+    }
+
+    /// Shared session admission for any write that grows this repository's
+    /// session-data class, whether it is a journal unit or artifact bytes.
+    pub(crate) fn admit_session_bytes(&mut self, incoming: u64) -> Result<(), StoreError> {
+        let Some(ledger) = self.quota.as_ref() else {
+            return Ok(());
+        };
+        let admission = ledger.admit_session(incoming)?;
+        self.last_admission = Some(admission);
+        match admission {
+            Admission::Refused(refusal) => Err(StoreError::QuotaReached {
+                class: refusal.status.class,
+                used: refusal.status.used_bytes,
+                limit: refusal.status.limit_bytes,
+            }),
+            Admission::Warning(_) | Admission::Admitted(_) => Ok(()),
+        }
+    }
+
+    /// Live utilization of one accounted class, or `None` when this store
+    /// was opened without a quota guard.
+    pub fn quota_status(&self, class: QuotaClass) -> Result<Option<QuotaStatus>, StoreError> {
+        self.quota
+            .as_ref()
+            .map(|ledger| ledger.status(class))
+            .transpose()
+    }
+
+    /// The typed outcome of the most recent session admission, including
+    /// the 80% warning that precedes any refusal.
+    pub fn last_admission(&self) -> Option<Admission> {
+        self.last_admission
+    }
+
+    /// Bounded local diagnostic capture under `.fluzodrive/telemetry/`.
+    ///
+    /// At the diagnostics threshold the record is dropped and counted;
+    /// the call still succeeds, because diagnostic saturation must not
+    /// block ordinary execution. Existing capture is never modified.
+    /// A returned `Err` is a genuine safety or I/O problem, not quota.
+    pub fn append_diagnostic(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+    ) -> Result<DiagnosticDisposition, StoreError> {
+        let Some(ledger) = self.quota.as_ref() else {
+            return Err(StoreError::QuotaNotConfigured);
+        };
+        if !is_safe_diagnostic_name(name) {
+            return Err(StoreError::UnsupportedPath);
+        }
+        let disposition = ledger.admit_diagnostic(bytes.len() as u64)?;
+        if let DiagnosticDisposition::Dropped { reason: _, status } = disposition {
+            self.diagnostics.dropped_records += 1;
+            self.diagnostics.dropped_bytes = self
+                .diagnostics
+                .dropped_bytes
+                .saturating_add(bytes.len() as u64);
+            let _ = status;
+            return Ok(disposition);
+        }
+        let directory = self.anchor_class(DIAGNOSTICS_DIRECTORY, true)?;
+        let path = Self::anchored_path(&directory, name);
+        #[cfg(unix)]
+        let mut file = {
+            use std::os::unix::fs::OpenOptionsExt;
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(NOFOLLOW_CLOEXEC)
+                .open(&path)
+                .map_err(|_| StoreError::Conflict)?
+        };
+        #[cfg(not(unix))]
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|_| StoreError::Conflict)?;
+        std::io::Write::write_all(&mut file, bytes).map_err(|_| StoreError::Io)?;
+        file.sync_all().map_err(|_| StoreError::Io)?;
+        self.diagnostics.written_records += 1;
+        self.diagnostics.written_bytes = self
+            .diagnostics
+            .written_bytes
+            .saturating_add(bytes.len() as u64);
+        Ok(disposition)
+    }
+
+    pub fn diagnostic_counters(&self) -> DiagnosticCounters {
+        self.diagnostics
+    }
+
+    /// The effective quota limits for this store, or `None` when opened
+    /// without a guard.
+    pub fn quota_limits(&self) -> Option<QuotaLimits> {
+        self.quota.as_ref().map(QuotaLedger::limits)
+    }
+
+    /// Test hook: retargets the attached quota so thresholds are derived
+    /// from the actual size of a freshly created journal rather than a
+    /// hardcoded figure. Small synthetic limits, no real disk fills.
+    #[cfg(test)]
+    pub(crate) fn set_quota_limits_for_test(
+        &mut self,
+        limits: QuotaLimits,
+    ) -> Result<(), StoreError> {
+        let ledger = self.quota.as_mut().ok_or(StoreError::QuotaNotConfigured)?;
+        ledger.set_limits(limits);
+        Ok(())
     }
 
     pub async fn state(&mut self, id: &str) -> Result<Option<(String, String, i64)>, StoreError> {
@@ -785,6 +1036,53 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    /// Opens (creating when absent) one managed class directory under the
+    /// drive root with the same fd-anchored, symlink-rejecting discipline
+    /// used for the drive itself. Shared by the artifact tree and the
+    /// local diagnostic archive so containment is implemented once.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn anchor_class(&self, class_dir: &str, create: bool) -> Result<File, StoreError> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+        let base = PathBuf::from(format!("/proc/self/fd/{}", self.drive_handle.as_raw_fd()))
+            .join(class_dir);
+        match fs::symlink_metadata(&base) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(StoreError::Conflict);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if !create {
+                    return Err(StoreError::Inaccessible);
+                }
+                fs::DirBuilder::new()
+                    .mode(0o700)
+                    .create(&base)
+                    .map_err(|_| StoreError::Conflict)?;
+            }
+            Err(_) => return Err(StoreError::Inaccessible),
+        }
+        let handle = OpenOptions::new()
+            .read(true)
+            .custom_flags(ANCHOR_FLAGS)
+            .open(&base)
+            .map_err(|_| StoreError::Conflict)?;
+        let current = fs::symlink_metadata(self.drive_directory.join(class_dir))
+            .map_err(|_| StoreError::Conflict)?;
+        let held = handle.metadata().map_err(|_| StoreError::Conflict)?;
+        if current.dev() != held.dev() || current.ino() != held.ino() {
+            return Err(StoreError::Conflict);
+        }
+        Ok(handle)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) fn anchor_class(&self, class_dir: &str, _create: bool) -> Result<File, StoreError> {
+        let _ = class_dir;
+        Err(StoreError::UnsupportedPath)
     }
 
     async fn verify_pragmas(connection: &mut sqlx::SqliteConnection) -> Result<(), StoreError> {
