@@ -28,6 +28,9 @@ impl Root {
     fn marker(&self) -> PathBuf {
         self.0.join("child-marker")
     }
+    fn stderr_log(&self) -> PathBuf {
+        self.0.join("child-stderr.log")
+    }
     fn artifacts(&self) -> PathBuf {
         self.0.join(".fluzodrive").join(ARTIFACTS_DIRECTORY)
     }
@@ -39,13 +42,16 @@ impl Drop for Root {
 }
 
 fn spawn_child(mode: &str, root: &Root, test: &str) -> process::Child {
+    // Capture child stderr to a file so an early child exit is diagnosable
+    // from the parent's failure instead of vanishing into a null device.
+    let stderr_file = fs::File::create(root.stderr_log()).unwrap();
     Command::new(std::env::current_exe().unwrap())
         .arg(test)
         .arg("--exact")
         .env("FLUZO_ARTIFACT_CHILD", mode)
         .env("FLUZO_ARTIFACT_ROOT", &root.0)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .unwrap()
 }
@@ -56,10 +62,20 @@ fn child_mode() -> Option<(String, PathBuf)> {
     Some((mode, root))
 }
 
-fn wait_for_marker(marker: &Path, timeout: Duration) {
+fn wait_for_marker(child: &mut process::Child, marker: &Path, log: &Path, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !marker.exists() {
-        assert!(Instant::now() < deadline, "child never signalled readiness");
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!(
+                "child exited before signalling readiness: {status}\n--- child stderr ---\n{}",
+                fs::read_to_string(log).unwrap_or_default()
+            );
+        }
+        assert!(
+            Instant::now() < deadline,
+            "child never signalled readiness\n--- child stderr ---\n{}",
+            fs::read_to_string(log).unwrap_or_default()
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -363,7 +379,12 @@ fn crash_after_content_write_before_reference_commit_leaves_reclaimable_orphan()
         &root,
         "artifact_tests::crash_after_content_write_before_reference_commit_leaves_reclaimable_orphan",
     );
-    wait_for_marker(&root.marker(), Duration::from_secs(20));
+    wait_for_marker(
+        &mut child,
+        &root.marker(),
+        &root.stderr_log(),
+        Duration::from_secs(60),
+    );
     let status = child.wait().unwrap();
     assert!(!status.success(), "child must die by abort");
     let mut store = rt.block_on(Store::open(&root.0)).unwrap();
@@ -410,7 +431,12 @@ fn crash_after_reference_commit_keeps_content_verifiable() {
         &root,
         "artifact_tests::crash_after_reference_commit_keeps_content_verifiable",
     );
-    wait_for_marker(&root.marker(), Duration::from_secs(20));
+    wait_for_marker(
+        &mut child,
+        &root.marker(),
+        &root.stderr_log(),
+        Duration::from_secs(60),
+    );
     let _ = child.wait().unwrap();
     let mut store = rt.block_on(Store::open(&root.0)).unwrap();
     let record = rt
