@@ -153,7 +153,20 @@ impl Store {
             .busy_timeout(Duration::ZERO);
         let mut connection = sqlx::SqliteConnection::connect_with(&options)
             .await
-            .map_err(|_| StoreError::Inaccessible)?;
+            .map_err(|error| {
+                #[cfg(test)]
+                record_connect_error(&error);
+                // A connection-time failure used to erase the driver's
+                // error class entirely: a transient BUSY or a FULL device
+                // surfaced as a generic `Inaccessible`, which made CI
+                // flakes undiagnosable. Transient classes now surface
+                // distinctly; unknown I/O still fails closed as
+                // `Inaccessible`.
+                match map_error(error) {
+                    StoreError::Io => StoreError::Inaccessible,
+                    other => other,
+                }
+            })?;
         Self::verify_pragmas(&mut connection).await?;
         let mut store = Self {
             connection,
@@ -825,6 +838,31 @@ impl Store {
             .map_err(map_error)?;
         transaction.commit().await.map_err(map_error)
     }
+}
+
+/// Test-only capture of the last erased driver error at the connect
+/// boundary, so a fixture that sees `Inaccessible` can print what the
+/// driver actually reported instead of guessing.
+#[cfg(test)]
+pub(crate) static LAST_CONNECT_ERROR: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn record_connect_error(error: &sqlx::Error) {
+    if let Ok(mut slot) = LAST_CONNECT_ERROR.lock() {
+        *slot = Some(error.to_string());
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn last_connect_error() -> String {
+    LAST_CONNECT_ERROR
+        .lock()
+        .map(|slot| {
+            slot.clone()
+                .unwrap_or_else(|| "none recorded by this process".to_owned())
+        })
+        .unwrap_or_else(|_| "diagnostic lock poisoned".to_owned())
 }
 
 pub(crate) fn map_error(error: sqlx::Error) -> StoreError {

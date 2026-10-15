@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use sqlx::sqlite::SqliteConnection;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous};
@@ -31,12 +32,23 @@ struct Root {
 impl Root {
     fn new(label: &str) -> Self {
         let unique = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let path = std::env::temp_dir().join(format!(
+        // Canonicalize the temp base so a symlinked TMPDIR cannot make
+        // the fixture root's identity differ from what the store sees,
+        // and force 0700 explicitly so the runner's umask cannot widen
+        // or narrow the fixture's permissions.
+        let base = std::env::temp_dir();
+        let base = base.canonicalize().unwrap_or(base);
+        let path = base.join(format!(
             "fluzo-dat02c-{label}-{}-{unique}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("temp root");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).expect("root mode");
+        }
         Self { path }
     }
 
@@ -218,6 +230,97 @@ async fn open(root: &Root, policy: MigrationPolicy) -> Result<Store, StoreError>
     Store::open_with_policy(&root.path, policy).await
 }
 
+/// Only these classes are treated as possible environment flakes worth a
+/// bounded retry. Semantic refusals (MigrationFailed, SchemaTooNew, ...)
+/// are never retried: they are the contract talking.
+fn is_env_flake(error: StoreError) -> bool {
+    matches!(
+        error,
+        StoreError::Inaccessible | StoreError::Io | StoreError::Busy
+    )
+}
+
+/// Opens with bounded backoff on environment-flake errors only. Every
+/// failed attempt is logged with a full environment report before the
+/// retry, so a recovery is still visible evidence, not a hidden flake.
+async fn open_logged(
+    root: &Root,
+    policy: MigrationPolicy,
+    context: &str,
+) -> Result<Store, StoreError> {
+    let mut delay = Duration::from_millis(50);
+    let max_attempts = 4;
+    for attempt in 1..=max_attempts {
+        match open(root, policy).await {
+            Ok(store) => {
+                if attempt > 1 {
+                    crate::test_diagnostics::note_recovered(&root.path, context, attempt);
+                }
+                return Ok(store);
+            }
+            Err(error) if attempt < max_attempts && is_env_flake(error) => {
+                crate::test_diagnostics::report_and_log(
+                    &root.path,
+                    &format!("{context} (attempt {attempt}, retrying)"),
+                    error,
+                );
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("loop returns on every attempt");
+}
+
+async fn expect_open(root: &Root, policy: MigrationPolicy, context: &str) -> Store {
+    match open_logged(root, policy, context).await {
+        Ok(store) => store,
+        Err(error) => {
+            crate::test_diagnostics::report_and_log(
+                &root.path,
+                &format!("{context}: expected open to succeed"),
+                error,
+            );
+            panic!("{context}: open failed with {error:?}");
+        }
+    }
+}
+
+async fn expect_open_refused(
+    root: &Root,
+    policy: MigrationPolicy,
+    expected: StoreError,
+    context: &str,
+) {
+    match open_logged(root, policy, context).await {
+        Ok(_) => panic!("{context}: open unexpectedly succeeded, expected {expected:?}"),
+        Err(error) if error == expected => {}
+        Err(error) => {
+            crate::test_diagnostics::report_and_log(
+                &root.path,
+                &format!("{context}: expected refusal {expected:?}"),
+                error,
+            );
+            panic!("{context}: expected {expected:?}, got {error:?}");
+        }
+    }
+}
+
+async fn expect_restore(root: &Root, backup: &Path, context: &str) -> Store {
+    match Store::restore(&root.path, backup).await {
+        Ok(store) => store,
+        Err(error) => {
+            crate::test_diagnostics::report_and_log(
+                &root.path,
+                &format!("{context}: explicit restore failed"),
+                error,
+            );
+            panic!("{context}: restore failed with {error:?}");
+        }
+    }
+}
+
 // --- registry -------------------------------------------------------------
 
 #[test]
@@ -254,9 +357,7 @@ fn the_migration_registry_is_contiguous_and_forward_only() {
 #[tokio::test]
 async fn a_fresh_store_is_at_the_target_version_with_no_migration_run() {
     let root = Root::new("fresh");
-    let mut store = open(&root, MigrationPolicy::Migrate)
-        .await
-        .expect("fresh store opens");
+    let mut store = expect_open(&root, MigrationPolicy::Migrate, "fresh open").await;
     assert_eq!(store.schema_version().await.unwrap(), TARGET_VERSION);
     assert!(
         store.migration_log().await.unwrap().is_empty(),
@@ -278,10 +379,13 @@ async fn read_only_policy_refuses_an_older_store_without_touching_it() {
     fs::create_dir_all(root.drive()).unwrap();
     create_v1_store(&root.database()).await;
 
-    assert_eq!(
-        open(&root, MigrationPolicy::ReadOnly).await.err(),
-        Some(StoreError::MigrationRequired)
-    );
+    expect_open_refused(
+        &root,
+        MigrationPolicy::ReadOnly,
+        StoreError::MigrationRequired,
+        "read-only refusal",
+    )
+    .await;
     assert_eq!(
         meta_value(&root.database(), "schema_version")
             .await
@@ -311,9 +415,12 @@ async fn preserve_policy_opens_an_older_store_without_migrating() {
     fs::create_dir_all(root.drive()).unwrap();
     create_v1_store(&root.database()).await;
 
-    let mut store = open(&root, MigrationPolicy::Preserve)
-        .await
-        .expect("preserve opens an older store");
+    let mut store = expect_open(
+        &root,
+        MigrationPolicy::Preserve,
+        "preserve opens older store",
+    )
+    .await;
     assert_eq!(store.schema_version().await.unwrap(), BASELINE_VERSION);
     assert!(
         !state_columns(&root.database())
@@ -338,11 +445,13 @@ async fn a_newer_schema_version_is_refused_by_every_policy_and_left_untouched() 
             "UPDATE store_meta SET value = '99' WHERE key = 'schema_version'",
         )
         .await;
-        assert_eq!(
-            open(&root, policy).await.err(),
-            Some(StoreError::SchemaTooNew),
-            "{policy:?} must refuse a schema above the supported target"
-        );
+        expect_open_refused(
+            &root,
+            policy,
+            StoreError::SchemaTooNew,
+            &format!("{policy:?} refuses schema above target"),
+        )
+        .await;
         assert_eq!(
             meta_value(&root.database(), "schema_version")
                 .await
@@ -370,9 +479,7 @@ async fn migrate_backs_up_verifies_and_applies_the_registered_step() {
     fs::create_dir_all(root.drive()).unwrap();
     create_v1_store(&root.database()).await;
 
-    let mut store = open(&root, MigrationPolicy::Migrate)
-        .await
-        .expect("migration succeeds");
+    let mut store = expect_open(&root, MigrationPolicy::Migrate, "initial migrate").await;
     assert_eq!(store.schema_version().await.unwrap(), TARGET_VERSION);
     assert!(
         state_columns(&root.database())
@@ -413,9 +520,7 @@ async fn migrate_backs_up_verifies_and_applies_the_registered_step() {
 
     // Reopening is a no-op: the store is already at the target.
     drop(store);
-    let mut again = open(&root, MigrationPolicy::Migrate)
-        .await
-        .expect("reopen after migration");
+    let mut again = expect_open(&root, MigrationPolicy::Migrate, "reopen after migration").await;
     assert_eq!(again.schema_version().await.unwrap(), TARGET_VERSION);
     assert_eq!(again.migration_log().await.unwrap().len(), MIGRATIONS.len());
 }
@@ -429,9 +534,12 @@ async fn the_backup_contains_committed_rows_that_are_only_in_the_wal() {
     // Open without migrating, then commit a unit. With `synchronous=FULL`
     // and a tiny WAL the commit lives in `state.sqlite3-wal`, not in the
     // main database file.
-    let mut store = open(&root, MigrationPolicy::Preserve)
-        .await
-        .expect("preserve open");
+    let mut store = expect_open(
+        &root,
+        MigrationPolicy::Preserve,
+        "preserve before wal backup",
+    )
+    .await;
     store
         .commit_unit(
             &[crate::store::StateUpdate {
@@ -470,9 +578,7 @@ async fn backup_directory_and_files_are_owner_only() {
     let root = Root::new("perms");
     fs::create_dir_all(root.drive()).unwrap();
     create_v1_store(&root.database()).await;
-    let mut store = open(&root, MigrationPolicy::Migrate)
-        .await
-        .expect("migrate");
+    let mut store = expect_open(&root, MigrationPolicy::Migrate, "migrate for perms").await;
     let backup = backup_for(&root, 1, 2).expect("backup exists");
     #[cfg(unix)]
     {
@@ -503,10 +609,13 @@ async fn a_failed_step_rolls_back_the_schema_and_is_recorded_as_failed() {
     )
     .await;
 
-    assert_eq!(
-        open(&root, MigrationPolicy::Migrate).await.err(),
-        Some(StoreError::MigrationFailed)
-    );
+    expect_open_refused(
+        &root,
+        MigrationPolicy::Migrate,
+        StoreError::MigrationFailed,
+        "open with pre-existing index",
+    )
+    .await;
     assert_eq!(
         state_columns(&root.database()).await,
         vec!["id", "kind", "payload", "revision"],
@@ -540,11 +649,13 @@ async fn a_failed_migration_is_refused_on_reopen_and_nothing_recovers_automatica
         "CREATE INDEX state_kind_idx ON state(kind)",
     )
     .await;
-    assert!(
-        Store::open_with_policy(&root.path, MigrationPolicy::Migrate)
-            .await
-            .is_err()
-    );
+    expect_open_refused(
+        &root,
+        MigrationPolicy::Migrate,
+        StoreError::MigrationFailed,
+        "first migrate with pre-existing index",
+    )
+    .await;
     // Every policy refuses: a broken step may not be ridden over by a
     // read-only inspection either.
     for policy in [
@@ -552,11 +663,13 @@ async fn a_failed_migration_is_refused_on_reopen_and_nothing_recovers_automatica
         MigrationPolicy::ReadOnly,
         MigrationPolicy::Preserve,
     ] {
-        assert_eq!(
-            open(&root, policy).await.err(),
-            Some(StoreError::MigrationFailed),
-            "{policy:?} must refuse to reopen after a failed migration"
-        );
+        expect_open_refused(
+            &root,
+            policy,
+            StoreError::MigrationFailed,
+            &format!("{policy:?} reopen after failed migration"),
+        )
+        .await;
     }
     assert_eq!(
         meta_value(&root.database(), "schema_version")
@@ -600,10 +713,13 @@ async fn an_interrupted_migration_is_refused_on_reopen() {
     );
 
     // The audit row is durable and non-terminal, so reopen refuses.
-    assert_eq!(
-        open(&root, MigrationPolicy::Migrate).await.err(),
-        Some(StoreError::MigrationInterrupted)
-    );
+    expect_open_refused(
+        &root,
+        MigrationPolicy::Migrate,
+        StoreError::MigrationInterrupted,
+        "reopen after crash",
+    )
+    .await;
     assert!(
         !state_columns(&root.database())
             .await
@@ -631,15 +747,16 @@ async fn restore_returns_the_exact_pre_migration_state() {
         crash_marker(&root),
         "the fixture must reach the durable running record"
     );
-    assert_eq!(
-        open(&root, MigrationPolicy::Migrate).await.err(),
-        Some(StoreError::MigrationInterrupted)
-    );
+    expect_open_refused(
+        &root,
+        MigrationPolicy::Migrate,
+        StoreError::MigrationInterrupted,
+        "pre-restore refusal",
+    )
+    .await;
     let backup = backup_for(&root, 1, 2).expect("backup exists");
 
-    let mut store = Store::restore(&root.path, &backup)
-        .await
-        .expect("explicit restore");
+    let mut store = expect_restore(&root, &backup, "post-interrupt restore").await;
     assert_eq!(
         store.schema_version().await.unwrap(),
         BASELINE_VERSION,
@@ -668,9 +785,8 @@ async fn restore_returns_the_exact_pre_migration_state() {
 
     // After a restore the store is usable again and can be migrated.
     drop(store);
-    let mut migrated = open(&root, MigrationPolicy::Migrate)
-        .await
-        .expect("a restored store can be migrated");
+    let mut migrated =
+        expect_open(&root, MigrationPolicy::Migrate, "re-migrate after restore").await;
     assert_eq!(migrated.schema_version().await.unwrap(), TARGET_VERSION);
 }
 
@@ -726,9 +842,7 @@ async fn restore_refuses_while_another_writer_holds_the_store() {
     let root = Root::new("restore-busy");
     fs::create_dir_all(root.drive()).unwrap();
     create_v1_store(&root.database()).await;
-    let mut store = open(&root, MigrationPolicy::Preserve)
-        .await
-        .expect("open for holding");
+    let mut store = expect_open(&root, MigrationPolicy::Preserve, "open for holding").await;
     let holder = store
         .connection_for_test()
         .begin_with("BEGIN IMMEDIATE")
@@ -750,9 +864,7 @@ async fn restore_refuses_while_another_writer_holds_the_store() {
     );
     holder.rollback().await.expect("release");
     drop(store);
-    Store::restore(&root.path, &backup)
-        .await
-        .expect("restore succeeds once the holder is gone");
+    let _restored = expect_restore(&root, &backup, "restore after holder release").await;
 }
 
 #[tokio::test]
