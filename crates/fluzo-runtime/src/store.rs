@@ -31,7 +31,7 @@ use crate::quota::{
 
 pub const DRIVE_DIRECTORY: &str = ".fluzodrive";
 pub const DATABASE_FILE: &str = "state.sqlite3";
-pub(crate) const SCHEMA_VERSION: &str = "4";
+pub(crate) const SCHEMA_VERSION: &str = "5";
 
 use crate::migrations::{self};
 
@@ -1166,6 +1166,19 @@ impl Store {
                  correlation_id TEXT NOT NULL,
                  detail TEXT NOT NULL,
                  created_ms INTEGER NOT NULL
+             )",
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_error)?;
+        // DAT-02d active/attached session protection. A session with a
+        // row here is being used and purge must refuse it by name. The
+        // marker is durable rather than in-memory because the process that
+        // attaches a session is not the process that later purges it.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS session_attachment (
+                 state_id TEXT PRIMARY KEY REFERENCES state(id),
+                 attached_at INTEGER NOT NULL
              )",
         )
         .execute(&mut *transaction)

@@ -2,8 +2,10 @@ pub mod artifact;
 pub mod config;
 pub mod configuration;
 mod configuration_file;
+pub mod history;
 pub mod migrations;
 pub mod model_discovery;
+pub mod purge;
 pub mod quota;
 pub mod scenario;
 pub mod store;
@@ -41,6 +43,10 @@ mod telemetry_purge_tests;
 #[cfg(test)]
 #[path = "quota_integration_tests.rs"]
 mod quota_integration_tests;
+
+#[cfg(test)]
+#[path = "purge_tests.rs"]
+mod purge_tests;
 
 use fluzo_core::RuntimeAvailability;
 

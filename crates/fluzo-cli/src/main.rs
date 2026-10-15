@@ -1,3 +1,4 @@
+mod history;
 mod startup;
 
 use std::process::ExitCode;
@@ -105,6 +106,9 @@ fn main() -> ExitCode {
                 "Telemetry: fluzo telemetry purge --local --dry-run | --yes\nPreviews or purges this repository's local diagnostic archive and pending export buffers under .fluzodrive/telemetry/. --dry-run deletes nothing; --yes is required to delete even in YOLO. Quiesces the diagnostic writer or refuses naming it; never touches the database, .fluzo or remote backend data."
             );
             println!(
+                "History: fluzo history list | fluzo history purge --session <id> [--dry-run] | fluzo history purge --all --yes\nReads durable session records only; never starts an agent, runs a tool or contacts a provider.\nAn actual purge requires --yes or an affirmative answer at the prompt; a non-interactive run without --yes returns confirmation_required.\nArtifacts still held by another session are preserved. Attachments block purge until stopped or detached."
+            );
+            println!(
                 "{}",
                 fluzo_tui::availability_text(fluzo_runtime::availability())
             );
@@ -116,6 +120,9 @@ fn main() -> ExitCode {
         .is_some_and(|argument| argument == "telemetry")
     {
         return telemetry_command(&arguments[1..]);
+    }
+    if arguments.first().is_some_and(|value| value == "history") {
+        return history::run(&arguments);
     }
     startup::run(&arguments)
 }

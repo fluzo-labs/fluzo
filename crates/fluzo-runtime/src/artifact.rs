@@ -118,7 +118,7 @@ pub struct OrphanFile {
     pub size: u64,
 }
 
-fn is_safe_artifact_id(id: &str) -> bool {
+pub(crate) fn is_safe_artifact_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= MAX_ID_BYTES
         && !id.starts_with('.')
