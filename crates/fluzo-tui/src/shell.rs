@@ -294,6 +294,8 @@ pub struct Shell {
     history_position: Option<usize>,
     history_draft: String,
     task_demo: crate::tasks::TaskDemo,
+    task_demo_fixture: bool,
+    task_notices_raised: bool,
     task_notice_sequence: u64,
     diff_scroll: usize,
 }
@@ -376,6 +378,8 @@ impl Shell {
             history_position: None,
             history_draft: String::new(),
             task_demo: crate::tasks::TaskDemo::with_rows(task_rows),
+            task_demo_fixture: false,
+            task_notices_raised: false,
             task_notice_sequence: 0,
             diff_scroll: 0,
         })
@@ -843,6 +847,13 @@ impl Shell {
     /// is clamped rather than reset so a reviewer is not thrown to the top of a
     /// long list by an unrelated update.
     fn apply_snapshot(&mut self, snapshot: Snapshot) {
+        if self.task_demo_fixture {
+            // The interactive demo shows the fixed multi-state fixture; scene
+            // playback updates the conversation but must not collapse the task
+            // list back to the single-task scene. The snapshot is still stored.
+            self.snapshot = snapshot;
+            return;
+        }
         let previous: Vec<(u64, fluzo_core::application::TaskState)> = self
             .task_demo
             .rows
@@ -856,6 +867,16 @@ impl Shell {
             .min(self.task_demo.rows.len().saturating_sub(1));
         self.snapshot = snapshot;
         self.raise_task_notices(&previous);
+    }
+
+    /// Installs the multi-state Ctrl+T review fixture. The fixture is
+    /// presentation only: it authorizes nothing and consumes no grant. Once
+    /// installed, scene playback cannot replace it. The UI-04 notification set
+    /// is raised lazily on the first Ctrl+T open (see the Tasks key handler) so
+    /// it does not pre-empt the independent notification-preview surface.
+    pub fn install_task_demo_fixture(&mut self) {
+        self.task_demo = crate::tasks::multi_state_fixture();
+        self.task_demo_fixture = true;
     }
 
     /// Raises a synthetic notice when a projected task enters a notice-eligible
@@ -1654,6 +1675,14 @@ impl Shell {
                 KeyCode::Char('t') => {
                     self.overlay = Some(Overlay::Tasks);
                     self.task_demo.detail = false;
+                    if self.task_demo_fixture && !self.task_notices_raised {
+                        // Raise the UI-04 notification set for the fixture's
+                        // eligible states once: Blocked->Approval and
+                        // Failed->Error retained; Completed->Success and
+                        // Stopping->Warning transient.
+                        self.raise_task_notices(&[]);
+                        self.task_notices_raised = true;
+                    }
                     self.status = "Synthetic task list; no runtime connected.".into();
                     return;
                 }
