@@ -29,15 +29,21 @@ measured runtime performance results yet.
 Rust 1.98.0 is pinned with rust-analyzer, rust-src, Clippy and rustfmt. Initial
 rustup and locked dependency preparation require network access on a fresh machine;
 validation then runs offline without inference. Python 3.11+ is required for tooling.
+For a step-by-step walkthrough verified from a pristine clone (including the
+welcome/setup and Ctrl+T demo surfaces and known gotchas), see
+[QUICKSTART.md](QUICKSTART.md).
 
 ```sh
 rustup show active-toolchain
 cargo fetch --locked
 cargo fmt --all -- --check
+cargo check --workspace --all-targets --locked --offline
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+cargo build --workspace --locked --offline
 cargo test --workspace --locked --offline
 python3 scripts/check_dev_setup.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 scripts/test_http_simulator.py
 python3 scripts/check_lsp.py
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- --help
 cargo run --locked --offline -p fluzo-cli --bin fluzo -- demo
