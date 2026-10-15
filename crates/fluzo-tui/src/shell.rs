@@ -396,7 +396,7 @@ impl Shell {
             "Agent runtime unavailable. Ctrl+P opens configuration; no execution.".into();
         shell.append(
             "System",
-            "Configuration workspace. No agent runtime, providers or tools are connected.",
+            "Configuration workspace. No agent runtime, providers or tools connected.",
         );
         Ok(shell)
     }
@@ -3360,10 +3360,17 @@ impl Shell {
         if (self.compact(area) || matches!(self.overlay, Some(Overlay::Developer | Overlay::Theme)))
             && (self.overlay.is_none() || self.overlay_area(area).y > area.y + 2)
         {
-            frame.render_widget(
-                Block::default().style(theme.base),
-                Rect::new(area.x + 1, area.y + 2, self.body_area(area).width, 1),
-            );
+            // Clear the whole status row before drawing the short string. A
+            // `Block::default().style()` only repaints the style, not the cell
+            // symbols, so a shorter status drawn over a longer prior line (e.g.
+            // the demo conversation line at this row) leaves the old tail
+            // visible through the ratatui diff. Use the same per-cell reset the
+            // activity row above already applies.
+            let status_row = Rect::new(area.x + 1, area.y + 2, self.body_area(area).width, 1);
+            for column in status_row.x..status_row.right() {
+                frame.buffer_mut()[(column, status_row.y)].reset();
+                frame.buffer_mut()[(column, status_row.y)].set_style(theme.base);
+            }
             frame.render_widget(
                 Paragraph::new(if self.snapshot.demo {
                     format!("Demo state: {:?} · NORMAL · offline", self.task_state())
@@ -3371,7 +3378,7 @@ impl Shell {
                     "NORMAL / runtime unavailable / no execution".into()
                 })
                 .style(theme.muted),
-                Rect::new(area.x + 1, area.y + 2, self.body_area(area).width, 1),
+                status_row,
             );
         }
         if !self.compact(area) && self.overlay.is_none() {
@@ -3417,6 +3424,26 @@ impl Shell {
     fn render_sidebar(&self, frame: &mut Frame, color: bool) {
         let area = frame.area();
         if self.compact(area) {
+            return;
+        }
+        // A centred modal overlay is drawn over the full area with `Clear` only
+        // on its own popup rect. If the sidebar text were still rendered here,
+        // the dialog's right border would land mid-sidebar and the uncovered
+        // tail of each sidebar line would sit flush against that border, reading
+        // as corrupted output. While a modal overlay is open, clear the sidebar
+        // text column so no partially clipped string touches the dialog border,
+        // but keep the wordmark (which sits above the dialog rows and is never
+        // clipped) so the identity relief stays visible.
+        if self.overlay.is_some() {
+            let theme = Theme::new(self.preferences.effective(), color);
+            let start = self.body_area(area).right() + 1;
+            for row in area.y..area.bottom() {
+                for column in start..area.right() {
+                    frame.buffer_mut()[(column, row)].reset();
+                    frame.buffer_mut()[(column, row)].set_style(theme.base);
+                }
+            }
+            self.render_wordmark(frame, color);
             return;
         }
         let inner = Rect::new(
@@ -3737,6 +3764,96 @@ mod tests {
             KeyCode::Char(character),
             KeyModifiers::CONTROL,
         ));
+    }
+
+    // Regression for #82: replacing the top status row with a shorter string
+    // must clear the previous (longer) line's tail across the body width. The
+    // demo conversation line "Ctrl+P opens commands. Esc stops playback; ..."
+    // occupies row 2; opening the Developer overlay draws the short
+    // "Demo state: ... offline" string over it.
+    #[test]
+    fn shorter_status_line_clears_previous_tail() {
+        for (width, height) in [(120, 40), (160, 50)] {
+            let mut state = shell();
+            state.overlay = Some(Overlay::Developer);
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| {
+                    state.render_frame(frame, true);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let row = 2u16;
+            let short = "Demo state: Pending · NORMAL · offline";
+            let drawn: String = (1..=short.chars().count())
+                .map(|c| buffer[(c as u16, row)].symbol().to_string())
+                .collect();
+            assert_eq!(drawn, short, "short status not drawn at row {row}");
+            let body_right = state.body_area(buffer.area).right();
+            for column in (short.chars().count() as u16 + 1)..body_right {
+                assert_eq!(
+                    buffer[(column, row)].symbol(),
+                    " ",
+                    "stale tail glyph survived at column {column} row {row}"
+                );
+            }
+        }
+    }
+
+    // Regression for #83: the configuration status sentence must not strand its
+    // trailing full stop on its own row at the narrowest supported viewport.
+    #[test]
+    fn configuration_status_does_not_strand_trailing_period() {
+        let state = Shell::configuration_shell().unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| {
+                state.render_frame(frame, true);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut rendered_on_one_row = false;
+        for row in 0..24u16 {
+            let text: String = (0..80u16).map(|c| buffer[(c, row)].symbol()).collect();
+            assert_ne!(text.trim(), ".", "orphaned trailing period at row {row}");
+            if text.contains(
+                "Configuration workspace. No agent runtime, providers or tools connected.",
+            ) {
+                rendered_on_one_row = true;
+            }
+        }
+        assert!(
+            rendered_on_one_row,
+            "configuration sentence not rendered on a single row"
+        );
+    }
+
+    // Regression for #85: a centred modal overlay over the wide sidebar must not
+    // leave a clipped sidebar glyph flush against the dialog's right border.
+    #[test]
+    fn overlay_dialog_does_not_clip_sidebar_against_right_border() {
+        for (width, height) in [(120, 40), (160, 50)] {
+            let mut state = shell_with_task();
+            control(&mut state, 't');
+            assert_eq!(state.overlay, Some(Overlay::Tasks));
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| {
+                    state.render_frame(frame, true);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let popup = state.overlay_area(buffer.area);
+            assert!(popup.right() < buffer.area.right());
+            for row in popup.y..popup.bottom() {
+                assert_eq!(
+                    buffer[(popup.right(), row)].symbol(),
+                    " ",
+                    "clipped sidebar glyph at column {} row {row} against dialog border",
+                    popup.right()
+                );
+            }
+        }
     }
 
     fn open_notification_preview(state: &mut Shell) {
