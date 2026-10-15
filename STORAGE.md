@@ -260,3 +260,109 @@ durable running record (child abort fixture), exact pre-migration
 restore, restore rejection of outside paths, symlinks, hard links and
 corrupt snapshots, and restore refusal while another writer holds the
 store.
+
+## Storage quotas and admission guardrails (DAT-02b)
+
+Quotas are per repository. Each store carries its own guard, sized from
+that repository's `.fluzo` typed `storage` settings, so one project's
+quota never reaches another project's store. Limits are never hardcoded
+in the runtime; `QuotaLimits::from_storage` reads the same registry that
+the configuration editor writes.
+
+### Accounted scopes
+
+| Class | What is counted | Setting | Default |
+| --- | --- | --- | --- |
+| `SessionData` | `state.sqlite3` plus its `-wal` and `-shm` side files, plus everything under `.fluzodrive/artifacts/` | `storage.session_max_bytes` | 10 GiB |
+| `Diagnostics` | everything under `.fluzodrive/telemetry/` | `storage.diagnostic_max_bytes` | 2 GiB |
+| free-space reserve | available bytes on the filesystem hosting `.fluzodrive/` | `storage.min_free_bytes` | 1 GiB |
+
+Usage is recomputed from the filesystem on every check rather than
+accumulated in memory or in a table. There is therefore no counter that
+can drift from reality, and restart consistency is structural: the same
+files measure the same amount before and after a reopen. The scan is
+bounded by `MAX_ACCOUNTED_ENTRIES`; exceeding it is reported as a typed
+error rather than silently under-counting.
+
+`storage.auto_expire` remains `false` by default and is not read by the
+quota path at all. Retention policy is a separate concern (PRD 22.2);
+nothing here implements it.
+
+### Admission outcomes
+
+`Admission` is the typed result of a session-data check:
+
+- `Admitted(status)` — the projected total stays below the limit.
+- `Warning(status)` — utilization has reached 80%
+  (`WARNING_THRESHOLD_PERCENT`) but the write still proceeds. The
+  warning is observable through `Store::last_admission` before any
+  refusal happens.
+- `Refused(refusal)` — the write is rejected before it starts.
+
+A refusal surfaces as `StoreError::QuotaReached { class, used, limit }`.
+This is deliberately distinct from `StoreError::Full`, which means
+SQLite's own page cap fired mid-write.
+
+The guard runs before `BEGIN IMMEDIATE`, so a refusal leaves no partial
+audit state: no row, no event, no artifact content. Each unit also
+carries `DEFAULT_AUDIT_HEADROOM_BYTES` (64 KiB) of reserved room so the
+refusal happens *before* the unit's own audit rows are at risk rather
+than during them. Artifact content is admitted in
+`finalize_artifact` before any byte lands on disk, not only when its
+reference is committed.
+
+### Diagnostics drop instead of refusing
+
+Diagnostic capture never blocks ordinary execution. At the diagnostics
+threshold `append_diagnostic` returns
+`DiagnosticDisposition::Dropped { reason, status }` and the call
+succeeds. Dropped records are counted, never silently discarded:
+`Store::diagnostic_counters` reports `written_records`,
+`written_bytes`, `dropped_records` and `dropped_bytes` for the current
+run. A `Dropped` disposition is not an error; a returned `Err` from
+that path is a genuine safety or I/O problem.
+
+The reserve check applies to both classes: a low free-space reading
+refuses session work and drops diagnostics rather than letting either
+class push the filesystem toward exhaustion.
+
+### Nothing is evicted
+
+Reaching a threshold, elapsed time, or a reopen under saturated limits
+removes nothing. Existing artifacts, journal rows and diagnostic
+capture are retained byte for byte. Purge is a separate, explicitly
+confirmed operation (#75) and is not implemented here.
+
+### Attaching the guard
+
+The guard is opt-in so existing callers are unaffected:
+
+```rust
+let store = Store::open_quotated(&workspace_root, QuotaLimits::from_storage(&settings.storage)).await?;
+let store = Store::open_quotated_with_probe(&workspace_root, limits, MountedFileSystem).await?;
+```
+
+`Store::open` leaves the store unguarded; `append_diagnostic` on such a
+store returns `StoreError::QuotaNotConfigured`, because the bounded
+capture contract cannot be honoured without a guard. `Store::restore`
+also returns an unguarded store: it is a recovery path that does not
+read `.fluzo`, so the operator reopens with `open_quotated` to restore
+quota enforcement. Free-space reads go through the `FileSystemProbe`
+trait (`rustix::fs::statvfs`, using `f_bavail`), which the tests replace
+with a fixed reading so no test depends on, or fills, a real disk.
+
+### Verification
+
+```sh
+cargo test -p fluzo-runtime --locked --offline quota
+```
+
+Covers: defaults and typed-settings derivation, WAL side-file and
+artifact accounting, class isolation, the 80% warning preceding
+refusal, audit-headroom refusal, free-space reserve, diagnostics drop
+with visible counters, saturation not blocking execution, mandatory
+audit failure still blocking the task, refusal leaving no partial state,
+artifact content admitted before it lands, restart recomputation and
+stability, cross-repository independence, unsafe diagnostic record-name
+rejection, and the no-eviction proof under pressure, elapsed time and
+reopen.

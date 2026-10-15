@@ -4,6 +4,7 @@ pub mod configuration;
 mod configuration_file;
 pub mod migrations;
 pub mod model_discovery;
+pub mod quota;
 pub mod scenario;
 pub mod store;
 pub mod telemetry;
@@ -31,6 +32,10 @@ mod test_diagnostics;
 #[cfg(test)]
 #[path = "telemetry_tests.rs"]
 mod telemetry_tests;
+
+#[cfg(test)]
+#[path = "quota_integration_tests.rs"]
+mod quota_integration_tests;
 
 use fluzo_core::RuntimeAvailability;
 

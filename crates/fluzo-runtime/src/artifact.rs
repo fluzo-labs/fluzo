@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 use sqlx::Connection;
 
-use crate::store::{ANCHOR_FLAGS, EventRecord, StateUpdate, Store, StoreError};
+use crate::store::{EventRecord, NOFOLLOW_CLOEXEC, StateUpdate, Store, StoreError};
 
 /// Managed artifact root inside `.fluzodrive/`.
 pub const ARTIFACTS_DIRECTORY: &str = "artifacts";
@@ -28,8 +28,6 @@ pub const ARTIFACTS_DIRECTORY: &str = "artifacts";
 pub const MAX_ARTIFACT_BYTES: usize = 1024 * 1024;
 const REDACTED_MARKER: &[u8] = b"[REDACTED]";
 const MAX_ID_BYTES: usize = 128;
-// O_NOFOLLOW | O_CLOEXEC for artifact content files (no O_DIRECTORY).
-const NOFOLLOW_CLOEXEC: i32 = 0x20000 | 0x800;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CaptureFlag {
@@ -209,6 +207,9 @@ impl Store {
                 flags.push(CaptureFlag::Truncated);
             }
             let hash = sha256_hex(&bytes);
+            // DAT-02b: the content file is session data, so admission is
+            // checked before any byte of it lands on disk.
+            self.admit_session_bytes(bytes.len() as u64)?;
             finalize_file(&artifacts, &request.spec.id, &staging_path, &bytes)?;
             (bytes.len() as i64, hash)
         };
@@ -234,6 +235,7 @@ impl Store {
         events: &[EventRecord],
     ) -> Result<(), StoreError> {
         self.verify_drive()?;
+        self.admit_session_work(updates, events)?;
         if !record.flags.contains(&CaptureFlag::Omitted) {
             let artifacts = self.anchor_artifacts(false)?;
             let path = Self::anchored_path(&artifacts, &record.id);
@@ -406,47 +408,7 @@ impl Store {
     }
 
     fn anchor_artifacts(&self, create: bool) -> Result<File, StoreError> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::fd::AsRawFd;
-            use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
-            let base = PathBuf::from(format!("/proc/self/fd/{}", self.drive_handle.as_raw_fd()))
-                .join(ARTIFACTS_DIRECTORY);
-            match fs::symlink_metadata(&base) {
-                Ok(metadata) => {
-                    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                        return Err(StoreError::Conflict);
-                    }
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    if !create {
-                        return Err(StoreError::Inaccessible);
-                    }
-                    fs::DirBuilder::new()
-                        .mode(0o700)
-                        .create(&base)
-                        .map_err(|_| StoreError::Conflict)?;
-                }
-                Err(_) => return Err(StoreError::Inaccessible),
-            }
-            let handle = OpenOptions::new()
-                .read(true)
-                .custom_flags(ANCHOR_FLAGS)
-                .open(&base)
-                .map_err(|_| StoreError::Conflict)?;
-            let current = fs::symlink_metadata(self.drive_directory.join(ARTIFACTS_DIRECTORY))
-                .map_err(|_| StoreError::Conflict)?;
-            let held = handle.metadata().map_err(|_| StoreError::Conflict)?;
-            if current.dev() != held.dev() || current.ino() != held.ino() {
-                return Err(StoreError::Conflict);
-            }
-            Ok(handle)
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = create;
-            Err(StoreError::UnsupportedPath)
-        }
+        self.anchor_class(ARTIFACTS_DIRECTORY, create)
     }
 
     async fn artifact_record_raw(
