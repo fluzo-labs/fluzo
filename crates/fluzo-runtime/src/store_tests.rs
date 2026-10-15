@@ -16,12 +16,23 @@ static NEXT_ROOT: AtomicU64 = AtomicU64::new(1);
 struct Root(PathBuf);
 impl Root {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
+        // Canonicalize the temp base so a symlinked TMPDIR cannot make
+        // the fixture root's identity differ from what the store sees,
+        // and force 0700 explicitly so the runner's umask cannot widen
+        // or narrow the fixture's permissions.
+        let base = std::env::temp_dir();
+        let base = base.canonicalize().unwrap_or(base);
+        let path = base.join(format!(
             "fluzo-store-{}-{}",
             process::id(),
             NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
         Self(path)
     }
     fn marker(&self) -> PathBuf {
@@ -56,15 +67,18 @@ fn event(state_id: &str, payload: &str) -> EventRecord {
 /// Re-invokes this test binary as a child that runs the crash body for the
 /// given mode against the given root, then dies without cleanup.
 fn spawn_child(mode: &str, root: &Root, test: &str) -> process::Child {
-    // Capture child stderr to a file so an early child exit is diagnosable
-    // from the parent's failure instead of vanishing into a null device.
+    // Capture child stderr AND stdout to a file so an early child exit or
+    // a harness-replayed panic (libtest replays captured test output to
+    // stdout) is diagnosable from the parent's failure instead of
+    // vanishing into a null device.
     let stderr_file = fs::File::create(root.stderr_log()).unwrap();
+    let stdout_file = stderr_file.try_clone().expect("clone child output handle");
     Command::new(std::env::current_exe().unwrap())
         .arg(test)
         .arg("--exact")
         .env("FLUZO_STORE_CHILD", mode)
         .env("FLUZO_STORE_ROOT", &root.0)
-        .stdout(Stdio::null())
+        .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .spawn()
         .unwrap()
@@ -74,6 +88,49 @@ fn child_mode() -> Option<(String, PathBuf)> {
     let mode = std::env::var("FLUZO_STORE_CHILD").ok()?;
     let root = PathBuf::from(std::env::var("FLUZO_STORE_ROOT").unwrap());
     Some((mode, root))
+}
+
+/// Opens the store with bounded backoff on environment-flake errors
+/// (`Inaccessible`/`Io`/`Busy`) only. Every failed attempt is logged
+/// with a full environment report before the retry, so a recovery stays
+/// visible evidence. Semantic refusals are never retried.
+fn expect_open(rt: &Runtime, root: &Root, context: &str) -> Store {
+    let max_attempts = 4;
+    let mut delay = Duration::from_millis(50);
+    for attempt in 1..=max_attempts {
+        match rt.block_on(Store::open(&root.0)) {
+            Ok(store) => {
+                if attempt > 1 {
+                    crate::test_diagnostics::note_recovered(&root.0, context, attempt);
+                }
+                return store;
+            }
+            Err(error)
+                if attempt < max_attempts
+                    && matches!(
+                        error,
+                        StoreError::Inaccessible | StoreError::Io | StoreError::Busy
+                    ) =>
+            {
+                crate::test_diagnostics::report_and_log(
+                    &root.0,
+                    &format!("{context} (attempt {attempt}, retrying)"),
+                    error,
+                );
+                std::thread::sleep(delay);
+                delay *= 2;
+            }
+            Err(error) => {
+                crate::test_diagnostics::report_and_log(
+                    &root.0,
+                    &format!("{context}: expected open to succeed"),
+                    error,
+                );
+                panic!("{context}: open failed with {error:?}");
+            }
+        }
+    }
+    unreachable!("loop returns on every attempt");
 }
 
 fn wait_for_marker(child: &mut process::Child, marker: &Path, log: &Path, timeout: Duration) {
@@ -98,7 +155,7 @@ fn wait_for_marker(child: &mut process::Child, marker: &Path, log: &Path, timeou
 fn open_enforces_wal_full_synchronous_and_foreign_keys() {
     let root = Root::new();
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     // The open path already verified the PRAGMAs; re-read them to pin the
     // durable configuration and the schema marker.
     let journal: String = rt
@@ -134,7 +191,7 @@ fn open_enforces_wal_full_synchronous_and_foreign_keys() {
 fn drive_directory_is_created_private() {
     let root = Root::new();
     let rt = runtime();
-    rt.block_on(Store::open(&root.0)).unwrap();
+    expect_open(&rt, &root, "store open");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -150,7 +207,7 @@ fn drive_directory_is_created_private() {
 fn commit_unit_persists_state_and_events_together() {
     let root = Root::new();
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     rt.block_on(store.commit_unit(&[update("a", "1")], &[event("a", "created")]))
         .unwrap();
     let (kind, payload, revision) = rt.block_on(store.state("a")).unwrap().unwrap();
@@ -175,7 +232,7 @@ fn commit_unit_persists_state_and_events_together() {
 fn foreign_key_violation_discards_the_whole_unit() {
     let root = Root::new();
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     let outcome =
         rt.block_on(store.commit_unit(&[update("kept", "x")], &[event("ghost", "dangling")]));
     assert_eq!(outcome.unwrap_err(), StoreError::Constraint);
@@ -210,10 +267,13 @@ fn interrupted_commit_rolls_back_completely() {
         std::process::abort();
     }
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     rt.block_on(store.commit_unit(&[update("before", "1")], &[event("before", "e")]))
         .unwrap();
-    drop(store);
+    // Deterministic close: a dropped sqlx connection may still hold the
+    // WAL index lock when the child opens, which surfaces as a spurious
+    // BUSY failure only under runner scheduling.
+    rt.block_on(store.close_for_test()).unwrap();
     let mut child = spawn_child(
         "torn",
         &root,
@@ -227,7 +287,7 @@ fn interrupted_commit_rolls_back_completely() {
     );
     let status = child.wait().unwrap();
     assert!(!status.success(), "child must die by abort");
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "reopen after child abort");
     assert!(
         rt.block_on(store.state("torn")).unwrap().is_none(),
         "interrupted unit must not be visible"
@@ -255,14 +315,15 @@ fn torn_wal_tail_recovers_last_complete_transaction() {
         std::process::abort();
     }
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     rt.block_on(store.commit_unit(
         &[update("checkpointed", "safe")],
         &[event("checkpointed", "e")],
     ))
     .unwrap();
     rt.block_on(store.checkpoint_for_test()).unwrap();
-    drop(store);
+    // Deterministic close before the child reopens (see interrupted_commit).
+    rt.block_on(store.close_for_test()).unwrap();
     let mut child = spawn_child(
         "wal-torn",
         &root,
@@ -282,7 +343,7 @@ fn torn_wal_tail_recovers_last_complete_transaction() {
     let length = fs::metadata(&wal).unwrap().len();
     assert!(length > 2048, "child must have left WAL frames to tear");
     Store::truncate_wal_tail_for_test(&root.0.join(DRIVE_DIRECTORY), length - 2048).unwrap();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "reopen after torn wal");
     // Recovery replays only complete, checksum-valid transactions: the
     // checkpointed unit survives, the torn tail unit is refused.
     assert!(rt.block_on(store.state("checkpointed")).unwrap().is_some());
@@ -307,7 +368,7 @@ fn writer_lock_is_refused_and_recovers_after_holder_dies() {
         return;
     }
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     let mut child = spawn_child(
         "hold",
         &root,
@@ -324,7 +385,7 @@ fn writer_lock_is_refused_and_recovers_after_holder_dies() {
     child.kill().unwrap();
     let _ = child.wait().unwrap();
     // After the holder dies, a fresh store recovers and can commit.
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "reopen after holder died");
     rt.block_on(store.commit_unit(&[update("after-lock", "ok")], &[event("after-lock", "e")]))
         .unwrap();
     assert!(rt.block_on(store.state("after-lock")).unwrap().is_some());
@@ -335,7 +396,7 @@ fn writer_lock_is_refused_and_recovers_after_holder_dies() {
 fn disk_full_simulation_fails_closed() {
     let root = Root::new();
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     rt.block_on(store.commit_unit(&[update("existing", "keep")], &[event("existing", "e")]))
         .unwrap();
     let pages: i64 = rt
@@ -387,7 +448,7 @@ fn plain_file_named_drive_directory_is_refused() {
 fn hardlinked_database_file_is_refused() {
     let root = Root::new();
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     rt.block_on(store.commit_unit(&[update("a", "1")], &[event("a", "e")]))
         .unwrap();
     drop(store);
@@ -403,7 +464,7 @@ fn hardlinked_database_file_is_refused() {
 fn drive_replacement_after_open_is_refused_at_commit() {
     let root = Root::new();
     let rt = runtime();
-    let mut store = rt.block_on(Store::open(&root.0)).unwrap();
+    let mut store = expect_open(&rt, &root, "store open");
     let decoy = root.0.join("decoy-drive");
     fs::create_dir(&decoy).unwrap();
     fs::remove_dir_all(root.0.join(DRIVE_DIRECTORY)).unwrap();

@@ -22,6 +22,9 @@ mod migration_tests;
 #[path = "store_tests.rs"]
 mod store_tests;
 
+#[cfg(test)]
+mod test_diagnostics;
+
 use fluzo_core::RuntimeAvailability;
 
 pub fn availability() -> RuntimeAvailability {

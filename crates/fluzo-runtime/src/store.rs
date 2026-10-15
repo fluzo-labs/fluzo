@@ -151,20 +151,46 @@ impl Store {
             .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
             .busy_timeout(Duration::ZERO);
-        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+        let connection = sqlx::SqliteConnection::connect_with(&options)
             .await
-            .map_err(|_| StoreError::Inaccessible)?;
-        Self::verify_pragmas(&mut connection).await?;
+            .map_err(|error| {
+                #[cfg(test)]
+                record_connect_error(&error);
+                // A connection-time failure used to erase the driver's
+                // error class entirely: a transient BUSY or a FULL device
+                // surfaced as a generic `Inaccessible`, which made CI
+                // flakes undiagnosable. Transient classes now surface
+                // distinctly; unknown I/O still fails closed as
+                // `Inaccessible`.
+                match map_error(error) {
+                    StoreError::Io => StoreError::Inaccessible,
+                    other => other,
+                }
+            })?;
         let mut store = Self {
             connection,
             drive_directory,
             drive_handle,
             schema_version: 0,
         };
-        store.prepare_schema(policy).await?;
-        store.schema_version = migrations::recorded_version(&mut store.connection)
-            .await?
-            .unwrap_or(0);
+        // Every post-connect failure path closes the connection
+        // deterministically. Dropping a sqlx connection defers the real
+        // close to a background thread, and a lingering connection still
+        // holding the WAL index lock makes the next busy_timeout=0 open
+        // (e.g. a restore's free-store probe) fail with SQLITE_BUSY.
+        let outcome = async {
+            Self::verify_pragmas(&mut store.connection).await?;
+            store.prepare_schema(policy).await?;
+            store.schema_version = migrations::recorded_version(&mut store.connection)
+                .await?
+                .unwrap_or(0);
+            Ok::<(), StoreError>(())
+        }
+        .await;
+        if let Err(error) = outcome {
+            let _ = store.connection.close().await;
+            return Err(error);
+        }
         Ok(store)
     }
 
@@ -351,6 +377,16 @@ impl Store {
         &mut self.connection
     }
 
+    /// Test-only deterministic close. Dropping a sqlx connection defers
+    /// the real close to a background thread, so a child process that
+    /// reopens the same store right after a parent `drop` can hit
+    /// SQLITE_BUSY on the WAL index. Fixtures that hand a store to a
+    /// child must close it explicitly.
+    #[cfg(test)]
+    pub(crate) async fn close_for_test(self) -> Result<(), StoreError> {
+        self.connection.close().await.map_err(map_error)
+    }
+
     /// The durable migration audit trail, oldest first.
     pub async fn migration_log(&mut self) -> Result<Vec<MigrationRecord>, StoreError> {
         migrations::migration_log(&mut self.connection).await
@@ -448,9 +484,7 @@ impl Store {
             .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
             .busy_timeout(Duration::ZERO);
-        let mut connection = sqlx::SqliteConnection::connect_with(&options)
-            .await
-            .map_err(|_| StoreError::Inaccessible)?;
+        let mut connection = Self::connect_free_probe(&options).await?;
         let locked = match connection.begin_with("BEGIN IMMEDIATE").await {
             Ok(transaction) => transaction.rollback().await.is_err(),
             Err(_) => true,
@@ -460,6 +494,31 @@ impl Store {
             return Err(StoreError::Busy);
         }
         Ok(())
+    }
+
+    /// Connect for the free-store probe, retrying only the transient
+    /// connect-time BUSY that appears while a dying connection's WAL
+    /// index lock is still being released. A persistently busy connect
+    /// means the store is in use: refuse with `Busy`, never proceed.
+    async fn connect_free_probe(
+        options: &SqliteConnectOptions,
+    ) -> Result<sqlx::SqliteConnection, StoreError> {
+        let max_attempts = 4;
+        let mut delay = Duration::from_millis(50);
+        for attempt in 1..=max_attempts {
+            match sqlx::SqliteConnection::connect_with(options).await {
+                Ok(connection) => return Ok(connection),
+                Err(error) => match map_error(error) {
+                    StoreError::Busy if attempt < max_attempts => {
+                        tokio::time::sleep(delay).await;
+                        delay *= 2;
+                    }
+                    StoreError::Busy => return Err(StoreError::Busy),
+                    _ => return Err(StoreError::Inaccessible),
+                },
+            }
+        }
+        Err(StoreError::Busy)
     }
 
     /// Commits state updates and journal records for one logical unit in a
@@ -825,6 +884,31 @@ impl Store {
             .map_err(map_error)?;
         transaction.commit().await.map_err(map_error)
     }
+}
+
+/// Test-only capture of the last erased driver error at the connect
+/// boundary, so a fixture that sees `Inaccessible` can print what the
+/// driver actually reported instead of guessing.
+#[cfg(test)]
+pub(crate) static LAST_CONNECT_ERROR: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn record_connect_error(error: &sqlx::Error) {
+    if let Ok(mut slot) = LAST_CONNECT_ERROR.lock() {
+        *slot = Some(error.to_string());
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn last_connect_error() -> String {
+    LAST_CONNECT_ERROR
+        .lock()
+        .map(|slot| {
+            slot.clone()
+                .unwrap_or_else(|| "none recorded by this process".to_owned())
+        })
+        .unwrap_or_else(|_| "diagnostic lock poisoned".to_owned())
 }
 
 pub(crate) fn map_error(error: sqlx::Error) -> StoreError {
