@@ -1,0 +1,63 @@
+ui05-review-package: diff-50x160-truecolor
+surface: diff (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014", "\r", "d"]
+surface-marker: Diff & verification
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 7b569996fb27741df18a4b2361dc9629490a5ac2436d5d4352899cdbfaadf847
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                                                         █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.                                                       █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Demo session 1
+
+                                                                                                                                ~
+
+                                                                                                                                ◇ GTP-6 Astra
+                                                                                                                                  via Github Copilot
+                                                                                                                                  Reasoning X-High
+                                                                                                                                  ━━━━━━━━━─── 75% (303.8K)
+                                                                                                                                  ━━━━━━────── $50.00
+                                                                                                                                  Cost scale: $100 (demo)
+                                             ╭────────────────────────────────────────────────────────────────────╮               Example data / offline
+                                             │ Diff & verification | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+                                             │                                                                    │             Modified files
+                                             │ [                  agent] -let width = 80;                         │             No files changed
+                                             │ [                  agent] +let width = viewport.width;             │
+                                             │ [pre-existing user change] -// user note: keep the old default     │             Demo state: Pending
+                                             │ [         origin unknown] +// attribution unavailable for this     │             NORMAL / offline demo
+                                             │ hunk                                                               │             No runtime connected
+                                             │                                                                    │
+                                             │ verification not run                                               │
+                                             │ Reviewing does not stage, revert, commit or accept any change.     │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │ Up/Down scroll | Esc close | synthetic content; no Git action      │
+                                             ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+ Synthetic task list; no runtime connected.
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                                                           demo following
+

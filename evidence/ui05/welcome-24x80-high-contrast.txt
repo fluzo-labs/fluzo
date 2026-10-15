@@ -1,0 +1,37 @@
+ui05-review-package: welcome-24x80-high-contrast
+surface: welcome (UI-03)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: high-contrast (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo --animation-fps 0
+keys: []
+surface-marker: Welcome to Fluzo
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: c9361b9968bd82ece6848e333c334e295216d962dfb029b47ddeef671c6dd269
+--- sanitized cell grid below; no escape sequences ---
+
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │ Welcome to Fluzo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+  │                                                                          │
+  │ This repository does not have a configuration yet.                       │
+  │ Would you like to create one?                                            │
+  │                                                                          │
+  │ Start with recommended defaults. You can change them later in Settings.  │
+  │ Connect your models now, or leave that for later.                        │
+  │ Nothing is written until you confirm creation.                           │
+  │                                                                          │
+  │ Configuration file:                                                      │
+  │ <WORKSPACE_ROOT>/.fluzo                                          │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  │                                                                          │
+  │ PageUp/PageDown scroll | F4 advanced details                             │
+  │                                                                          │
+  │ Enter Create | F3 Add models | Esc Not now                               │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+

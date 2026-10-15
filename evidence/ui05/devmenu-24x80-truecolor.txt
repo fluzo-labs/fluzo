@@ -1,0 +1,37 @@
+ui05-review-package: devmenu-24x80-truecolor
+surface: devmenu (UI-02)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0010", "Developer", "\r"]
+surface-marker: Developer menu
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 35deac0385b3492164d6eed348f2203281443a984b18a8be1ec22c22cea7aa03
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ Demo state: Pending
+     ╭────────────────────────────────────────────────────────────────────╮
+   Sy│ Developer menu ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+   Ct│                                                                    │
+     │ > Search settings...                                               │
+     │                                                                    │
+     │ > tui.theme: default                                               │
+     │   tui.animation_fps: 0                                             │
+     │   tui.reduced_motion: off                                          │
+     │   tui.notifications.desktop_enabled: off                           │
+     │   tui.flags.render_diagnostics: off                                │
+     │   Notification test message: Enter to edit                         │
+     │   Notification preview: Enter to edit                              │
+     │ default | default default | BuiltIn                                │
+     │ Presentation theme identifier                                      │
+     │ Live | Left/Right edit | Up/Down/Tab select                        │
+     │ Ctrl+A Apply session | Ctrl+R Reset | Esc Revert                   │
+   > │ Ctrl+N State | Ctrl+T Notification test | Ctrl+E Text              │
+ ::: │ Desktop test: switch to another window before 3s; focused windows  │
+ ::: │ suppress delivery.                                                 │
+     ╰────────────────────────────────────────────────────────────────────╯
+ esc close • ctrl+c quit • ctrl+g help                           demo following
+

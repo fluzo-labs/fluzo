@@ -472,6 +472,31 @@ dumps live in `evidence/ui02/` and regenerate with
 inferring coverage from the chronological notes below; nothing in this document
 accepts UI-02.
 
+## UI-05 single-session review package
+
+[review-checklist.md](.agents/plans/2026-10-15-ui05-review-package/review-checklist.md)
+is the review package for UI-05
+([#10](https://github.com/fluzo-labs/fluzo/issues/10)). It covers every
+merged UI surface from UI-02 ([#7](https://github.com/fluzo-labs/fluzo/issues/7)),
+UI-03 ([#8](https://github.com/fluzo-labs/fluzo/issues/8)) and UI-04
+([#9](https://github.com/fluzo-labs/fluzo/issues/9)) at 80x24, 120x40 and
+160x50: welcome and create-configuration, configuration workspace and
+palette, demo session with wordmark and sidebar, developer menu, task list,
+task detail, permission prompt, diff and verification, and the notification
+stack with live notices. Committed sanitized cell-grid dumps live in
+`evidence/ui05/` and regenerate with
+`python3 -B scripts/ui05_review_package.py --verify`.
+
+The checklist binds each parent acceptance criterion to named tests, artifact
+paths and one evidence class, and separates the human-only slots that no
+test in this repository can fill: Ghostty and Alacritty recordings, a
+screen-reader pass, a reduced-motion pass by eye and a per-surface
+maintainer verdict. Those slots are empty. Findings discovered while
+producing the package were filed as separate issues (#82 status-line tail,
+#83 stranded period at 80x24, #84 notification card placement, #85 overlay
+sidebar clipping, #86 unimplemented Plugins palette entry) and were not
+fixed by the package. Nothing in this section accepts UI-05.
+
 ## UI-02 stabilization contract
 
 This local increment stabilizes the existing visual demo for

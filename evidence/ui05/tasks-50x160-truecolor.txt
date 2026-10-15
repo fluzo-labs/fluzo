@@ -1,0 +1,63 @@
+ui05-review-package: tasks-50x160-truecolor
+surface: tasks (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014"]
+surface-marker: Tasks | offline demo
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 9afa233fefad657ebd112130e2bfeb6340adeff0d125f02d73c802cd0d48b2f6
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                                                         █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.                                                       █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Demo session 1
+
+                                                                                                                                ~
+
+                                                                                                                                ◇ GTP-6 Astra
+                                                                                                                                  via Github Copilot
+                                                                                                                                  Reasoning X-High
+                                                                                                                                  ━━━━━━━━━─── 75% (303.8K)
+                                                                                                                                  ━━━━━━────── $50.00
+                                                                                                                                  Cost scale: $100 (demo)
+                                             ╭────────────────────────────────────────────────────────────────────╮               Example data / offline
+                                             │ Tasks | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+                                             │                                                                    │             Modified files
+                                             │ >  #1   pending   none         0m00s active  Demo fixture; no age… │             No files changed
+                                             │                                                                    │
+                                             │                                                                    │             Demo state: Pending
+                                             │                                                                    │             NORMAL / offline demo
+                                             │                                                                    │             No runtime connected
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │ Up/Down select | Enter inspect | Esc close | synthetic data only   │
+                                             ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+ Synthetic task list; no runtime connected.
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                                                           demo following
+

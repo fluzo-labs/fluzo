@@ -1,0 +1,37 @@
+ui05-review-package: notices-24x80-truecolor
+surface: notices (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu --desktop-notifications
+keys: ["\u0010", "Developer", "\r", "Notification preview", "\r", "\u001b[110;3u", "\u001b[110;3u"]
+surface-marker: [DEMO INFO]
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: f2afee087fb4f4fc6e54ed73087d71d3393246a248f4912cd59b333b2b42f339
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+ Demo state: Pending · NORMAL · offline
+   Synthetic workspace. Enter ╭─────────────────────────────────────────── x ╮
+   Ctrl+P opens commands. Esc │ [DEMO INFO]                                  │
+                              │ Synthetic notice. No agent work was executed │
+                              │ Alt+D dismiss oldest                         │
+                              ╰──────────────────────────────────────────────╯
+                              ╭─────────────────────────────────────────── x ╮
+                              │ [DEMO SUCCESS]                               │
+                              │ Synthetic notice. No agent work was executed │
+                              │ Alt+D dismiss oldest                         │
+                              ╰──────────────────────────────────────────────╯
+
+
+
+
+ DEMO notices: Alt+N add | Alt+B burst | Alt+R replay | Alt+D dismiss
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models ...       demo following
+

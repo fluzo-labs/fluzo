@@ -1,0 +1,63 @@
+ui05-review-package: config-workspace-50x160-truecolor
+surface: config-workspace (UI-03)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo --animation-fps 0
+keys: []
+surface-marker: Configuration workspace
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 9f941ec19d6622c681d5b69999a5dc7ea26db3a20d029c320d8732e866c6b008
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Configuration workspace. No agent runtime, providers or tools are connected.                                                 █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+                                                                                                                                █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Configuration workspace
+                                                                                                                                <WORKSPACE_ROOT>/.flu
+                                                                                                                                zo
+
+                                                                                                                                Agent runtime unavailable
+                                                                                                                                No inference started
+                                                                                                                                No task or session active
+
+                                                                                                                                Ctrl+P Configuration
+                                                                                                                                NORMAL / offline
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Agent runtime unavailable. Ctrl+P opens configuration; no execution.
+   > Draft only; execution unavailable
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models • ctrl+b sidebar • shift+enter newline • ctrl+c quit • ctrl+g help                     offline following
+

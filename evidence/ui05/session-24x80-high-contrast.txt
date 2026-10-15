@@ -1,0 +1,37 @@
+ui05-review-package: session-24x80-high-contrast
+surface: session (UI-02)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: high-contrast (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: []
+surface-marker: Ask anything
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 723ee8270324d303f0a61953a2099b8e8c22c39867e084f532d38ee10f78ee0a
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+ Demo state: Pending · NORMAL · offline
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.
+
+
+
+
+
+
+
+
+
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models ...       demo following
+

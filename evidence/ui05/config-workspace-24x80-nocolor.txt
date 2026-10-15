@@ -1,0 +1,37 @@
+ui05-review-package: config-workspace-24x80-nocolor
+surface: config-workspace (UI-03)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: nocolor (COLORTERM=truecolor, NO_COLOR=1, TERM=xterm-ghostty)
+command: fluzo --animation-fps 0
+keys: []
+surface-marker: Configuration workspace
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 5d51dd9e7b4373f57c2123bb1c50283402078ac3e39e8aaf7b9cb842f854388c
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ Configuration / runtime unavailable
+ NORMAL / runtime unavailable / no execution
+   Configuration workspace. No agent runtime, providers or tools are connected
+   .
+
+
+
+
+
+
+
+
+
+
+
+
+ Agent runtime unavailable. Ctrl+P opens configuration; no execution.
+   > Draft only; execution unavailable
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models ...    offline following
+

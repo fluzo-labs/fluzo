@@ -1,0 +1,37 @@
+ui05-review-package: tasks-24x80-truecolor
+surface: tasks (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014"]
+surface-marker: Tasks | offline demo
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 141d2f6957b45eb10a18810e7b3b0f94a281fea329d628f872ec8d95ae2d89e4
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+     ╭────────────────────────────────────────────────────────────────────╮
+   Sy│ Tasks | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+   Ct│                                                                    │
+     │ >  #1   pending   none         0m00s active  Demo fixture; no age… │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+ Synt│                                                                    │
+   > │                                                                    │
+ ::: │                                                                    │
+ ::: │ Up/Down select | Enter inspect | Esc close | synthetic data only   │
+     ╰────────────────────────────────────────────────────────────────────╯
+ esc close • ctrl+c quit • ctrl+g help                           demo following
+

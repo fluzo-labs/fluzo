@@ -1,0 +1,37 @@
+ui05-review-package: diff-24x80-truecolor
+surface: diff (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014", "\r", "d"]
+surface-marker: Diff & verification
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: cebbae3cad0ed51b5f75c5877d6fb0c82be86fbebd129c3b53c188f192d58dbf
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+     ╭────────────────────────────────────────────────────────────────────╮
+   Sy│ Diff & verification | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+   Ct│                                                                    │
+     │ [                  agent] -let width = 80;                         │
+     │ [                  agent] +let width = viewport.width;             │
+     │ [pre-existing user change] -// user note: keep the old default     │
+     │ [         origin unknown] +// attribution unavailable for this     │
+     │ hunk                                                               │
+     │                                                                    │
+     │ verification not run                                               │
+     │ Reviewing does not stage, revert, commit or accept any change.     │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+ Synt│                                                                    │
+   > │                                                                    │
+ ::: │                                                                    │
+ ::: │ Up/Down scroll | Esc close | synthetic content; no Git action      │
+     ╰────────────────────────────────────────────────────────────────────╯
+ esc close • ctrl+c quit • ctrl+g help                           demo following
+
