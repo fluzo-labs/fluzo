@@ -1,0 +1,63 @@
+ui05-review-package: notices-50x160-truecolor
+surface: notices (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu --desktop-notifications
+keys: ["\u0010", "Developer", "\r", "Notification preview", "\r", "\u001b[110;3u", "\u001b[110;3u"]
+surface-marker: [DEMO INFO]
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 95e12495dac98704ff91fce0294e0bd4ac7ea706e09ca355f4710a40521d0589
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                                                         █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.                                                       █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                              ╭─────────────────────────────────────────── x ╮  ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+                                                                              │ [DEMO INFO]                                  │
+                                                                              │ Synthetic notice. No agent work was executed │  Demo session 1
+                                                                              │ Alt+D dismiss oldest                         │
+                                                                              ╰──────────────────────────────────────────────╯  ~
+                                                                              ╭─────────────────────────────────────────── x ╮
+                                                                              │ [DEMO SUCCESS]                               │  ◇ GTP-6 Astra
+                                                                              │ Synthetic notice. No agent work was executed │    via Github Copilot
+                                                                              │ Alt+D dismiss oldest                         │    Reasoning X-High
+                                                                              ╰──────────────────────────────────────────────╯    ━━━━━━━━━─── 75% (303.8K)
+                                                                                                                                  ━━━━━━────── $50.00
+                                                                                                                                  Cost scale: $100 (demo)
+                                                                                                                                  Example data / offline
+
+                                                                                                                                Modified files
+                                                                                                                                No files changed
+
+                                                                                                                                Demo state: Pending
+                                                                                                                                NORMAL / offline demo
+                                                                                                                                No runtime connected
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ DEMO notices: Alt+N add | Alt+B burst | Alt+R replay | Alt+D dismiss
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models • ctrl+b sidebar • shift+enter newline • ctrl+c quit • ctrl+g help                        demo following
+

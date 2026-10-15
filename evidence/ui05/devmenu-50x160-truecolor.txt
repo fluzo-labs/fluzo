@@ -1,0 +1,63 @@
+ui05-review-package: devmenu-50x160-truecolor
+surface: devmenu (UI-02)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0010", "Developer", "\r"]
+surface-marker: Developer menu
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: a9160b751189f5d6bc643499e8ea277799de3c1ab6c17f7cea33405a152cea17
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                                                         █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+ Demo state: Pending · NORMAL · offlineyback; Ctrl+C exits. No execution.                                                       █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Demo session 1
+
+                                                                                                                                ~
+
+                                                                                                                                ◇ GTP-6 Astra
+                                                                                                                                  via Github Copilot
+                                                                                                                                  Reasoning X-High
+                                                                                                                                  ━━━━━━━━━─── 75% (303.8K)
+                                                                                                                                  ━━━━━━────── $50.00
+                                                                                                                                  Cost scale: $100 (demo)
+                                             ╭────────────────────────────────────────────────────────────────────╮               Example data / offline
+                                             │ Developer menu ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+                                             │                                                                    │             Modified files
+                                             │ > Search settings...                                               │             No files changed
+                                             │                                                                    │
+                                             │ > tui.theme: default                                               │             Demo state: Pending
+                                             │   tui.animation_fps: 0                                             │             NORMAL / offline demo
+                                             │   tui.reduced_motion: off                                          │             No runtime connected
+                                             │   tui.notifications.desktop_enabled: off                           │
+                                             │   tui.flags.render_diagnostics: off                                │
+                                             │   Notification test message: Enter to edit                         │
+                                             │   Notification preview: Enter to edit                              │
+                                             │ default | default default | BuiltIn                                │
+                                             │ Presentation theme identifier                                      │
+                                             │ Live | Left/Right edit | Up/Down/Tab select                        │
+                                             │ Ctrl+A Apply session | Ctrl+R Reset | Esc Revert                   │
+                                             │ Ctrl+N State | Ctrl+T Notification test | Ctrl+E Text              │
+                                             │ Desktop test: switch to another window before 3s; focused windows  │
+                                             │ suppress delivery.                                                 │
+                                             ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                                                           demo following
+

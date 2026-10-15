@@ -1,0 +1,37 @@
+ui05-review-package: permission-24x80-truecolor
+surface: permission (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014", "\r", "p"]
+surface-marker: Permission | synthetic request
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 12da9922f7adcafc4ac1e967a4609069eaacac9c7fe62a58b39dc93d4c3896ae
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+     ╭────────────────────────────────────────────────────────────────────╮
+   Sy│ Permission | synthetic request ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+   Ct│                                                                    │
+     │ Task 1 / operation 7001                                            │
+     │ action: tool.write_file                                            │
+     │ workspace: 1  backend: native local workspace (demo)               │
+     │ scope: src/fixture.rs [observed version v7] | env: $               │
+     │ FLUZO_DEMO_TOKEN (reference only)                                  │
+     │                                                                    │
+     │ >  Deny                                                            │
+     │    Allow once                                                      │
+     │    Allow for this task                                             │
+     │                                                                    │
+     │ Denial is the default. Recording is not dispatch: no grant is      │
+     │ consumed.                                                          │
+ Synt│                                                                    │
+   > │                                                                    │
+ ::: │                                                                    │
+ ::: │ Up/Down move | Enter select | Esc closes without deciding          │
+     ╰────────────────────────────────────────────────────────────────────╯
+ esc close • ctrl+c quit • ctrl+g help                           demo following
+

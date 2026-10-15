@@ -1,0 +1,53 @@
+ui05-review-package: devmenu-40x120-truecolor
+surface: devmenu (UI-02)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 120x40 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0010", "Developer", "\r"]
+surface-marker: Developer menu
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: b99a8b6d92439b581b4606adb7116b9739c07ba03adfa123ce4387630ad0cc64
+--- sanitized cell grid below; no escape sequences ---
+            ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                 █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+ Demo state: Pending · NORMAL · offlineyback; Ctrl+C exits. No execution.               █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                        ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                        Demo session 1
+
+                                                                                        ~
+
+                                                                                        ◇ GTP-6 Astra
+                         ╭────────────────────────────────────────────────────────────────────╮ithub Copilot
+                         │ Developer menu ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │ning X-High
+                         │                                                                    │━━━━─── 75% (303.8K)
+                         │ > Search settings...                                               │━────── $50.00
+                         │                                                                    │scale: $100 (demo)
+                         │ > tui.theme: default                                               │le data / offline
+                         │   tui.animation_fps: 0                                             │
+                         │   tui.reduced_motion: off                                          │d files
+                         │   tui.notifications.desktop_enabled: off                           │s changed
+                         │   tui.flags.render_diagnostics: off                                │
+                         │   Notification test message: Enter to edit                         │ate: Pending
+                         │   Notification preview: Enter to edit                              │/ offline demo
+                         │ default | default default | BuiltIn                                │ime connected
+                         │ Presentation theme identifier                                      │
+                         │ Live | Left/Right edit | Up/Down/Tab select                        │
+                         │ Ctrl+A Apply session | Ctrl+R Reset | Esc Revert                   │
+                         │ Ctrl+N State | Ctrl+T Notification test | Ctrl+E Text              │
+                         │ Desktop test: switch to another window before 3s; focused windows  │
+                         │ suppress delivery.                                                 │
+                         ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                   demo following
+

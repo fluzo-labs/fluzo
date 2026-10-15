@@ -1,0 +1,53 @@
+ui05-review-package: tasks-40x120-truecolor
+surface: tasks (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 120x40 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014"]
+surface-marker: Tasks | offline demo
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 0d81ba63a63517a0851fdc459bec881b7ece5d8ec1aba5fb67f8f1cbe430bb28
+--- sanitized cell grid below; no escape sequences ---
+            ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                 █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.               █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                        ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                        Demo session 1
+
+                                                                                        ~
+
+                                                                                        ◇ GTP-6 Astra
+                         ╭────────────────────────────────────────────────────────────────────╮ithub Copilot
+                         │ Tasks | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │ning X-High
+                         │                                                                    │━━━━─── 75% (303.8K)
+                         │ >  #1   pending   none         0m00s active  Demo fixture; no age… │━────── $50.00
+                         │                                                                    │scale: $100 (demo)
+                         │                                                                    │le data / offline
+                         │                                                                    │
+                         │                                                                    │d files
+                         │                                                                    │s changed
+                         │                                                                    │
+                         │                                                                    │ate: Pending
+                         │                                                                    │/ offline demo
+                         │                                                                    │ime connected
+                         │                                                                    │
+                         │                                                                    │
+                         │                                                                    │
+                         │                                                                    │
+                         │                                                                    │
+                         │ Up/Down select | Enter inspect | Esc close | synthetic data only   │
+                         ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+ Synthetic task list; no runtime connected.
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                   demo following
+

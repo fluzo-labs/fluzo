@@ -1,0 +1,37 @@
+ui05-review-package: task-detail-24x80-truecolor
+surface: task-detail (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014", "\r"]
+surface-marker: Task detail | offline demo
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 2e1ca501de30c061e8436df2cdeca9f61583771212726a27416526ae34e04f6c
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ ~ • 75% • ctrl+d open
+     ╭────────────────────────────────────────────────────────────────────╮
+   Sy│ Task detail | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+   Ct│                                                                    │
+     │ Demo fixture; no agent or tools executed                           │
+     │                                                                    │
+     │ state: pending    reason: none                                     │
+     │ session: 1  workspace: 1  current action: no operation             │
+     │ budget:  0m00s active  interventions: 0                            │
+     │ verification: not run  partial diff: complete                      │
+     │ errors: none recorded                                              │
+     │ trace: synthetic-trace-task-1 (demo reference only)                │
+     │                                                                    │
+     │ Inspecting task 1 (synthetic; no runtime connected)                │
+     │ Selecting a task never resumes it: no writer ownership, no grant   │
+     │ change, no input redirect.                                         │
+ Synt│                                                                    │
+   > │                                                                    │
+ ::: │                                                                    │
+ ::: │ c cancel | f force stop | p permissions | d diff | Esc back        │
+     ╰────────────────────────────────────────────────────────────────────╯
+ esc close • ctrl+c quit • ctrl+g help                           demo following
+

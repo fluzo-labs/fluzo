@@ -1,0 +1,63 @@
+ui05-review-package: permission-50x160-truecolor
+surface: permission (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014", "\r", "p"]
+surface-marker: Permission | synthetic request
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: c5be9e8daaa0d9c266c047ac9a5baba1f45f2806cace9c459330b51593faa9e5
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                                                         █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.                                                       █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Demo session 1
+
+                                                                                                                                ~
+
+                                                                                                                                ◇ GTP-6 Astra
+                                                                                                                                  via Github Copilot
+                                                                                                                                  Reasoning X-High
+                                                                                                                                  ━━━━━━━━━─── 75% (303.8K)
+                                                                                                                                  ━━━━━━────── $50.00
+                                                                                                                                  Cost scale: $100 (demo)
+                                             ╭────────────────────────────────────────────────────────────────────╮               Example data / offline
+                                             │ Permission | synthetic request ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+                                             │                                                                    │             Modified files
+                                             │ Task 1 / operation 7001                                            │             No files changed
+                                             │ action: tool.write_file                                            │
+                                             │ workspace: 1  backend: native local workspace (demo)               │             Demo state: Pending
+                                             │ scope: src/fixture.rs [observed version v7] | env: $               │             NORMAL / offline demo
+                                             │ FLUZO_DEMO_TOKEN (reference only)                                  │             No runtime connected
+                                             │                                                                    │
+                                             │ >  Deny                                                            │
+                                             │    Allow once                                                      │
+                                             │    Allow for this task                                             │
+                                             │                                                                    │
+                                             │ Denial is the default. Recording is not dispatch: no grant is      │
+                                             │ consumed.                                                          │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │ Up/Down move | Enter select | Esc closes without deciding          │
+                                             ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+ Synthetic task list; no runtime connected.
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                                                           demo following
+

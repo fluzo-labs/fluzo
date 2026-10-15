@@ -1,0 +1,63 @@
+ui05-review-package: task-detail-50x160-truecolor
+surface: task-detail (UI-04)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo demo --interactive --animation-fps 0 --dev-menu
+keys: ["\u0014", "\r"]
+surface-marker: Task detail | offline demo
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 7168c2138b4eb4e1fe58624dcf1dd9ade9892e7c357ee2baaace6be5417511d9
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Synthetic workspace. Enter sends a preview; Shift+Enter adds a line.                                                         █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+   Ctrl+P opens commands. Esc stops playback; Ctrl+C exits. No execution.                                                       █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Demo session 1
+
+                                                                                                                                ~
+
+                                                                                                                                ◇ GTP-6 Astra
+                                                                                                                                  via Github Copilot
+                                                                                                                                  Reasoning X-High
+                                                                                                                                  ━━━━━━━━━─── 75% (303.8K)
+                                                                                                                                  ━━━━━━────── $50.00
+                                                                                                                                  Cost scale: $100 (demo)
+                                             ╭────────────────────────────────────────────────────────────────────╮               Example data / offline
+                                             │ Task detail | offline demo ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+                                             │                                                                    │             Modified files
+                                             │ Demo fixture; no agent or tools executed                           │             No files changed
+                                             │                                                                    │
+                                             │ state: pending    reason: none                                     │             Demo state: Pending
+                                             │ session: 1  workspace: 1  current action: no operation             │             NORMAL / offline demo
+                                             │ budget:  0m00s active  interventions: 0                            │             No runtime connected
+                                             │ verification: not run  partial diff: complete                      │
+                                             │ errors: none recorded                                              │
+                                             │ trace: synthetic-trace-task-1 (demo reference only)                │
+                                             │                                                                    │
+                                             │ Inspecting task 1 (synthetic; no runtime connected)                │
+                                             │ Selecting a task never resumes it: no writer ownership, no grant   │
+                                             │ change, no input redirect.                                         │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │ c cancel | f force stop | p permissions | d diff | Esc back        │
+                                             ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+ Synthetic task list; no runtime connected.
+   > Ask anything… (offline demo)
+ :::
+ :::
+
+ esc close • ctrl+c quit • ctrl+g help                                                                                                           demo following
+

@@ -1,0 +1,63 @@
+ui05-review-package: config-palette-50x160-truecolor
+surface: config-palette (UI-03)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 160x50 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo --animation-fps 0
+keys: ["\u0010"]
+surface-marker: Providers
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 5f1e60b28ed44826d523589912670b9cbeee18fe2619a033a5427e16eb8077ef
+--- sanitized cell grid below; no escape sequences ---
+                ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Configuration workspace. No agent runtime, providers or tools are connected.                                                 █▀▀▀▀▄█▄    █▄  █▄▀▀▀█▀▄▄▀▀▀▄
+                                                                                                                                █▀▀▀▄ ██    ██  ██ ▄▀▄▀ ██  ██
+                                                                                                                                ▀█    ▀▀▀▀▀▄ ▀▀▀▄▀▀▀▀▀▀▄ ▀▀▀▄▀
+
+                                                                                                                                Configuration workspace
+                                                                                                                                <WORKSPACE_ROOT>/.flu
+                                                                                                                                zo
+
+                                                                                                                                Agent runtime unavailable
+                                                                                                                                No inference started
+                                                                                                                                No task or session active
+
+                                                                                                                                Ctrl+P Configuration
+                                                                                                                                NORMAL / offline
+                                             ╭────────────────────────────────────────────────────────────────────╮
+                                             │ Commands ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │
+                                             │                                                                    │
+                                             │ Search:                                                            │
+                                             │                                                                    │
+                                             │  Models                                                            │
+                                             │  Developer Menu                                                    │
+                                             │  Quit                                                              │
+                                             │  Plugins                                                           │
+                                             │  Providers                                                         │
+                                             │  Configuration                                                     │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │                                                                    │
+                                             │ Enter opens | Esc returns | Ctrl+C exits                           │
+                                             ╰────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+ Agent runtime unavailable. Ctrl+P opens configuration; no execution.
+   > Draft only; execution unavailable
+ :::
+ :::
+
+ tab focus chat • / or ctrl+p commands • ctrl+l models • ctrl+b sidebar • shift+enter newline • ctrl+c quit • ctrl+g help                     offline following
+

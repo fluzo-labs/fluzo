@@ -1,0 +1,37 @@
+ui05-review-package: config-palette-24x80-truecolor
+surface: config-palette (UI-03)
+source-revision: b0448790ee480f57f527239c6041c906034e72d0
+viewport: 80x24 cells
+color-mode: truecolor (COLORTERM=truecolor, TERM=xterm-ghostty)
+command: fluzo --animation-fps 0
+keys: ["\u0010"]
+surface-marker: Providers
+normalization: private temp workspace root rendered as <WORKSPACE_ROOT>
+evidence-class: pty (rendered cell grid; not visual acceptance)
+generator: scripts/ui05_review_package.py
+sha256-body: 093fdccdcf0c7052fb4ed0eb7fc01911dec7058ec2c86fe7198ac8919520f33e
+--- sanitized cell grid below; no escape sequences ---
+        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ FLUZO ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ Configuration / runtime unavailable
+ NORM╭────────────────────────────────────────────────────────────────────╮
+   Co│ Commands ╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱╱ │ted
+   . │                                                                    │
+     │ Search:                                                            │
+     │                                                                    │
+     │  Models                                                            │
+     │  Developer Menu                                                    │
+     │  Quit                                                              │
+     │  Plugins                                                           │
+     │  Providers                                                         │
+     │  Configuration                                                     │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+     │                                                                    │
+ Agen│                                                                    │
+   > │                                                                    │
+ ::: │                                                                    │
+ ::: │ Enter opens | Esc returns | Ctrl+C exits                           │
+     ╰────────────────────────────────────────────────────────────────────╯
+ tab focus chat • / or ctrl+p commands • ctrl+l models ...    offline following
+
