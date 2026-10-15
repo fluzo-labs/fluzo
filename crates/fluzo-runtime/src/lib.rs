@@ -15,6 +15,8 @@ pub mod store;
 pub mod telemetry;
 pub mod telemetry_archive;
 pub mod telemetry_audit;
+pub mod telemetry_bridge;
+pub mod telemetry_otlp;
 pub mod telemetry_purge;
 pub mod workspace;
 

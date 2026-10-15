@@ -23,10 +23,24 @@ sha2 = { version = "=0.11.0", default-features = false, features = ["alloc"] }
 # DAT-02b free-space reserve probe. Already locked transitively via
 # crossterm; only the `fs` feature of the reviewed crate is activated.
 rustix = { version = "=0.38.44", default-features = false, features = ["fs", "std"] }
+# OBS-01b OTLP HTTP/protobuf export: prost message types from the
+# official OTLP proto generation (no tonic, no SDK pipeline; the
+# DiagnosticHub stays the single capture boundary). HTTP rides the
+# already-pinned hyper client. MSRV 1.75 <= pinned 1.98.
+opentelemetry-proto = { version = "=0.33.1", default-features = false, features = ["gen-tonic-messages", "trace", "metrics", "logs"] }
+prost = { version = "=0.14.3", default-features = false, features = ["derive"] }
+# OBS-01b tracing bridge: a Layer that publishes into the DiagnosticHub.
+# Already locked transitively via sqlx; no new package enters the graph.
+tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
+tracing-core = { version = "=0.1.36", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 serde.workspace = true
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
+# OBS-01b local receiver conformance fixtures decode the same pinned
+# OTLP generation the sink encodes with; no extra resolution cost.
+opentelemetry-proto = { version = "=0.33.1", default-features = false, features = ["gen-tonic-messages", "trace", "metrics", "logs"] }
+prost = { version = "=0.14.3", default-features = false, features = ["derive"] }
 hyper = { version = "=1.11.1", default-features = false, features = ["http1", "server", "client"] }
 hyper-util = { version = "=0.1.20", default-features = false, features = ["tokio"] }
 http-body-util = { version = "=0.1.5", default-features = false }

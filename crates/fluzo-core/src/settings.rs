@@ -327,7 +327,11 @@ group!(TelemetrySettings {
     export_enabled: bool = false => ("", Any, Public, ExplicitApply, Advanced, "Opt-in export requiring separate destination consent"),
     otlp_protocol: OtlpProtocol = OtlpProtocol::HttpProtobuf => ("", Any, Public, Restart, Advanced, "Initial OTLP transport"),
     otlp_endpoint: Option<String> = None => ("", Any, Sensitive, ExplicitApply, Advanced, "User-selected OTLP endpoint; no default service is contacted"),
-    capture_content: bool = false => ("", Any, Sensitive, ExplicitApply, Advanced, "Content capture requires separate consent")
+    capture_content: bool = false => ("", Any, Sensitive, ExplicitApply, Advanced, "Content capture requires separate consent"),
+    export_batch_records: u32 = 64 => ("records", Positive, Public, ExplicitApply, Advanced, "Maximum records per OTLP export request"),
+    export_timeout_seconds: u64 = 10 => ("seconds", Positive, Public, ExplicitApply, Advanced, "Per-request OTLP export timeout"),
+    export_queue_records: u32 = 1024 => ("records", Positive, Public, Restart, Advanced, "Bounded export sink queue capacity"),
+    export_shutdown_flush_ms: u64 = 2000 => ("milliseconds", Positive, Public, Restart, Advanced, "Bounded shutdown flush for the export sink")
 });
 group!(TuiSettings {
     theme: String = "default".to_owned() => ("", Any, Public, Presentation, Basic, "Presentation theme identifier"),
