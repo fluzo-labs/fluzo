@@ -12,6 +12,7 @@ pub mod notification_stack;
 pub mod presentation;
 pub mod setup;
 pub mod shell;
+pub mod tasks;
 pub mod terminal;
 pub mod visual;
 pub mod workspace;

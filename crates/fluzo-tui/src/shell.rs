@@ -11,9 +11,11 @@ use crossterm::event::{
 use fluzo_core::application::{PROTOCOL_VERSION, Snapshot, TaskState};
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Row, Table};
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 const DRAFT_LIMIT: usize = 8192;
 const HISTORY_LIMIT: usize = 256;
@@ -216,6 +218,10 @@ enum Overlay {
     Models,
     Sessions,
     Details,
+    Tasks,
+    TaskConfirm,
+    Permission,
+    Diff,
 }
 
 struct Fragment {
@@ -287,6 +293,9 @@ pub struct Shell {
     input_history: VecDeque<String>,
     history_position: Option<usize>,
     history_draft: String,
+    task_demo: crate::tasks::TaskDemo,
+    task_notice_sequence: u64,
+    diff_scroll: usize,
 }
 
 impl Shell {
@@ -311,6 +320,7 @@ impl Shell {
     }
 
     fn empty(snapshot: Snapshot) -> Result<Self, &'static str> {
+        let task_rows = crate::tasks::project(&snapshot);
         Ok(Self {
             #[cfg(test)]
             formatting_passes: std::cell::Cell::new(0),
@@ -365,6 +375,9 @@ impl Shell {
             input_history: VecDeque::new(),
             history_position: None,
             history_draft: String::new(),
+            task_demo: crate::tasks::TaskDemo::with_rows(task_rows),
+            task_notice_sequence: 0,
+            diff_scroll: 0,
         })
     }
 
@@ -821,9 +834,66 @@ impl Shell {
 
     pub fn set_snapshot(&mut self, snapshot: Snapshot) -> Result<(), &'static str> {
         Self::new(snapshot.clone())?;
-        self.snapshot = snapshot;
         self.changed_at = self.elapsed;
+        self.apply_snapshot(snapshot);
         Ok(())
+    }
+
+    /// Replaces the underlying snapshot and re-projects the task list. Selection
+    /// is clamped rather than reset so a reviewer is not thrown to the top of a
+    /// long list by an unrelated update.
+    fn apply_snapshot(&mut self, snapshot: Snapshot) {
+        let previous: Vec<(u64, fluzo_core::application::TaskState)> = self
+            .task_demo
+            .rows
+            .iter()
+            .map(|row| (row.id, row.state))
+            .collect();
+        self.task_demo.rows = crate::tasks::project(&snapshot);
+        self.task_demo.selection = self
+            .task_demo
+            .selection
+            .min(self.task_demo.rows.len().saturating_sub(1));
+        self.snapshot = snapshot;
+        self.raise_task_notices(&previous);
+    }
+
+    /// Raises a synthetic notice when a projected task enters a notice-eligible
+    /// state. Blocked and failed use `UntilDismissed` because they need
+    /// attention; completion and stopping are transient. Notices are presentation
+    /// only: they authorize nothing and consume no grant.
+    fn raise_task_notices(&mut self, previous: &[(u64, fluzo_core::application::TaskState)]) {
+        for row in &self.task_demo.rows {
+            let Some(severity) = crate::tasks::notice_severity(row.state) else {
+                continue;
+            };
+            if previous
+                .iter()
+                .any(|(id, state)| *id == row.id && *state == row.state)
+            {
+                continue;
+            }
+            let lifetime = match severity {
+                Severity::Approval | Severity::Error => Lifetime::UntilDismissed,
+                _ => Lifetime::Transient,
+            };
+            self.task_notice_sequence = self.task_notice_sequence.saturating_add(1);
+            let cursor = fluzo_core::application::Cursor {
+                epoch: 0,
+                sequence: 1_000 + self.task_notice_sequence,
+            };
+            let text = crate::tasks::sanitize(&format!(
+                "Synthetic task {} is {} ({}); no agent work was executed.",
+                row.id,
+                row.state_label(),
+                row.reason
+                    .map(crate::tasks::reason_label)
+                    .unwrap_or("no recorded reason")
+            ));
+            let _ =
+                self.notification_stack
+                    .receive(cursor, severity, lifetime, &text, self.elapsed);
+        }
     }
 
     fn close_preview(&mut self) {
@@ -1327,6 +1397,16 @@ impl Shell {
             }
             return;
         }
+        if matches!(
+            self.overlay,
+            Some(Overlay::Tasks | Overlay::TaskConfirm | Overlay::Permission | Overlay::Diff)
+        ) {
+            // These overlays own Esc: dismissing a confirmation or a permission
+            // prompt must not fall through to the global close, which would drop
+            // the reviewer out of the task list and into the composer.
+            self.task_key(key, control);
+            return;
+        }
         if key.code == KeyCode::Esc {
             if self.overlay.is_some() {
                 self.close_preview();
@@ -1571,7 +1651,13 @@ impl Shell {
                         "Attachments and clipboard are unavailable; use terminal paste.".into();
                     return;
                 }
-                KeyCode::Char('t' | ' ') | KeyCode::Null => {
+                KeyCode::Char('t') => {
+                    self.overlay = Some(Overlay::Tasks);
+                    self.task_demo.detail = false;
+                    self.status = "Synthetic task list; no runtime connected.".into();
+                    return;
+                }
+                KeyCode::Char(' ') | KeyCode::Null => {
                     self.status = "Task panel is unavailable; no runtime connected.".into();
                     return;
                 }
@@ -1959,6 +2045,150 @@ impl Shell {
         )
     }
 
+    /// Keyboard handling for the UI-04 demo overlays. Every action here only
+    /// records a synthetic outcome; the shell holds no application port, so no
+    /// key in this path can dispatch, resume, approve or stop anything.
+    fn task_key(&mut self, key: KeyEvent, control: bool) {
+        match self.overlay {
+            Some(Overlay::TaskConfirm) => match key.code {
+                KeyCode::Esc => {
+                    self.task_demo.confirmation = None;
+                    self.task_demo.outcome =
+                        Some("Force stop dismissed; task keeps running (synthetic)".into());
+                    self.overlay = Some(Overlay::Tasks);
+                    self.status = "Force stop dismissed; nothing changed (synthetic).".into();
+                }
+                KeyCode::Up | KeyCode::Left => {
+                    if let Some(confirmation) = &mut self.task_demo.confirmation {
+                        confirmation.move_selection(false);
+                    }
+                }
+                KeyCode::Down | KeyCode::Right => {
+                    if let Some(confirmation) = &mut self.task_demo.confirmation {
+                        confirmation.move_selection(true);
+                    }
+                }
+                KeyCode::Enter => {
+                    self.task_demo.resolve_confirmation();
+                    self.status = self
+                        .task_demo
+                        .outcome()
+                        .unwrap_or("No change (synthetic)")
+                        .to_owned();
+                    self.overlay = Some(Overlay::Tasks);
+                }
+                _ => {}
+            },
+            Some(Overlay::Permission) => match key.code {
+                KeyCode::Esc => {
+                    // Closing records no decision. The pending permission stays
+                    // discoverable in the task detail rather than being silently
+                    // resolved by dismissal.
+                    self.task_demo.permission = None;
+                    self.task_demo.outcome = Some(
+                        "Permission prompt closed without a decision; nothing changed (synthetic)"
+                            .into(),
+                    );
+                    self.overlay = Some(Overlay::Tasks);
+                    self.status =
+                        "Permission prompt closed without a decision; nothing changed (synthetic)."
+                            .into();
+                }
+                KeyCode::Up | KeyCode::Left => {
+                    if let Some(prompt) = &mut self.task_demo.permission {
+                        prompt.move_selection(false);
+                    }
+                }
+                KeyCode::Down | KeyCode::Right => {
+                    if let Some(prompt) = &mut self.task_demo.permission {
+                        prompt.move_selection(true);
+                    }
+                }
+                KeyCode::Enter => {
+                    self.task_demo.resolve_permission();
+                    self.status = self
+                        .task_demo
+                        .outcome()
+                        .unwrap_or("No change (synthetic)")
+                        .to_owned();
+                    self.overlay = Some(Overlay::Tasks);
+                }
+                _ => {}
+            },
+            Some(Overlay::Diff) => match key.code {
+                KeyCode::Esc => {
+                    self.task_demo.diff = None;
+                    self.overlay = Some(Overlay::Tasks);
+                }
+                KeyCode::Up | KeyCode::PageUp => {
+                    self.diff_scroll = self
+                        .diff_scroll
+                        .saturating_sub(if key.code == KeyCode::PageUp { 5 } else { 1 });
+                    self.scrollbar_until = self.elapsed.saturating_add(Duration::from_secs(2));
+                }
+                KeyCode::Down | KeyCode::PageDown => {
+                    let maximum = self
+                        .task_demo
+                        .diff
+                        .as_ref()
+                        .map(|diff| diff.lines.len().saturating_sub(1))
+                        .unwrap_or(0);
+                    self.diff_scroll = (self.diff_scroll
+                        + if key.code == KeyCode::PageDown { 5 } else { 1 })
+                    .min(maximum);
+                    self.scrollbar_until = self.elapsed.saturating_add(Duration::from_secs(2));
+                }
+                _ => {}
+            },
+            Some(Overlay::Tasks) => {
+                if self.task_demo.detail {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.task_demo.close_detail();
+                            self.task_demo.outcome =
+                                Some("Task list; selection preserved (nothing dispatched)".into());
+                            self.status = "Task list; selection preserved.".into();
+                        }
+                        KeyCode::Char('c') if !control => {
+                            self.task_demo.request_cancel();
+                            self.status = self
+                                .task_demo
+                                .outcome()
+                                .unwrap_or("No change (synthetic)")
+                                .to_owned();
+                        }
+                        KeyCode::Char('f') if !control => {
+                            self.task_demo.request_force_stop();
+                            self.overlay = Some(Overlay::TaskConfirm);
+                        }
+                        KeyCode::Char('p') if !control => {
+                            self.task_demo.open_permission();
+                            self.overlay = Some(Overlay::Permission);
+                        }
+                        KeyCode::Char('d') if !control => {
+                            self.diff_scroll = 0;
+                            self.task_demo.open_diff();
+                            self.overlay = Some(Overlay::Diff);
+                        }
+                        _ => {}
+                    }
+                } else {
+                    match key.code {
+                        KeyCode::Esc => {
+                            self.overlay = None;
+                            self.status = "Task list closed; nothing was changed.".into();
+                        }
+                        KeyCode::Up => self.task_demo.move_selection(false),
+                        KeyCode::Down => self.task_demo.move_selection(true),
+                        KeyCode::Enter => self.task_demo.open_detail(),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn render_overlay(&self, frame: &mut Frame, color: bool) {
         if let Some(overlay) = self.overlay {
             let theme = Theme::new(self.preferences.effective(), color);
@@ -1992,6 +2222,13 @@ impl Shell {
                     Paragraph::new(lines).style(theme.base),
                     Rect::new(popup.x + 2, popup.y + 1, popup.width - 4, popup.height - 2),
                 );
+                return;
+            }
+            if matches!(
+                overlay,
+                Overlay::Tasks | Overlay::TaskConfirm | Overlay::Permission | Overlay::Diff
+            ) {
+                self.render_task_overlay(frame, popup, theme, overlay, color);
                 return;
             }
             let searching = matches!(
@@ -2162,6 +2399,7 @@ impl Shell {
                     ("Session details | offline demo", lines)
                 }
                 Overlay::Help | Overlay::Quit => return,
+                _ => unreachable!("task overlays are rendered before this match"),
             };
             self.render_dialog_frame(frame, popup, theme);
             let inner = Rect::new(popup.x + 2, popup.y + 1, width - 4, 1);
@@ -2234,6 +2472,375 @@ impl Shell {
             }
             self.render_cursor(frame);
         }
+    }
+
+    /// Task detail: conversation, activity, partial diff summary, verification,
+    /// errors and a trace reference. Opening this view is ordinary inspection and
+    /// takes no writer ownership, changes no grant and redirects no input.
+    /// Wraps one styled string to the popup body width so nothing is clipped.
+    fn task_lines(&self, text: &str, style: Style, width: usize) -> Vec<Line<'static>> {
+        presentation::wrap(vec![Span::styled(text.to_owned(), style)], width)
+    }
+
+    /// Truncates to a display width with an explicit ellipsis. Used for task
+    /// list rows, where wrapping would break the column alignment.
+    fn task_truncate(text: &str, width: usize) -> String {
+        if text.width() <= width {
+            return text.to_owned();
+        }
+        if width <= 1 {
+            return "\u{2026}".to_owned();
+        }
+        let mut out = String::new();
+        let mut used = 0;
+        for grapheme in text.graphemes(true) {
+            let size = grapheme.width();
+            if used + size > width - 1 {
+                break;
+            }
+            out.push_str(grapheme);
+            used += size;
+        }
+        out.push('\u{2026}');
+        out
+    }
+
+    fn render_task_detail(&self, frame: &mut Frame, popup: Rect, theme: Theme) {
+        let Some(row) = self.task_demo.selected() else {
+            return;
+        };
+        let width = usize::from(popup.width.saturating_sub(4));
+        let partial = if row.state == fluzo_core::application::TaskState::Cancelled {
+            "partial (cancelled mid-operation)"
+        } else {
+            "complete"
+        };
+        let mut lines = Vec::new();
+        lines.extend(self.task_lines(&row.title, theme.base, width));
+        lines.push(Line::default());
+        lines.extend(self.task_lines(
+            &format!(
+                "state: {:<10} reason: {}",
+                row.state_label(),
+                row.reason.map(crate::tasks::reason_label).unwrap_or("none")
+            ),
+            theme.base,
+            width,
+        ));
+        lines.extend(self.task_lines(
+            &format!(
+                "session: {}  workspace: {}  current action: {}",
+                row.session, row.workspace, row.action
+            ),
+            theme.base,
+            width,
+        ));
+        lines.extend(self.task_lines(
+            &format!(
+                "budget: {}  interventions: {}",
+                row.budget, row.interventions
+            ),
+            theme.base,
+            width,
+        ));
+        lines.extend(self.task_lines(
+            &format!(
+                "verification: {}  partial diff: {}",
+                match row.verification {
+                    fluzo_core::application::VerificationState::NotRun => "not run",
+                    fluzo_core::application::VerificationState::Passed => "passed",
+                    fluzo_core::application::VerificationState::Failed => "failed",
+                    fluzo_core::application::VerificationState::Waived => "waived",
+                },
+                partial
+            ),
+            theme.base,
+            width,
+        ));
+        lines.extend(self.task_lines(
+            &format!(
+                "errors: {}",
+                if row.state == fluzo_core::application::TaskState::Failed {
+                    "synthetic failure recorded (see trace)"
+                } else {
+                    "none recorded"
+                }
+            ),
+            theme.base,
+            width,
+        ));
+        lines.extend(self.task_lines(
+            &format!(
+                "trace: synthetic-trace-task-{} (demo reference only)",
+                row.id
+            ),
+            theme.muted,
+            width,
+        ));
+        lines.push(Line::default());
+        lines.extend(
+            self.task_lines(
+                self.task_demo
+                    .outcome()
+                    .unwrap_or("Select an action below; nothing has been dispatched."),
+                theme.muted,
+                width,
+            ),
+        );
+        lines.extend(self.task_lines(
+            "Selecting a task never resumes it: no writer ownership, no grant change, no input redirect.",
+            theme.muted,
+            width,
+        ));
+        self.render_dialog_frame(frame, popup, theme);
+        let inner = Rect::new(popup.x + 2, popup.y + 1, popup.width - 4, 1);
+        self.render_dialog_title(frame, inner, "Task detail | offline demo", false);
+        let body = Rect::new(
+            inner.x,
+            popup.y + 3,
+            inner.width,
+            popup.height.saturating_sub(6),
+        );
+        frame.render_widget(Paragraph::new(lines).style(theme.base), body);
+        frame.render_widget(
+            Paragraph::new("c cancel | f force stop | p permissions | d diff | Esc back")
+                .style(theme.accent),
+            Rect::new(inner.x, popup.bottom() - 2, inner.width, 1),
+        );
+    }
+
+    /// Renders the UI-04 demo overlays. Selection is shown with an explicit
+    /// marker so the safe default is visible, not inferred from colour.
+    fn render_task_overlay(
+        &self,
+        frame: &mut Frame,
+        popup: Rect,
+        theme: Theme,
+        overlay: Overlay,
+        color: bool,
+    ) {
+        let width = usize::from(popup.width.saturating_sub(4));
+        let (title, lines, footer) = match overlay {
+            Overlay::Tasks => {
+                if self.task_demo.detail {
+                    self.render_task_detail(frame, popup, theme);
+                    return;
+                }
+                let mut lines = Vec::new();
+                if self.task_demo.rows.is_empty() {
+                    lines.push(Line::styled(
+                        "No synthetic tasks in this snapshot.",
+                        theme.muted,
+                    ));
+                }
+                for (index, row) in self.task_demo.rows.iter().enumerate() {
+                    let selected = index == self.task_demo.selection;
+                    let style = if selected {
+                        theme.accent
+                    } else if matches!(row.state, fluzo_core::application::TaskState::Failed) {
+                        theme.error
+                    } else if matches!(
+                        row.state,
+                        fluzo_core::application::TaskState::Blocked
+                            | fluzo_core::application::TaskState::Stopping
+                    ) {
+                        theme.warning
+                    } else {
+                        theme.base
+                    };
+                    let reason = row.reason.map(crate::tasks::reason_label).unwrap_or("none");
+                    let head = format!(
+                        "{} #{:<3} {:<9} {:<12} {:>9}  ",
+                        if selected { "> " } else { "  " },
+                        row.id,
+                        row.state_label(),
+                        reason,
+                        row.budget.trim()
+                    );
+                    let title_width = width.saturating_sub(head.width());
+                    lines.push(Line::styled(
+                        format!("{}{}", head, Self::task_truncate(&row.title, title_width)),
+                        style,
+                    ));
+                }
+                if let Some(outcome) = self.task_demo.outcome() {
+                    lines.push(Line::default());
+                    lines.extend(self.task_lines(outcome, theme.muted, width));
+                }
+                (
+                    "Tasks | offline demo",
+                    lines,
+                    "Up/Down select | Enter inspect | Esc close | synthetic data only".to_owned(),
+                )
+            }
+            Overlay::TaskConfirm => {
+                let Some(confirmation) = &self.task_demo.confirmation else {
+                    return;
+                };
+                let name = self
+                    .task_demo
+                    .rows
+                    .iter()
+                    .find(|row| row.id == confirmation.task)
+                    .map(|row| row.title.clone())
+                    .unwrap_or_else(|| "unknown synthetic task".into());
+                let mut lines = Vec::new();
+                lines.extend(self.task_lines(
+                    &format!("Task {}: {}", confirmation.task, name),
+                    theme.base,
+                    width,
+                ));
+                lines.extend(self.task_lines(
+                    &format!("processes: {}", confirmation.processes),
+                    theme.base,
+                    width,
+                ));
+                lines.extend(self.task_lines(
+                    &format!("risk: {}", confirmation.risk),
+                    theme.warning,
+                    width,
+                ));
+                lines.push(Line::default());
+                for (index, option) in crate::tasks::CONFIRM_OPTIONS.iter().enumerate() {
+                    let selected = index == confirmation.selection;
+                    lines.push(Line::styled(
+                        format!("{} {}", if selected { "> " } else { "  " }, option),
+                        if selected {
+                            theme.accent
+                        } else if index == 0 {
+                            theme.base
+                        } else {
+                            theme.error
+                        },
+                    ));
+                }
+                lines.push(Line::default());
+                lines.extend(self.task_lines(
+                    "Default is Keep running: Enter without moving changes nothing.",
+                    theme.muted,
+                    width,
+                ));
+                (
+                    "Force stop | confirm (synthetic)",
+                    lines,
+                    "Up/Down move | Enter select | Esc dismiss".to_owned(),
+                )
+            }
+            Overlay::Permission => {
+                let Some(prompt) = &self.task_demo.permission else {
+                    return;
+                };
+                let mut lines = Vec::new();
+                lines.extend(self.task_lines(
+                    &format!("Task {} / operation {}", prompt.task, prompt.operation),
+                    theme.base,
+                    width,
+                ));
+                lines.extend(self.task_lines(
+                    &format!("action: {}", prompt.action),
+                    theme.base,
+                    width,
+                ));
+                lines.extend(self.task_lines(
+                    &format!(
+                        "workspace: {}  backend: {}",
+                        prompt.workspace, prompt.backend
+                    ),
+                    theme.base,
+                    width,
+                ));
+                lines.extend(self.task_lines(
+                    &format!("scope: {}", prompt.scope),
+                    theme.base,
+                    width,
+                ));
+                lines.push(Line::default());
+                for (index, option) in crate::tasks::PERMISSION_OPTIONS.iter().enumerate() {
+                    let selected = index == prompt.selection;
+                    lines.push(Line::styled(
+                        format!("{} {}", if selected { "> " } else { "  " }, option),
+                        if selected {
+                            theme.accent
+                        } else if index == 0 {
+                            theme.base
+                        } else {
+                            theme.warning
+                        },
+                    ));
+                }
+                lines.push(Line::default());
+                lines.extend(self.task_lines(
+                    "Denial is the default. Recording is not dispatch: no grant is consumed.",
+                    theme.muted,
+                    width,
+                ));
+                if !prompt.history.is_empty() {
+                    lines.extend(self.task_lines(
+                        &format!("history: {} recorded", prompt.history.len()),
+                        theme.muted,
+                        width,
+                    ));
+                }
+                (
+                    "Permission | synthetic request",
+                    lines,
+                    "Up/Down move | Enter select | Esc closes without deciding".to_owned(),
+                )
+            }
+            Overlay::Diff => {
+                let Some(diff) = &self.task_demo.diff else {
+                    return;
+                };
+                let mut lines = Vec::new();
+                for line in diff.lines.iter().skip(self.diff_scroll) {
+                    let style = match line.origin {
+                        crate::tasks::ChangeOrigin::Agent => theme.base,
+                        crate::tasks::ChangeOrigin::PreExistingUser => theme.warning,
+                        crate::tasks::ChangeOrigin::Unknown => theme.muted,
+                    };
+                    lines.extend(self.task_lines(
+                        &format!("[{:>23}] {}", line.origin.label(), line.text),
+                        style,
+                        width,
+                    ));
+                }
+                lines.push(Line::default());
+                lines.extend(self.task_lines(
+                    &format!(
+                        "{}{}",
+                        diff.verification_label(),
+                        if diff.partial {
+                            " (partial outcome after cancellation)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    theme.base,
+                    width,
+                ));
+                lines.extend(self.task_lines(crate::tasks::REVIEW_NOTICE, theme.muted, width));
+                (
+                    "Diff & verification | offline demo",
+                    lines,
+                    "Up/Down scroll | Esc close | synthetic content; no Git action".to_owned(),
+                )
+            }
+            _ => return,
+        };
+        self.render_dialog_frame(frame, popup, theme);
+        let inner = Rect::new(popup.x + 2, popup.y + 1, popup.width - 4, 1);
+        self.render_dialog_title(frame, inner, title, color);
+        let body = Rect::new(
+            inner.x,
+            popup.y + 3,
+            inner.width,
+            popup.height.saturating_sub(6),
+        );
+        frame.render_widget(Paragraph::new(lines).style(theme.base), body);
+        frame.render_widget(
+            Paragraph::new(footer).style(theme.muted),
+            Rect::new(inner.x, popup.bottom() - 2, inner.width, 1),
+        );
     }
 
     fn render_notification_editor(&self, frame: &mut Frame, popup: Rect, color: bool) {
@@ -2894,6 +3501,70 @@ mod tests {
     use fluzo_core::application::Cursor;
     use ratatui::{Terminal, backend::TestBackend};
 
+    fn task_with(
+        id: u64,
+        state: fluzo_core::application::TaskState,
+        reason: Option<fluzo_core::application::WaitReason>,
+        title: &str,
+    ) -> fluzo_core::application::TaskSnapshot {
+        use fluzo_core::application::{
+            AttemptId, AttemptSnapshot, AttemptState, TaskState, VerificationState, WaitReason,
+        };
+        // Keep the fixture valid: the protocol requires a reason for waiting
+        // states and a completed attempt plus passing verification on completion.
+        let reason = match state {
+            TaskState::Waiting | TaskState::Blocked | TaskState::Stopping => {
+                Some(reason.unwrap_or(WaitReason::UserInput))
+            }
+            _ => reason,
+        };
+        let (attempt_state, verification) = match state {
+            TaskState::Completed => (AttemptState::Completed, VerificationState::Passed),
+            TaskState::Failed => (AttemptState::Failed, VerificationState::Failed),
+            TaskState::Cancelled => (AttemptState::Cancelled, VerificationState::NotRun),
+            _ => (AttemptState::Running, VerificationState::NotRun),
+        };
+        fluzo_core::application::TaskSnapshot {
+            id: fluzo_core::application::TaskId(id),
+            session: fluzo_core::application::SessionId(1),
+            workspace: fluzo_core::application::WorkspaceId(1),
+            version: 1,
+            state,
+            reason,
+            attempt: Some(AttemptSnapshot {
+                id: AttemptId(id),
+                state: attempt_state,
+            }),
+            operation: None,
+            verification,
+            active_milliseconds: 5000,
+            title: title.into(),
+        }
+    }
+
+    fn snapshot_with(tasks: Vec<fluzo_core::application::TaskSnapshot>) -> Snapshot {
+        Snapshot {
+            protocol_version: 1,
+            demo: true,
+            cursor: Cursor {
+                epoch: 1,
+                sequence: 0,
+            },
+            tasks,
+            next_page: None,
+        }
+    }
+
+    fn shell_with_task() -> Shell {
+        Shell::new(snapshot_with(vec![task_with(
+            1,
+            fluzo_core::application::TaskState::Running,
+            None,
+            "Demo fixture; no agent or tools executed",
+        )]))
+        .unwrap()
+    }
+
     fn shell() -> Shell {
         Shell::new(Snapshot {
             protocol_version: 1,
@@ -2910,6 +3581,157 @@ mod tests {
     fn key(state: &mut Shell, code: KeyCode) {
         state.key(KeyEvent::new(code, KeyModifiers::NONE));
     }
+    #[test]
+    fn task_overlay_esc_stack_closes_one_level_at_a_time() {
+        let mut state = shell_with_task();
+        control(&mut state, 't');
+        assert_eq!(state.overlay, Some(Overlay::Tasks));
+        key(&mut state, KeyCode::Enter);
+        assert!(state.task_demo.detail, "detail should open");
+        key(&mut state, KeyCode::Char('f'));
+        assert_eq!(state.overlay, Some(Overlay::TaskConfirm));
+        key(&mut state, KeyCode::Down);
+        key(&mut state, KeyCode::Esc);
+        assert_eq!(state.overlay, Some(Overlay::Tasks));
+        assert!(state.task_demo.detail, "detail preserved after dismiss");
+        key(&mut state, KeyCode::Char('p'));
+        assert_eq!(state.overlay, Some(Overlay::Permission));
+        key(&mut state, KeyCode::Esc);
+        assert_eq!(state.overlay, Some(Overlay::Tasks));
+        assert!(
+            state.task_demo.permission_history.is_empty(),
+            "Esc records no decision"
+        );
+        key(&mut state, KeyCode::Char('p'));
+        key(&mut state, KeyCode::Enter);
+        assert_eq!(state.task_demo.permission_history.len(), 1);
+        assert_eq!(
+            state.task_demo.permission_history[0].1,
+            crate::tasks::PermissionDecision::Deny
+        );
+        key(&mut state, KeyCode::Char('d'));
+        assert_eq!(state.overlay, Some(Overlay::Diff));
+        key(&mut state, KeyCode::Esc);
+        assert_eq!(state.overlay, Some(Overlay::Tasks));
+        key(&mut state, KeyCode::Esc);
+        assert_eq!(state.overlay, Some(Overlay::Tasks), "detail closes first");
+        assert!(!state.task_demo.detail);
+        key(&mut state, KeyCode::Esc);
+        assert_eq!(state.overlay, None, "list closes on the next Esc");
+    }
+
+    #[test]
+    fn opening_tasks_does_not_dispatch_and_records_no_side_effect() {
+        let mut state = shell_with_task();
+        control(&mut state, 't');
+        assert_eq!(state.overlay, Some(Overlay::Tasks));
+        assert_eq!(state.task_demo.cancel_requests(), 0);
+        assert!(state.task_demo.confirmation.is_none());
+        assert!(state.task_demo.permission.is_none());
+        assert!(state.task_demo.outcome().is_none());
+    }
+
+    #[test]
+    fn a_blocked_task_raises_one_synthetic_notice_until_dismissed() {
+        use crate::notification_stack::Severity;
+        let mut state = shell_with_task();
+        state
+            .set_snapshot(snapshot_with(vec![task_with(
+                1,
+                fluzo_core::application::TaskState::Blocked,
+                Some(fluzo_core::application::WaitReason::Permission),
+                "Demo fixture; no agent or tools executed",
+            )]))
+            .unwrap();
+        let retained = state.notification_stack.retained();
+        assert_eq!(retained.len(), 1, "one notice per state change");
+        assert_eq!(retained[0].severity(), Severity::Approval);
+        let text = state.notification_stack.retained()[0].text();
+        assert!(text.contains("Synthetic task 1 is blocked"), "{text}");
+        assert!(text.contains("permission"), "{text}");
+        // UntilDismissed notices never expire on their own.
+        assert_eq!(retained[0].expires_at(), None);
+    }
+
+    #[test]
+    fn the_same_state_does_not_raise_a_second_notice() {
+        let mut state = shell_with_task();
+        let blocked = snapshot_with(vec![task_with(
+            1,
+            fluzo_core::application::TaskState::Blocked,
+            Some(fluzo_core::application::WaitReason::Permission),
+            "Demo fixture; no agent or tools executed",
+        )]);
+        state.set_snapshot(blocked.clone()).unwrap();
+        state.set_snapshot(blocked).unwrap();
+        assert_eq!(state.notification_stack.retained().len(), 1);
+    }
+
+    #[test]
+    fn a_failure_notice_is_error_severity_and_a_completion_is_success() {
+        use crate::notification_stack::Severity;
+        let mut state = shell_with_task();
+        state
+            .set_snapshot(snapshot_with(vec![task_with(
+                2,
+                fluzo_core::application::TaskState::Failed,
+                None,
+                "Demo fixture; no agent or tools executed",
+            )]))
+            .unwrap();
+        assert_eq!(
+            state.notification_stack.retained()[0].severity(),
+            Severity::Error
+        );
+        state
+            .set_snapshot(snapshot_with(vec![task_with(
+                2,
+                fluzo_core::application::TaskState::Completed,
+                None,
+                "Demo fixture; no agent or tools executed",
+            )]))
+            .unwrap();
+        let retained = state.notification_stack.retained();
+        assert_eq!(retained.last().unwrap().severity(), Severity::Success);
+    }
+
+    #[test]
+    fn task_notice_text_is_sanitized() {
+        let mut state = shell_with_task();
+        state
+            .set_snapshot(snapshot_with(vec![task_with(
+                3,
+                fluzo_core::application::TaskState::Failed,
+                None,
+                "\u{1b}]0;pwned\u{7} \u{202e}secret path\u{202c}",
+            )]))
+            .unwrap();
+        let text = state.notification_stack.retained()[0].text();
+        assert!(!text.contains('\u{1b}'), "{text:?}");
+        assert!(!text.contains('\u{202e}'), "{text:?}");
+    }
+
+    #[test]
+    fn quiet_states_raise_no_notice() {
+        let mut state = shell_with_task();
+        for state_name in [
+            fluzo_core::application::TaskState::Pending,
+            fluzo_core::application::TaskState::Ready,
+            fluzo_core::application::TaskState::Running,
+            fluzo_core::application::TaskState::Waiting,
+        ] {
+            state
+                .set_snapshot(snapshot_with(vec![task_with(
+                    9,
+                    state_name,
+                    None,
+                    "Demo fixture; no agent or tools executed",
+                )]))
+                .unwrap();
+        }
+        assert!(state.notification_stack.retained().is_empty());
+    }
+
     fn control(state: &mut Shell, character: char) {
         state.key(KeyEvent::new(
             KeyCode::Char(character),

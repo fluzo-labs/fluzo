@@ -1129,13 +1129,16 @@ they do not implement missing runtime capabilities.
 | Conversation | PgUp/PgDn, b/f, u/d | Full/half viewport scrolling |
 | Conversation | Home/End, g/G; global Ctrl+End | Top/bottom; bottom resumes following |
 | Conversation | Space | Expand/collapse selected tool |
+| Tasks | Ctrl+T | Open the synthetic task list |
 
-Ctrl+N (new session), Ctrl+Y/Shift+Tab (modes), Ctrl+T/Ctrl+Space (tasks), Ctrl+Z
+Ctrl+N (new session), Ctrl+Y/Shift+Tab (modes), Ctrl+Space (tasks), Ctrl+Z
 (suspend), Ctrl+O (external editor), Ctrl+F/R/V (attachments/clipboard), selection
 clipboard chords, chat c/y/C/Y and sidebar/horizontal navigation report unavailable.
 They do not simulate consent, execute tools, spawn processes, or mutate persistent
 sessions. `@` remains literal text: file completion is not implemented. Thus this
 is key-map alignment for existing demo functions, not complete Crush parity.
+Ctrl+T is the UI-04 task demo entry point described below; it is not the eventual
+production task view and dispatches nothing.
 Devmenu Ctrl+A/R/N remain explicitly local preview controls. Ctrl+Q/F1 and
 Ctrl+S-preview are no longer the quit/help/send bindings.
 
@@ -1519,3 +1522,87 @@ screen-reader testing, reference performance, large runtime streaming and full
 MVP visual acceptance are not run. PTY/buffer checks do not prove visual polish or
 display FPS. No live inference was run. CI still needs to run on the published
 revision. There is no issue closure, commit or publication implied by local tests.
+
+## UI-04: task, permission, diff and notification demo states
+
+Issue #9 adds the four remaining demo states to the interactive shell. Everything
+here is synthetic and host-controlled: the TUI has no `ApplicationPort`, no
+runtime, no provider and no workspace access. Every action is recorded in
+presentation state and labelled so a reviewer can never read it as a real
+dispatch. `crates/fluzo-tui/src/tasks.rs` holds the demo state, the projection
+from the existing `Snapshot.tasks` DTOs, and the sanitisation; `shell.rs` owns
+the overlays and the keyboard routing.
+
+**Entry point.** `Ctrl+T` opens the task list. It projects whatever the host
+supplied through the existing snapshot path; with no host it shows one synthetic
+task. The list is `#id`, state, reason, elapsed budget and a truncated title, so
+the columns that PRD 12.1 requires stay visible at 80 columns. `Up/Down` select,
+`Enter` inspects, `Esc` closes. Selecting a task states on screen that it never
+resumes it: no writer ownership, no grant change, no input redirect.
+
+**Task detail.** State, reason, session, workspace, current action, elapsed
+budget, intervention count, verification state, partial-diff flag, error summary
+and a synthetic trace reference. From the detail, `c` cancels, `f` force stops,
+`p` opens permissions and `d` opens the diff.
+
+**Cancel and force stop.** Both route through a confirmation that names the
+affected task, its process count and its active operations, and states that a
+force stop can lose work and leave the termination outcome unknown. The safe
+choice is structural, not a colour: `Keep running` is index 0, selection is
+initialised to 0, and activating the default returns no action at all, so
+`Enter` on a freshly opened confirmation changes nothing. Only an explicit move
+to index 1 selects `Force stop anyway`. Dismissing with `Esc` records a
+dismissal outcome and keeps the task running.
+
+**Permission prompt.** Shows the action, workspace, backend, a human-readable
+scope and the three decisions. `Deny` is index 0 and the initial selection, so
+the default is the least-privilege choice. `Enter` records the decision and
+states that no runtime is connected and no grant was consumed. `Esc` closes
+without recording any decision; the prompt stays discoverable from the detail
+rather than being silently resolved. Credential references render as
+`$FLUZO_DEMO_TOKEN (reference only)`; no value is ever shown.
+
+**Diff review.** Added/modified/deleted lines carry an origin marker of agent,
+pre-existing user change or unknown, plus the verification state and a partial
+indicator. The review notice, `Reviewing does not stage, revert, commit or
+accept any change.`, is always on screen. `Up/Down` and `PgUp/PgDn` scroll.
+
+**Notifications.** Task state changes raise notices through the existing
+notification stack: `Blocked` becomes `Approval` retained until dismissed,
+`Failed` becomes `Error` retained until dismissed, `Completed` becomes
+`Success` transient and `Stopping` becomes `Warning` transient. Quiet states
+raise nothing, and a repeated identical state raises nothing, so a stalled
+snapshot stream cannot spam the stack. Notices use the existing preview,
+focus, dismissal and retention rules; UI-04 adds no second notification path.
+
+**Escalation and unwinding.** The task overlays own `Esc` ahead of the global
+handler. Dismissing a confirmation, a permission prompt or a diff returns to the
+task detail, and dismissing the detail returns to the list. It never falls
+through to the global close, which previously dropped the user out of the task
+view entirely.
+
+**Sanitisation.** Every projected string passes `safe_text` and then an escaping
+pass for zero-width and invisible codepoints: U+200B, U+200C, U+200D, U+2060,
+U+FEFF and U+00AD. Control, escape, bidirectional and combining sequences are
+escaped rather than dropped or forwarded, so a hostile title cannot forge a
+border, a status line or a fake approval.
+
+### UI-04 verification
+
+`cargo test -p fluzo-tui --locked --offline` runs 176 tests, including 19 new
+`tasks.rs` tests for confirmation defaults, permission defaults, projection
+read-only behaviour, origin labelling, notice severity mapping and the
+zero-width escaping. Seven new shell tests cover the `Esc` stack, that opening
+the task list records no side effect, one-notice-per-state-change, notice
+severity and notice sanitisation. `scripts/test_tui.py` adds a PTY driver run at
+24x80 and 40x120 that walks the list, the detail, a force-stop confirmation,
+a permission prompt with both `Esc` and `Enter`, and the diff, asserting the
+safe defaults are selected and that the terminal restores its exact termios.
+Full workspace results: 298 Rust tests pass, the 78-test Python suite passes,
+`cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets
+-D warnings` are clean, and `python3 scripts/check_dev_setup.py` passes.
+
+Visual polish, Ghostty/Alacritty review, screen-reader checks and reference
+performance are not run. These are demo states only: no runtime, transport,
+permission enforcement or persistence is implemented, and nothing here
+establishes UI-04 acceptance or issue closure.
