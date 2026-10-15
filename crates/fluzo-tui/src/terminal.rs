@@ -180,6 +180,7 @@ pub fn run_demo(
         }
     };
     let mut shell = Shell::new(snapshot).map_err(io::Error::other)?;
+    shell.install_task_demo_fixture();
     shell.set_repository(&options.repository);
     shell.preferences = Preferences::new(options).map_err(io::Error::other)?;
     if scenes.len() > 16 {

@@ -134,6 +134,17 @@ pub enum PermissionDecision {
     AllowForTask,
 }
 
+/// Which class of authority a pending permission request is asking for. The
+/// demo carries this on the row so a single session can show more than one
+/// scope. It is display metadata only: it authorizes nothing and consumes no
+/// grant. `Credential` requests reference `$FLUZO_DEMO_TOKEN`; `WorkspaceWrite`
+/// requests name a workspace path and carry no credential reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PermissionScope {
+    Credential,
+    WorkspaceWrite,
+}
+
 impl PermissionDecision {
     /// Any unexpected index resolves to denial: an ambiguous input must never
     /// become an approval.
@@ -183,6 +194,24 @@ impl PermissionPrompt {
             backend: sanitize("native local workspace (demo)"),
             scope: sanitize(
                 "src/fixture.rs [observed version v7] | env: $FLUZO_DEMO_TOKEN (reference only)",
+            ),
+            selection: 0,
+            history: Vec::new(),
+        }
+    }
+
+    /// A workspace-write permission request with no credential reference.
+    /// Names a workspace path and an observed file version only. Synthetic:
+    /// it never opens the path and never authorizes the write.
+    pub fn workspace_write(task: u64, operation: u64, workspace: u64) -> Self {
+        Self {
+            task,
+            operation,
+            action: sanitize("tool.write_file"),
+            workspace,
+            backend: sanitize("native local workspace (demo)"),
+            scope: sanitize(
+                "src/fixture.rs [observed version v7] | workspace-write (no credential)",
             ),
             selection: 0,
             history: Vec::new(),
@@ -302,6 +331,7 @@ pub struct TaskRow {
     pub budget: String,
     pub interventions: usize,
     pub verification: VerificationState,
+    pub permission_scope: PermissionScope,
 }
 
 impl TaskRow {
@@ -378,8 +408,125 @@ pub fn project(snapshot: &Snapshot) -> Vec<TaskRow> {
             budget: budget_text(task.active_milliseconds),
             interventions: usize::from(task.state == TaskState::Waiting),
             verification: task.verification,
+            permission_scope: PermissionScope::Credential,
         })
         .collect()
+}
+
+/// The multi-state Ctrl+T review fixture: one session showing the full task
+/// state space, two permission scopes, and partial diffs with differing
+/// verification. Deterministic and synthetic: no runtime, provider, inference
+/// or real workspace access. Built by projecting real [`TaskSnapshot`] values
+/// so the projection and sanitization path is exercised, then annotating the
+/// permission scopes the protocol snapshot itself does not carry.
+pub fn multi_state_fixture() -> TaskDemo {
+    use fluzo_core::application::{
+        AttemptId, AttemptSnapshot, AttemptState, Cursor, SessionId, TaskId, TaskSnapshot,
+        WorkspaceId,
+    };
+    let task = |id: u64,
+                state: TaskState,
+                reason: Option<WaitReason>,
+                attempt: AttemptState,
+                verification: VerificationState,
+                title: &str| TaskSnapshot {
+        id: TaskId(id),
+        session: SessionId(1),
+        workspace: WorkspaceId(7),
+        version: 1,
+        state,
+        reason,
+        attempt: Some(AttemptSnapshot {
+            id: AttemptId(id),
+            state: attempt,
+        }),
+        operation: None,
+        verification,
+        active_milliseconds: 81_000,
+        title: title.to_owned(),
+    };
+    let snapshot = Snapshot {
+        protocol_version: 1,
+        demo: true,
+        cursor: Cursor {
+            epoch: 1,
+            sequence: 0,
+        },
+        tasks: vec![
+            task(
+                101,
+                TaskState::Pending,
+                None,
+                AttemptState::Pending,
+                VerificationState::NotRun,
+                "queued: index repository symbols",
+            ),
+            task(
+                102,
+                TaskState::Running,
+                None,
+                AttemptState::Running,
+                VerificationState::NotRun,
+                "running: refactor composer keymap",
+            ),
+            task(
+                103,
+                TaskState::Blocked,
+                Some(WaitReason::Permission),
+                AttemptState::Running,
+                VerificationState::NotRun,
+                "blocked: credential needed to fetch model catalog",
+            ),
+            task(
+                104,
+                TaskState::Blocked,
+                Some(WaitReason::Permission),
+                AttemptState::Running,
+                VerificationState::NotRun,
+                "blocked: workspace-write needed for src/fixture.rs",
+            ),
+            task(
+                105,
+                TaskState::Completed,
+                None,
+                AttemptState::Completed,
+                VerificationState::Passed,
+                "completed: add regression test",
+            ),
+            task(
+                106,
+                TaskState::Failed,
+                None,
+                AttemptState::Failed,
+                VerificationState::Failed,
+                "failed: migrate storage layer",
+            ),
+            task(
+                107,
+                TaskState::Stopping,
+                Some(WaitReason::TerminationUnconfirmed),
+                AttemptState::Running,
+                VerificationState::NotRun,
+                "stopping: cancel long-running build",
+            ),
+            task(
+                108,
+                TaskState::Cancelled,
+                None,
+                AttemptState::Cancelled,
+                VerificationState::NotRun,
+                "cancelled: revert partial edit",
+            ),
+        ],
+        next_page: None,
+    };
+    let mut rows = project(&snapshot);
+    for row in &mut rows {
+        if row.id == 104 {
+            row.permission_scope = PermissionScope::WorkspaceWrite;
+        }
+    }
+    TaskDemo::with_rows(rows)
 }
 
 /// Task-severity mapping for synthetic notices. Completion, blocked-on-input and
@@ -394,7 +541,7 @@ pub fn notice_severity(state: TaskState) -> Option<Severity> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TaskDemo {
     pub rows: Vec<TaskRow>,
     pub selection: usize,
@@ -502,12 +649,16 @@ impl TaskDemo {
     }
 
     pub fn open_permission(&mut self) {
-        if let Some(row) = self.selected().map(|row| (row.id, row.workspace)) {
-            self.permission = Some(PermissionPrompt::synthetic(
-                row.0,
-                row.0.saturating_add(7000),
-                row.1,
-            ));
+        if let Some(row) = self.selected() {
+            let (id, workspace, scope) = (row.id, row.workspace, row.permission_scope);
+            self.permission = Some(match scope {
+                PermissionScope::Credential => {
+                    PermissionPrompt::synthetic(id, id.saturating_add(7000), workspace)
+                }
+                PermissionScope::WorkspaceWrite => {
+                    PermissionPrompt::workspace_write(id, id.saturating_add(7000), workspace)
+                }
+            });
         }
     }
 
@@ -526,11 +677,13 @@ impl TaskDemo {
     }
 
     pub fn open_diff(&mut self) {
-        if let Some((verification, cancelled)) = self
-            .selected()
-            .map(|row| (row.verification, row.state == TaskState::Cancelled))
-        {
-            self.diff = Some(DiffView::synthetic(verification, cancelled));
+        if let Some((verification, partial)) = self.selected().map(|row| {
+            (
+                row.verification,
+                matches!(row.state, TaskState::Cancelled | TaskState::Failed),
+            )
+        }) {
+            self.diff = Some(DiffView::synthetic(verification, partial));
         }
     }
 
@@ -877,5 +1030,137 @@ mod tests {
             rows[0].reason.map(reason_label),
             Some("termination unconfirmed")
         );
+    }
+
+    fn fixture() -> TaskDemo {
+        multi_state_fixture()
+    }
+
+    fn select(demo: &mut TaskDemo, id: u64) {
+        let index = demo.rows.iter().position(|row| row.id == id).unwrap();
+        demo.selection = index;
+    }
+
+    #[test]
+    fn fixture_shows_every_required_state_in_one_session() {
+        let demo = fixture();
+        assert!(demo.rows.len() >= 5, "fixture needs 5+ tasks");
+        let states: Vec<TaskState> = demo.rows.iter().map(|row| row.state).collect();
+        for required in [
+            TaskState::Pending,
+            TaskState::Running,
+            TaskState::Blocked,
+            TaskState::Completed,
+            TaskState::Failed,
+            TaskState::Stopping,
+        ] {
+            assert!(states.contains(&required), "missing state {required:?}");
+        }
+        let blocked = demo
+            .rows
+            .iter()
+            .filter(|row| {
+                row.state == TaskState::Blocked && row.reason == Some(WaitReason::Permission)
+            })
+            .count();
+        assert!(blocked >= 2, "need 2+ blocked-awaiting-permission tasks");
+    }
+
+    #[test]
+    fn fixture_permission_requests_have_two_distinct_scopes() {
+        let mut demo = fixture();
+
+        select(&mut demo, 103);
+        demo.open_permission();
+        let credential = demo.permission.take().unwrap();
+        assert!(credential.scope.contains("$FLUZO_DEMO_TOKEN"));
+        assert!(credential.scope.contains("reference only"));
+        assert!(
+            !credential.scope.contains("workspace-write"),
+            "credential request must not be a workspace-write request"
+        );
+
+        select(&mut demo, 104);
+        demo.open_permission();
+        let write = demo.permission.take().unwrap();
+        assert!(write.scope.contains("workspace-write"));
+        assert!(write.scope.contains("no credential"));
+        assert!(
+            !write.scope.contains("$FLUZO_DEMO_TOKEN"),
+            "workspace-write request must not reference a credential"
+        );
+        assert!(write.scope.contains("src/fixture.rs"));
+    }
+
+    #[test]
+    fn fixture_has_two_partial_diffs_with_differing_verification() {
+        let mut demo = fixture();
+
+        select(&mut demo, 106);
+        demo.open_diff();
+        let failed = demo.diff.take().unwrap();
+        assert!(failed.partial, "failed task diff is partial");
+        assert_eq!(failed.verification, VerificationState::Failed);
+
+        select(&mut demo, 108);
+        demo.open_diff();
+        let cancelled = demo.diff.take().unwrap();
+        assert!(cancelled.partial, "cancelled task diff is partial");
+        assert_eq!(cancelled.verification, VerificationState::NotRun);
+
+        assert_ne!(
+            failed.verification, cancelled.verification,
+            "the two partial diffs must differ in verification"
+        );
+
+        select(&mut demo, 105);
+        demo.open_diff();
+        let completed = demo.diff.take().unwrap();
+        assert!(!completed.partial);
+        assert_eq!(completed.verification, VerificationState::Passed);
+    }
+
+    #[test]
+    fn fixture_safety_invariants_hold() {
+        let mut demo = fixture();
+
+        // Selection never resumes work: opening detail is inspection only.
+        select(&mut demo, 103);
+        demo.open_detail();
+        assert_eq!(demo.inspections(), 1);
+        assert!(
+            !demo.outcome().unwrap_or("").contains("resumed"),
+            "selecting a task must not resume it"
+        );
+
+        // Deny is the first permission choice on both scopes.
+        select(&mut demo, 104);
+        demo.open_permission();
+        assert_eq!(
+            demo.permission.as_ref().unwrap().decision(),
+            PermissionDecision::Deny
+        );
+        // Approvals require confirmation; denial does not.
+        demo.permission.as_mut().unwrap().selection = 1;
+        assert!(demo.permission.as_ref().unwrap().decision().is_approval());
+        // Resolving records the decision without dispatching or consuming a grant.
+        demo.resolve_permission();
+        assert!(demo.permission.is_none());
+        assert!(demo.outcome().unwrap().contains("no grant consumed"));
+
+        // Reviewing a diff never stages, commits or pushes.
+        select(&mut demo, 106);
+        demo.open_diff();
+        let diff = demo.diff.as_ref().unwrap();
+        assert!(REVIEW_NOTICE.contains("stage") && REVIEW_NOTICE.contains("commit"));
+        let joined: Vec<&str> = diff.lines.iter().map(|line| line.text.as_str()).collect();
+        let joined = joined.join("\n");
+        assert!(!joined.contains("staged"));
+        assert!(!joined.contains("pushed"));
+    }
+
+    #[test]
+    fn fixture_is_deterministic() {
+        assert_eq!(multi_state_fixture(), multi_state_fixture());
     }
 }
