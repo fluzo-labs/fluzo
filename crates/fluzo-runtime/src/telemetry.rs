@@ -52,9 +52,10 @@ pub struct RedactionPolicy {
     /// an exact match, never a substring match, so a key cannot borrow its
     /// way onto the list. This exists because the pinned GenAI vocabulary
     /// legitimately contains credential-shaped substrings:
-    /// `gen_ai.token.modality` and every `gen_ai.usage.*_tokens`
-    /// attribute would otherwise be destroyed by the broad `token` rule,
-    /// silently erasing the token accounting the contract requires.
+    /// `gen_ai.token.modality`, `gen_ai.request.max_tokens` and every
+    /// `gen_ai.usage.*_tokens` attribute would otherwise be destroyed by
+    /// the broad `token` rule, silently erasing the token accounting the
+    /// contract requires.
     pub known_safe_keys: Vec<String>,
     /// Known secret values to scrub from message and attribute text.
     pub secret_values: Vec<String>,
@@ -66,6 +67,7 @@ pub struct RedactionPolicy {
 fn pinned_safe_genai_keys() -> Vec<String> {
     [
         fluzo_core::telemetry::attributes::TOKEN_MODALITY,
+        fluzo_core::telemetry::attributes::REQUEST_MAX_TOKENS,
         fluzo_core::telemetry::attributes::USAGE_INPUT_TOKENS,
         fluzo_core::telemetry::attributes::USAGE_OUTPUT_TOKENS,
         fluzo_core::telemetry::attributes::USAGE_CACHE_READ_INPUT_TOKENS,

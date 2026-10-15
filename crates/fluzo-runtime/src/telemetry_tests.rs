@@ -826,3 +826,175 @@ fn default_policy_preserves_pinned_genai_usage_attributes() {
     assert_eq!(log.attributes["access_token"], "[REDACTED]");
     assert_eq!(log.attributes["refresh token"], "[REDACTED]");
 }
+
+#[test]
+fn every_pinned_vocabulary_key_survives_default_policy() {
+    // T20 sweep: the default policy's broad credential substrings must
+    // never rewrite a legitimate pinned vocabulary key. The table is
+    // built from the core constants, so a future pinned key that
+    // introduces a forbidden substring without a matching exemption in
+    // pinned_safe_genai_keys() fails here rather than silently erasing
+    // structured data in production.
+    use fluzo_core::telemetry::attributes as a;
+    let pinned: &[&str] = &[
+        a::OPERATION_NAME,
+        a::PROVIDER_NAME,
+        a::REQUEST_MODEL,
+        a::RESPONSE_MODEL,
+        a::REQUEST_STREAM,
+        a::REQUEST_MAX_TOKENS,
+        a::RESPONSE_ID,
+        a::RESPONSE_FINISH_REASONS,
+        a::USAGE_INPUT_TOKENS,
+        a::USAGE_OUTPUT_TOKENS,
+        a::USAGE_CACHE_READ_INPUT_TOKENS,
+        a::USAGE_CACHE_WRITE_INPUT_TOKENS,
+        a::USAGE_REASONING_OUTPUT_TOKENS,
+        a::RESPONSE_TIME_TO_FIRST_CHUNK,
+        a::TOKEN_MODALITY,
+        a::CONVERSATION_ID,
+        a::ERROR_TYPE,
+        a::FLUZO_INFERENCE_PURPOSE,
+        a::ABSENT_BY_DEFAULT[0],
+        a::ABSENT_BY_DEFAULT[1],
+        a::ABSENT_BY_DEFAULT[2],
+    ];
+
+    let mut attributes = std::collections::BTreeMap::new();
+    for key in pinned {
+        // A distinctive legitimate value per key; if the key were
+        // redacted the value would become [REDACTED] and the assert
+        // below catches it.
+        attributes.insert((*key).to_string(), format!("value-for-{key}"));
+    }
+
+    let policy = RedactionPolicy::default();
+    let mut record = DiagnosticRecord::new(
+        SignalKind::Span,
+        1_700_000_000_000,
+        ResourceIdentity {
+            service_name: "fluzo-test".into(),
+            service_version: "0.0.1".into(),
+        },
+        None,
+        DiagnosticPayload::Span(SpanRecord {
+            name: fluzo_core::telemetry::gen_ai_span_name("chat", "flash-halogen"),
+            kind: SpanKind::Client,
+            start_unix_ms: 1_700_000_000_000,
+            end_unix_ms: 1_700_000_001_000,
+            status: SpanStatus::Ok,
+            attributes,
+            sampled: true,
+        }),
+    );
+    redact_record(&mut record, &policy);
+    let DiagnosticPayload::Span(span) = &record.payload else {
+        panic!("expected span");
+    };
+    for key in pinned {
+        assert_eq!(
+            span.attributes.get(*key).map(String::as_str),
+            Some(format!("value-for-{key}").as_str()),
+            "pinned vocabulary key {key} must survive the default policy unchanged"
+        );
+    }
+}
+
+#[test]
+fn pinned_instrument_names_are_never_key_redacted() {
+    // Instrument names legitimately contain "token" but are metric
+    // NAMES (String fields), never map keys, so the key-substring rule
+    // must not touch them. A metric whose name contains "token" keeps
+    // its name; only credential-shaped dimension keys are redacted.
+    use fluzo_core::telemetry::instruments as i;
+    let policy = RedactionPolicy::default();
+    let mut dimensions = std::collections::BTreeMap::new();
+    dimensions.insert(
+        fluzo_core::telemetry::attributes::TOKEN_MODALITY.to_string(),
+        "text".to_string(),
+    );
+    dimensions.insert("api_key".to_string(), "sk-secret".to_string());
+    let mut record = DiagnosticRecord::new(
+        SignalKind::Metric,
+        1_700_000_000_000,
+        ResourceIdentity {
+            service_name: "fluzo-test".into(),
+            service_version: "0.0.1".into(),
+        },
+        None,
+        DiagnosticPayload::Metric(MetricSnapshot {
+            name: i::USAGE_INPUT_TOKENS.to_string(),
+            unit: fluzo_core::telemetry::TOKEN_UNIT.to_string(),
+            kind: MetricKind::Counter,
+            temporality: MetricTemporality::Delta,
+            window_start_ms: 1_700_000_000_000,
+            window_end_ms: 1_700_000_001_000,
+            dimensions,
+            aggregation: MetricAggregation::Sum { value: 0.0 },
+        }),
+    );
+    redact_record(&mut record, &policy);
+    let DiagnosticPayload::Metric(metric) = &record.payload else {
+        panic!("expected metric");
+    };
+    assert_eq!(
+        metric.name,
+        i::USAGE_INPUT_TOKENS,
+        "instrument name containing 'token' must not be redacted"
+    );
+    assert_eq!(
+        metric.dimensions[fluzo_core::telemetry::attributes::TOKEN_MODALITY],
+        "text",
+        "pinned dimension survives"
+    );
+    assert_eq!(
+        metric.dimensions["api_key"], "[REDACTED]",
+        "credential-shaped dimension still redacted"
+    );
+}
+
+#[test]
+fn secret_shaped_values_still_redacted_across_all_forbidden_substrings() {
+    // The other side of the sweep: every forbidden substring must still
+    // catch a credential-shaped key with a secret value under the
+    // default policy, so widening the safe-key exemption for
+    // max_tokens did not weaken the rule.
+    let policy = RedactionPolicy::default();
+    let leaky: &[(&str, &str)] = &[
+        ("authorization", "Bearer abc"),
+        ("access_token", "abc"),
+        ("client_secret", "abc"),
+        ("api_key", "abc"),
+        ("apikey", "abc"),
+        ("password", "abc"),
+        ("set_cookie", "abc"),
+    ];
+    let mut attributes = std::collections::BTreeMap::new();
+    for (key, value) in leaky {
+        attributes.insert((*key).to_string(), (*value).to_string());
+    }
+    let mut record = DiagnosticRecord::new(
+        SignalKind::Log,
+        1_700_000_000_000,
+        ResourceIdentity {
+            service_name: "fluzo-test".into(),
+            service_version: "0.0.1".into(),
+        },
+        None,
+        DiagnosticPayload::Log(LogPayload {
+            level: LogLevel::Info,
+            message: "x".into(),
+            attributes,
+        }),
+    );
+    redact_record(&mut record, &policy);
+    let DiagnosticPayload::Log(log) = &record.payload else {
+        panic!("expected log");
+    };
+    for (key, _) in leaky {
+        assert_eq!(
+            log.attributes[*key], "[REDACTED]",
+            "credential-shaped key {key} must be redacted by the default policy"
+        );
+    }
+}
