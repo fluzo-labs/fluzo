@@ -229,7 +229,7 @@ Hypotheses to confirm during implementation, not assumed:
   step is idempotent per session and re-running it reports the existing
   resume rather than creating a second attempt.
 
-### P3 — Private owner-verified task-control channel
+### P3 — Private owner-verified task-control channel (implemented)
 
 - Outcome: a separate process can inspect, cancel or force-stop work
   through a private Unix socket bound only by the writer-lock holder,
@@ -267,14 +267,38 @@ Hypotheses to confirm during implementation, not assumed:
   - Fixtures use real Unix sockets and child processes as roles with
     pipe barriers; no sleep-based synchronisation.
 - Actions:
-  - [ ] Implement `control.rs` framed protocol, server and client.
-  - [ ] Owner verification against the live lock and acquisition nonce.
-  - [ ] Child-role fixtures: owner, inspection client, control client;
+  - [x] Implement `control.rs` framed protocol, server and client.
+  - [x] Owner verification against the live lock and acquisition nonce.
+  - [x] Child-role fixtures: owner, inspection client, control client;
         stale-owner, symlink, oversize, unknown-variant and
         unconfirmed-force-stop negatives.
-  - [ ] Record verification and stop for review.
+  - [x] Record verification and stop for review.
 - Verification: `cargo test -p fluzo-runtime --lib --locked --offline
   control` plus the workspace set.
+- Actual result: 26 passed / 0 failed / 1 ignored (the `#[ignore]`d
+  child role). Full workspace: 753 passed / 0 failed / 10 ignored
+  across all binaries; `cargo fmt --check`, `cargo clippy -D warnings`,
+  `cargo build`, `check_dev_setup.py` and the 90 Python tests pass.
+- Notes on the shape actually built:
+  - `ControlServer::bind` takes the `WriterOwnership` by value, so the
+    channel cannot exist without the exclusive lock and cannot outlive
+    the ownership it verifies against.
+  - `handle_verifying(envelope, verify_live)` is the verification
+    boundary. The live path calls `verify_still_owned()`; the stale
+    path injects a failure instead of faking the lock type, so the
+    stale-owner assertion is real rather than a mock.
+  - `serve_stream` writes an 8-byte protocol greeting before reading,
+    so a client that reaches a foreign or stale socket learns it
+    before sending a request it would otherwise retry.
+  - Fixtures half-close the client write side after sending. Without
+    that, a deliberately truncated frame leaves the server blocked on
+    body bytes and the fixture hangs instead of failing; this was
+    observed as a real hang during development.
+  - Two cross-process fixtures spawn the child as a role
+    (`control_child_role`, `#[ignore]`d) and synchronise on stdout
+    announcements, not sleeps. The child proves it is served and is
+    then refused `HeldBy` on `WriterOwnership::acquire` while the
+    parent still holds the lock.
 - Risks and recovery: the socket is same-user reachable and is not a
   security boundary against a cooperating local user; documented as
   such, consistent with the RUN-01 confinement boundary.
@@ -285,7 +309,7 @@ Hypotheses to confirm during implementation, not assumed:
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | pending | `cargo test -p fluzo-runtime --lib --locked --offline recovery`: 12 passed / 0 failed. Full runtime lib: 413 passed / 0 failed / 8 ignored. |
 | P2 | implemented | passed | pending | `cargo test -p fluzo-runtime --lib --locked --offline resume`: 13 passed / 0 failed. |
-| P3 | pending | not_run | pending | none yet |
+| P3 | implemented | passed | pending | `cargo test -p fluzo-runtime --lib --locked --offline control`: 26 passed / 0 failed / 1 ignored. Full workspace: 753 passed / 0 failed / 10 ignored. |
 
 ## Next step
 

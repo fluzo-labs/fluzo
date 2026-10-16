@@ -967,12 +967,13 @@ impl Store {
         kind: &str,
         limit: i64,
     ) -> Result<Vec<(String, String)>, StoreError> {
-        let rows = sqlx::query("SELECT id, payload FROM state WHERE kind = ?1 ORDER BY id ASC LIMIT ?2")
-            .bind(kind)
-            .bind(limit)
-            .fetch_all(&mut self.connection)
-            .await
-            .map_err(map_error)?;
+        let rows =
+            sqlx::query("SELECT id, payload FROM state WHERE kind = ?1 ORDER BY id ASC LIMIT ?2")
+                .bind(kind)
+                .bind(limit)
+                .fetch_all(&mut self.connection)
+                .await
+                .map_err(map_error)?;
         Ok(rows
             .into_iter()
             .map(|row| {

@@ -9,9 +9,7 @@ use crate::recovery::{
     ATTEMPT_KIND, AttemptRecord, BudgetRecord, OPERATION_KIND, OperationRecord, RecoveryReader,
     SESSION_KIND,
 };
-use crate::resume::{
-    self, LiveWorkspace, ReconcileBlock, ResumeError, resumed_authorization,
-};
+use crate::resume::{self, LiveWorkspace, ReconcileBlock, ResumeError, resumed_authorization};
 use crate::session_auth::ApprovalMode;
 use crate::store::{EventRecord, StateUpdate, Store};
 use crate::workspace::WorkspaceIdentity;
@@ -413,37 +411,39 @@ fn uncertain_budget_is_carried_as_uncertain() {
     let root = Root::new("uncertain-budget");
     let rt = runtime();
     let mut store = rt.block_on(Store::open(root.path())).unwrap();
-    rt.block_on(store.commit_unit(
-        &[
-            StateUpdate {
-                id: "s-ub".into(),
-                kind: SESSION_KIND.into(),
-                payload: session_payload("s-ub"),
-            },
-            StateUpdate {
-                id: "s-ub-attempt-0001".into(),
-                kind: ATTEMPT_KIND.into(),
-                payload: AttemptRecord {
-                    attempt_id: "s-ub-attempt-0001".into(),
-                    session_id: "s-ub".into(),
-                    task_id: "t".into(),
-                    prior_attempt_id: None,
-                    state: AttemptState::Running,
-                    started_at_ms: 1,
-                    ended_at_ms: None,
-                    budget: BudgetRecord {
-                        tokens: 700,
-                        active_seconds: 9,
-                        tool_calls: 1,
-                        turns: 1,
-                        uncertain: true,
-                    },
-                }
-                .encode(),
-            },
-        ],
-        &[],
-    ))
+    rt.block_on(
+        store.commit_unit(
+            &[
+                StateUpdate {
+                    id: "s-ub".into(),
+                    kind: SESSION_KIND.into(),
+                    payload: session_payload("s-ub"),
+                },
+                StateUpdate {
+                    id: "s-ub-attempt-0001".into(),
+                    kind: ATTEMPT_KIND.into(),
+                    payload: AttemptRecord {
+                        attempt_id: "s-ub-attempt-0001".into(),
+                        session_id: "s-ub".into(),
+                        task_id: "t".into(),
+                        prior_attempt_id: None,
+                        state: AttemptState::Running,
+                        started_at_ms: 1,
+                        ended_at_ms: None,
+                        budget: BudgetRecord {
+                            tokens: 700,
+                            active_seconds: 9,
+                            tool_calls: 1,
+                            turns: 1,
+                            uncertain: true,
+                        },
+                    }
+                    .encode(),
+                },
+            ],
+            &[],
+        ),
+    )
     .unwrap();
     rt.block_on(store.close()).unwrap();
     record_fingerprint(&rt, root.path(), "s-ub");
@@ -481,8 +481,7 @@ fn interrupted_attempt_grants_do_not_carry_over() {
     );
     // The resumed attempt carries no grant reference of its own.
     assert_eq!(
-        reconciliation.new_attempt_id,
-        "s-gr-attempt-0003",
+        reconciliation.new_attempt_id, "s-gr-attempt-0003",
         "the new attempt must be the deterministic successor"
     );
 }
@@ -514,8 +513,12 @@ fn revision_drift_invalidates_recorded_claims() {
     );
     for claim in &reconciliation.stale_claims {
         match claim {
-            resume::StaleClaim::VerificationRevision { recorded, observed, .. }
-            | resume::StaleClaim::EditApproval { recorded, observed, .. } => {
+            resume::StaleClaim::VerificationRevision {
+                recorded, observed, ..
+            }
+            | resume::StaleClaim::EditApproval {
+                recorded, observed, ..
+            } => {
                 assert_eq!(recorded, RECORDED_REVISION);
                 assert_eq!(observed, DRIFTED_REVISION);
             }
@@ -554,7 +557,11 @@ fn applying_twice_reports_the_existing_attempt_instead_of_duplicating() {
 
     let mut reader = rt.block_on(RecoveryReader::open(root.path())).unwrap();
     let session = rt.block_on(reader.session("s-id")).unwrap();
-    assert_eq!(session.attempts.len(), 3, "exactly one resume attempt exists");
+    assert_eq!(
+        session.attempts.len(),
+        3,
+        "exactly one resume attempt exists"
+    );
     rt.block_on(reader.close()).unwrap();
 }
 
@@ -581,7 +588,9 @@ fn missing_live_revision_blocks_the_resume() {
 
     let mut reader = rt.block_on(RecoveryReader::open(root.path())).unwrap();
     let live = LiveWorkspace {
-        fingerprint: WorkspaceIdentity::resolve(root.path()).unwrap().fingerprint(),
+        fingerprint: WorkspaceIdentity::resolve(root.path())
+            .unwrap()
+            .fingerprint(),
         git_revision: None,
     };
     let error = rt

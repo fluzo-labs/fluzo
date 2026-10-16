@@ -5,6 +5,7 @@ pub mod config;
 pub mod configuration;
 mod configuration_file;
 pub mod confinement;
+pub mod control;
 pub mod git_inspect;
 pub mod history;
 pub mod migrations;
@@ -48,6 +49,10 @@ mod recovery_tests;
 #[cfg(test)]
 #[path = "resume_tests.rs"]
 mod resume_tests;
+
+#[cfg(test)]
+#[path = "control_tests.rs"]
+mod control_tests;
 
 #[cfg(test)]
 #[path = "artifact_tests.rs"]

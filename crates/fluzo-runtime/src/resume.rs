@@ -42,12 +42,20 @@ pub enum ResumeError {
     ConfirmationRequired,
     /// The reconciliation was computed against a different session than
     /// the one being applied.
-    SessionMismatch { expected: String, found: String },
+    SessionMismatch {
+        expected: String,
+        found: String,
+    },
     /// This reconciliation has already been applied. Reported instead of
     /// writing a second attempt, so an interrupted retry converges.
-    AlreadyApplied { attempt_id: String },
+    AlreadyApplied {
+        attempt_id: String,
+    },
     /// The attempt set exceeded the renumbering bound.
-    TooManyAttempts { session_id: String, bound: usize },
+    TooManyAttempts {
+        session_id: String,
+        bound: usize,
+    },
     Store(StoreError),
 }
 
@@ -58,7 +66,10 @@ impl std::fmt::Display for ResumeError {
                 write!(formatter, "resume requires explicit confirmation")
             }
             Self::SessionMismatch { expected, found } => {
-                write!(formatter, "reconciliation is for {expected:?}, not {found:?}")
+                write!(
+                    formatter,
+                    "reconciliation is for {expected:?}, not {found:?}"
+                )
             }
             Self::AlreadyApplied { attempt_id } => {
                 write!(formatter, "resume already applied as {attempt_id:?}")
@@ -176,7 +187,9 @@ impl LiveWorkspace {
     pub fn observe(root: &Path) -> Result<Self, ReconcileBlock> {
         let fingerprint = WorkspaceIdentity::resolve(root)
             .map(|identity| identity.fingerprint())
-            .map_err(|error| ReconcileBlock::WorkspaceUnresolved(describe_identity_error(&error)))?;
+            .map_err(|error| {
+                ReconcileBlock::WorkspaceUnresolved(describe_identity_error(&error))
+            })?;
         let git_revision = match git_inspect::inspect(
             root,
             &Inspection::RevParse {
@@ -262,13 +275,22 @@ pub async fn reconcile(
         // Budget carries forward from every prior attempt, including an
         // interrupted one: the work was paid for.
         let budget = &attempt.budget;
-        reconciliation.carry_forward.tokens = reconciliation.carry_forward.tokens.saturating_add(budget.tokens);
-        reconciliation.carry_forward.active_seconds =
-            reconciliation.carry_forward.active_seconds.saturating_add(budget.active_seconds);
-        reconciliation.carry_forward.tool_calls =
-            reconciliation.carry_forward.tool_calls.saturating_add(budget.tool_calls);
-        reconciliation.carry_forward.turns =
-            reconciliation.carry_forward.turns.saturating_add(budget.turns);
+        reconciliation.carry_forward.tokens = reconciliation
+            .carry_forward
+            .tokens
+            .saturating_add(budget.tokens);
+        reconciliation.carry_forward.active_seconds = reconciliation
+            .carry_forward
+            .active_seconds
+            .saturating_add(budget.active_seconds);
+        reconciliation.carry_forward.tool_calls = reconciliation
+            .carry_forward
+            .tool_calls
+            .saturating_add(budget.tool_calls);
+        reconciliation.carry_forward.turns = reconciliation
+            .carry_forward
+            .turns
+            .saturating_add(budget.turns);
         reconciliation.carry_forward.uncertain |= budget.uncertain;
     }
 
@@ -295,23 +317,23 @@ pub async fn reconcile(
         }
         // A recorded verification or approval against a revision the
         // tree has moved past is invalidated and surfaced.
-        if let Some(recorded) = &session.session.git_revision {
-            if *recorded != observed_revision {
-                let claim = match operation.effective_state() {
-                    OperationState::Succeeded => Some(StaleClaim::VerificationRevision {
-                        recorded: recorded.clone(),
-                        observed: observed_revision.clone(),
-                        subject: operation.subject.clone(),
-                    }),
-                    _ => Some(StaleClaim::EditApproval {
-                        recorded: recorded.clone(),
-                        observed: observed_revision.clone(),
-                        subject: operation.subject.clone(),
-                    }),
-                };
-                if let Some(claim) = claim {
-                    reconciliation.stale_claims.push(claim);
-                }
+        if let Some(recorded) = &session.session.git_revision
+            && *recorded != observed_revision
+        {
+            let claim = match operation.effective_state() {
+                OperationState::Succeeded => Some(StaleClaim::VerificationRevision {
+                    recorded: recorded.clone(),
+                    observed: observed_revision.clone(),
+                    subject: operation.subject.clone(),
+                }),
+                _ => Some(StaleClaim::EditApproval {
+                    recorded: recorded.clone(),
+                    observed: observed_revision.clone(),
+                    subject: operation.subject.clone(),
+                }),
+            };
+            if let Some(claim) = claim {
+                reconciliation.stale_claims.push(claim);
             }
         }
     }
@@ -353,14 +375,11 @@ pub async fn apply(
         .await
         .map_err(ResumeError::Store)?
     {
-        Some((_, payload, _)) => {
-            decode_session_payload(&reconciliation.session_id, &payload).ok_or_else(|| {
-                ResumeError::SessionMismatch {
-                    expected: reconciliation.session_id.clone(),
-                    found: "unreadable session record".to_owned(),
-                }
-            })?
-        }
+        Some((_, payload, _)) => decode_session_payload(&reconciliation.session_id, &payload)
+            .ok_or_else(|| ResumeError::SessionMismatch {
+                expected: reconciliation.session_id.clone(),
+                found: "unreadable session record".to_owned(),
+            })?,
         None => {
             return Err(ResumeError::SessionMismatch {
                 expected: reconciliation.session_id.clone(),
@@ -376,12 +395,11 @@ pub async fn apply(
     // interrupted, so a later reader never sees a stale "running".
     for attempt_id in &reconciliation.interrupted_attempts {
         if let Some((_, payload, _)) = store.state(attempt_id).await.map_err(ResumeError::Store)? {
-            let mut record: AttemptRecord = decode_attempt_payload(attempt_id, &payload).ok_or_else(
-                || ResumeError::SessionMismatch {
+            let mut record: AttemptRecord = decode_attempt_payload(attempt_id, &payload)
+                .ok_or_else(|| ResumeError::SessionMismatch {
                     expected: attempt_id.clone(),
                     found: "unreadable attempt record".to_owned(),
-                },
-            )?;
+                })?;
             record.state = AttemptState::Interrupted;
             record.ended_at_ms = Some(now_ms());
             updates.push(StateUpdate {
@@ -393,13 +411,15 @@ pub async fn apply(
     }
 
     for operation_id in &reconciliation.unknown_operations {
-        if let Some((_, payload, _)) = store.state(operation_id).await.map_err(ResumeError::Store)? {
-            let mut record: OperationRecord =
-                decode_operation_payload(operation_id, &payload).ok_or_else(|| {
-                    ResumeError::SessionMismatch {
-                        expected: operation_id.clone(),
-                        found: "unreadable operation record".to_owned(),
-                    }
+        if let Some((_, payload, _)) = store
+            .state(operation_id)
+            .await
+            .map_err(ResumeError::Store)?
+        {
+            let mut record: OperationRecord = decode_operation_payload(operation_id, &payload)
+                .ok_or_else(|| ResumeError::SessionMismatch {
+                    expected: operation_id.clone(),
+                    found: "unreadable operation record".to_owned(),
                 })?;
             record.state = OperationState::Unknown;
             updates.push(StateUpdate {
@@ -415,7 +435,10 @@ pub async fn apply(
     let new_attempt = AttemptRecord {
         attempt_id: reconciliation.new_attempt_id.clone(),
         session_id: reconciliation.session_id.clone(),
-        task_id: format!("task-of-{}", reconciliation.prior_attempt_id.as_deref().unwrap_or("root")),
+        task_id: format!(
+            "task-of-{}",
+            reconciliation.prior_attempt_id.as_deref().unwrap_or("root")
+        ),
         prior_attempt_id: reconciliation.prior_attempt_id.clone(),
         state: AttemptState::Pending,
         started_at_ms: now_ms(),
@@ -573,15 +596,15 @@ fn decode_operation_payload(id: &str, payload: &str) -> Option<OperationRecord> 
             .get("effect_committed")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
-        result_known: object.get("result_known").and_then(|v| v.as_bool()).unwrap_or(false),
+        result_known: object
+            .get("result_known")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         grant_id: string_field(object, "grant_id"),
     })
 }
 
-fn string_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    key: &str,
-) -> Option<String> {
+fn string_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
     object
         .get(key)
         .and_then(|value| value.as_str())
@@ -589,10 +612,7 @@ fn string_field(
         .filter(|value| !value.is_empty() && value != "none")
 }
 
-fn number_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    key: &str,
-) -> u64 {
+fn number_field(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> u64 {
     object
         .get(key)
         .and_then(|value| value.as_u64())

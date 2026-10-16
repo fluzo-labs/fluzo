@@ -24,7 +24,7 @@
 
 use crate::store::{Store, StoreError, StoredEvent};
 use fluzo_core::application::{AttemptState, OperationState};
-use serde_json::{Value, Map};
+use serde_json::{Map, Value};
 use std::path::Path;
 
 /// State-row kinds owned by this layer.
@@ -49,9 +49,14 @@ pub enum RecoveryError {
     UnknownSession(String),
     /// The journal holds more rows than the read bound; the caller must
     /// narrow rather than the reader silently truncating a timeline.
-    TooManyRecords { kind: &'static str, bound: i64 },
+    TooManyRecords {
+        kind: &'static str,
+        bound: i64,
+    },
     /// A replay would exceed the event scan bound.
-    ReplayTooLarge { bound: i64 },
+    ReplayTooLarge {
+        bound: i64,
+    },
 }
 
 impl std::fmt::Display for RecoveryError {
@@ -138,7 +143,11 @@ impl AttemptRecord {
         map.insert("attempt_id".into(), Value::from(self.attempt_id.clone()));
         map.insert("session_id".into(), Value::from(self.session_id.clone()));
         map.insert("task_id".into(), Value::from(self.task_id.clone()));
-        insert_optional(&mut map, "prior_attempt_id", self.prior_attempt_id.as_deref());
+        insert_optional(
+            &mut map,
+            "prior_attempt_id",
+            self.prior_attempt_id.as_deref(),
+        );
         map.insert(
             "state".into(),
             serde_json::to_value(self.state).unwrap_or(Value::Null),
@@ -228,7 +237,10 @@ impl OperationRecord {
             "state".into(),
             serde_json::to_value(self.state).unwrap_or(Value::Null),
         );
-        map.insert("effect_committed".into(), Value::from(self.effect_committed));
+        map.insert(
+            "effect_committed".into(),
+            Value::from(self.effect_committed),
+        );
         map.insert("result_known".into(), Value::from(self.result_known));
         insert_optional(&mut map, "grant_id", self.grant_id.as_deref());
         Value::Object(map)
@@ -343,7 +355,11 @@ impl RecoveryReader {
             None => return Err(RecoveryError::UnknownSession(session_id.to_owned())),
         };
         let mut attempts = Vec::new();
-        for (id, payload) in self.store.states_of_kind(ATTEMPT_KIND, MAX_RECORDS + 1).await? {
+        for (id, payload) in self
+            .store
+            .states_of_kind(ATTEMPT_KIND, MAX_RECORDS + 1)
+            .await?
+        {
             if payload.contains(&format!("\"session_id\":\"{session_id}\"")) {
                 attempts.push(decode_attempt(&id, &payload)?);
             }
@@ -389,7 +405,10 @@ impl RecoveryReader {
         let mut previous: Option<u64> = None;
         let mut after = 0_i64;
         loop {
-            let batch = self.store.events_after(after, MAX_REPLAY_EVENTS + 1).await?;
+            let batch = self
+                .store
+                .events_after(after, MAX_REPLAY_EVENTS + 1)
+                .await?;
             if batch.len() as i64 > MAX_REPLAY_EVENTS {
                 return Err(RecoveryError::ReplayTooLarge {
                     bound: MAX_REPLAY_EVENTS,
@@ -398,10 +417,7 @@ impl RecoveryReader {
             if batch.is_empty() {
                 break;
             }
-            let last_seq = batch
-                .last()
-                .map(|event| event.seq)
-                .unwrap_or(after);
+            let last_seq = batch.last().map(|event| event.seq).unwrap_or(after);
             for event in batch {
                 if event.state_id != session_id {
                     continue;
@@ -412,7 +428,8 @@ impl RecoveryReader {
                             if record.ordinal <= previous {
                                 replay.gaps.push(ReplayGap::Undecodable {
                                     ordinal: record.ordinal,
-                                    reason: "ordinal is not ahead of the previous record".to_owned(),
+                                    reason: "ordinal is not ahead of the previous record"
+                                        .to_owned(),
                                 });
                                 continue;
                             }
@@ -424,21 +441,21 @@ impl RecoveryReader {
                                 });
                             }
                         }
-                        if let Some(attempt_id) = record.attempt_id.as_deref() {
-                            if !attempts.contains_key(attempt_id) {
-                                replay.gaps.push(ReplayGap::MissingAttempt {
-                                    attempt_id: attempt_id.to_owned(),
-                                    ordinal: record.ordinal,
-                                });
-                            }
+                        if let Some(attempt_id) = record.attempt_id.as_deref()
+                            && !attempts.contains_key(attempt_id)
+                        {
+                            replay.gaps.push(ReplayGap::MissingAttempt {
+                                attempt_id: attempt_id.to_owned(),
+                                ordinal: record.ordinal,
+                            });
                         }
-                        if let Some(operation_id) = record.operation_id.as_deref() {
-                            if !operations.contains_key(operation_id) {
-                                replay.gaps.push(ReplayGap::MissingOperation {
-                                    operation_id: operation_id.to_owned(),
-                                    ordinal: record.ordinal,
-                                });
-                            }
+                        if let Some(operation_id) = record.operation_id.as_deref()
+                            && !operations.contains_key(operation_id)
+                        {
+                            replay.gaps.push(ReplayGap::MissingOperation {
+                                operation_id: operation_id.to_owned(),
+                                ordinal: record.ordinal,
+                            });
                         }
                         let status = record
                             .attempt_id
@@ -533,8 +550,7 @@ fn decode_session(id: &str, payload: &str) -> Result<SessionRecord, RecoveryErro
     let object = parse_object(payload)?;
     Ok(SessionRecord {
         session_id: string_field(&object, "session_id").unwrap_or_else(|| id.to_owned()),
-        workspace_fingerprint: string_field(&object, "workspace_fingerprint")
-            .unwrap_or_default(),
+        workspace_fingerprint: string_field(&object, "workspace_fingerprint").unwrap_or_default(),
         git_branch: string_field(&object, "git_branch"),
         git_revision: string_field(&object, "git_revision"),
         created_at_ms: number_field(&object, "created_at_ms"),
@@ -551,9 +567,7 @@ fn decode_attempt(id: &str, payload: &str) -> Result<AttemptRecord, RecoveryErro
         prior_attempt_id: string_field(&object, "prior_attempt_id"),
         state: attempt_state_field(&object, "state")?,
         started_at_ms: number_field(&object, "started_at_ms"),
-        ended_at_ms: object
-            .get("ended_at_ms")
-            .and_then(Value::as_u64),
+        ended_at_ms: object.get("ended_at_ms").and_then(Value::as_u64),
         budget: decode_budget(object.get("budget")),
     })
 }
@@ -598,8 +612,8 @@ fn decode_budget(value: Option<&Value>) -> BudgetRecord {
 }
 
 fn parse_object(payload: &str) -> Result<Map<String, Value>, RecoveryError> {
-    let value: Value = serde_json::from_str(payload)
-        .map_err(|_| RecoveryError::Store(StoreError::Corrupt))?;
+    let value: Value =
+        serde_json::from_str(payload).map_err(|_| RecoveryError::Store(StoreError::Corrupt))?;
     value
         .as_object()
         .cloned()
@@ -622,7 +636,10 @@ fn number_field(object: &Map<String, Value>, key: &str) -> u64 {
 /// the runtime does not depend on `serde` directly in production, so the
 /// trait must not be named here. The impls come from `fluzo-core` and are
 /// reached through `serde_json`.
-fn attempt_state_field(object: &Map<String, Value>, key: &str) -> Result<AttemptState, RecoveryError> {
+fn attempt_state_field(
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<AttemptState, RecoveryError> {
     let value = object
         .get(key)
         .cloned()

@@ -248,7 +248,10 @@ fn open_never_creates_a_drive_or_a_database() {
         .block_on(RecoveryReader::open(root.path()))
         .expect_err("opening an unrecorded workspace must not create one");
     assert!(
-        matches!(error, RecoveryError::Store(crate::store::StoreError::NotFound)),
+        matches!(
+            error,
+            RecoveryError::Store(crate::store::StoreError::NotFound)
+        ),
         "expected NotFound, got {error:?}"
     );
     assert!(
@@ -314,13 +317,14 @@ fn replay_surfaces_a_missing_ordinal_as_a_gap() {
     let mut reader = rt.block_on(RecoveryReader::open(root.path())).unwrap();
     let replay = rt.block_on(reader.replay("s-gap")).unwrap();
     assert!(
-        replay
-            .gaps
-            .iter()
-            .any(|gap| matches!(
-                gap,
-                crate::recovery::ReplayGap::MissingRecords { from: 3, to: 3, count: 1 }
-            )),
+        replay.gaps.iter().any(|gap| matches!(
+            gap,
+            crate::recovery::ReplayGap::MissingRecords {
+                from: 3,
+                to: 3,
+                count: 1
+            }
+        )),
         "the absent ordinal 3 was not reported as a gap: {:?}",
         replay.gaps
     );
@@ -483,10 +487,7 @@ fn undecodable_record_is_surfaced_as_unknown_content() {
         replay
             .gaps
             .iter()
-            .any(|gap| matches!(
-                gap,
-                crate::recovery::ReplayGap::Undecodable { .. }
-            )),
+            .any(|gap| matches!(gap, crate::recovery::ReplayGap::Undecodable { .. })),
         "the unreadable record was not surfaced: {:?}",
         replay.gaps
     );
