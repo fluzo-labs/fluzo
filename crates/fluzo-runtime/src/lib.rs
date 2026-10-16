@@ -5,6 +5,7 @@ pub mod config;
 pub mod configuration;
 mod configuration_file;
 pub mod confinement;
+pub mod context;
 pub mod control;
 pub mod git_inspect;
 pub mod history;
@@ -42,6 +43,10 @@ mod session_auth_tests;
 #[cfg(test)]
 #[path = "tools_tests.rs"]
 mod tools_tests;
+
+#[cfg(test)]
+#[path = "context_tests.rs"]
+mod context_tests;
 
 #[cfg(test)]
 #[path = "recovery_tests.rs"]
