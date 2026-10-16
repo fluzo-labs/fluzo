@@ -89,6 +89,15 @@ shown and the address used is thereby bounded to a swap inside the same class;
 it is not eliminated. A host that resolves to nothing is reported as
 `unresolved` and cannot be accepted.
 
+Accept and decline each emit one redacted consent diagnostic: the event kind,
+the address class, and whether a credential reference was attached. The
+diagnostic deliberately carries no endpoint, resolved address or credential
+reference name, so a declined attempt is recorded without leaking what the
+operator refused or which secret reference was in play. The recorder is a
+runtime hook (`ConsentRecorder`) that defaults to discarding events until the
+diagnostics sink wiring connects it; consent diagnostics are never written to
+`.fluzo` and never leave the process by default.
+
 Buffer regressions cover the step at 80x24, 120x40 and 160x50 with color off
 and on, the accept, decline and invalidation paths, sanitization of control and
 bidi text, and inertness to every other key. The deterministic PTY harness

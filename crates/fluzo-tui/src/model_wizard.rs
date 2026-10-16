@@ -209,8 +209,11 @@ impl ModelWizard {
             }
         }
     }
-    fn decline_notice(&mut self) {
-        self.notice = None;
+    fn decline_notice(&mut self, port: &mut dyn ModelDiscoveryPort) {
+        if let Some(notice) = self.notice.take() {
+            // Records a redacted declined diagnostic; sends nothing either way.
+            let _ = port.decline(&notice.endpoint);
+        }
         self.step = Step::Endpoint;
         self.status = "Discovery declined. No request was sent.".into();
     }
@@ -292,7 +295,7 @@ impl ModelWizard {
                     Step::Endpoint
                 }
                 Step::Notice => {
-                    self.decline_notice();
+                    self.decline_notice(port);
                     Step::Endpoint
                 }
                 Step::Models => Step::Endpoint,
@@ -772,6 +775,7 @@ mod tests {
         class: Option<AddressClass>,
         probes: Vec<Probe>,
         accepted: Vec<(String, AddressClass)>,
+        declined: Vec<String>,
         requests: Vec<Request>,
         cancelled: Vec<u64>,
         statuses: BTreeMap<u64, Status>,
@@ -811,6 +815,10 @@ mod tests {
         }
         fn accept(&mut self, endpoint: &str, class: AddressClass) -> Result<(), Error> {
             self.accepted.push((endpoint.to_owned(), class));
+            Ok(())
+        }
+        fn decline(&mut self, endpoint: &str) -> Result<(), Error> {
+            self.declined.push(endpoint.to_owned());
             Ok(())
         }
         fn submit(&mut self, request: Request) -> Result<(), Error> {
@@ -978,6 +986,7 @@ mod tests {
         assert!(wizard.completed.is_none());
         assert!(port.accepted.is_empty());
         assert!(port.requests.is_empty());
+        assert_eq!(port.declined, vec!["http://models.example.com/v1"]);
         assert!(!wizard.poll(&mut port));
     }
     #[test]

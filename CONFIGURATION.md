@@ -320,7 +320,10 @@ per-run acceptance for that exact endpoint and class, and the class is rechecked
 at connect. Locality remains the operator's responsibility. That acceptance is
 per run and held in process memory: it is neither a credential nor repository
 configuration, is never written to `.fluzo`, is not reused by a later process,
-and grants nothing beyond the catalog query it authorizes. HTTPS, custom paths,
+and grants nothing beyond the catalog query it authorizes. Each accept or
+decline emits a redacted consent diagnostic (event kind, address class,
+credential-reference-attached boolean) that names no endpoint, address or
+credential reference; see TUI.md for the warning-step contract. HTTPS, custom paths,
 redirects, userinfo,
 query/fragment and percent escapes are rejected without downgrade. Optional
 Authorization uses a named environment variable

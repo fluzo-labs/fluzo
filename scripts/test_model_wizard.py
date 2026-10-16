@@ -165,3 +165,61 @@ class ModelWizardTests(unittest.TestCase):
 
     def test_authorized_multi_model_selection_saves_references_only(self):
         self.exercise(authorization=True, multiple=True)
+
+    def test_non_loopback_warning_declines_with_zero_requests(self):
+        """A private endpoint stops at the cleartext warning before any socket,
+        and declining leaves no state and sends nothing."""
+        with tempfile.TemporaryDirectory(prefix="fluzo-consent-wizard-") as directory:
+            root = Path(directory)
+            master, slave = pty.openpty()
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+            before = termios.tcgetattr(slave)
+            environment = {"HOME": directory, "XDG_CONFIG_HOME": directory, "TERM": "xterm-256color", "NO_COLOR": "1"}
+            child = subprocess.Popen([self.binary], cwd=root,
+                env=environment,
+                stdin=slave, stdout=slave, stderr=slave)
+            screen = Screen()
+            output = bytearray()
+
+            def wait(marker):
+                deadline = time.monotonic() + 8
+                while marker not in screen.text():
+                    self.assertLess(time.monotonic(), deadline, screen.text())
+                    if select.select([master], [], [], max(0, deadline - time.monotonic()))[0]:
+                        data = os.read(master, 65536)
+                        output.extend(data)
+                        self.assertLess(len(output), 2 * 1024 * 1024)
+                        screen.feed(data)
+
+            try:
+                wait(b"Welcome to Fluzo")
+                os.write(master, b"\x1bOR")
+                wait(b"1 / Model location")
+                os.write(master, b"\r")
+                wait(b"2 / Local provider")
+                os.write(master, b"\r")
+                wait(b"3 / Authorization")
+                os.write(master, b"\r")
+                wait(b"Server URL")
+                endpoint = b"http://192.168.99.99:9/v1"
+                os.write(master, b"\x1b[200~" + endpoint + b"\x1b[201~")
+                os.write(master, b"\t")
+                wait(b"4 / Cleartext warning")
+                text = screen.text()
+                self.assertIn(b"private network", text)
+                self.assertIn(b"192.168.99.99", text)
+                self.assertIn(b"Credential: not attached", text)
+                self.assertIn(b"HTTPS is unsupported", text)
+                self.assertFalse((root / ".fluzo").exists())
+                os.write(master, b"\x1b")
+                wait(b"Discovery declined. No request was sent.")
+                self.assertFalse((root / ".fluzo").exists())
+                os.write(master, b"\x03")
+                child.wait(timeout=8)
+                self.assertEqual(termios.tcgetattr(slave), before)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=8)
+                os.close(master)
+                os.close(slave)
