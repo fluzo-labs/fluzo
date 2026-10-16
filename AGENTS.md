@@ -105,6 +105,16 @@ GitHub provider work remains deferred to a later story.
 UI-02 C3 developer-menu route wiring is evidenced by route-level shared-service
 integration tests (see the C3 section in TUI.md); S3 human visual/parent
 acceptance remains pending.
+RUN-05 adds the per-process inference admission layer: pure pool/queue/budget
+rules in `fluzo-core::admission` and the live `AdmissionController` in
+`fluzo-runtime::admission` with FIFO foreground queues, shadow skip, deadlines
+bounded by remaining task time, uncertain-slot reconcile and drain-on-lower
+semantics. See [ADMISSION.md](ADMISSION.md). Focused checks are `cargo test -p
+fluzo-core --locked --offline admission`, `cargo test -p fluzo-runtime --lib
+--locked --offline admission` and `cargo test -p fluzo-runtime --test
+admission_simulator --locked --offline` (strict loopback fixture: 429 without
+retry, redirect never followed, timed-out waits sending nothing). The agent
+execution loop that calls the controller is still unimplemented.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;

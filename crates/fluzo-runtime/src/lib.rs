@@ -1,3 +1,4 @@
+pub mod admission;
 pub mod artifact;
 pub mod authorization;
 pub mod config;

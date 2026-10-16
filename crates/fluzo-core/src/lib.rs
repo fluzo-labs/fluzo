@@ -1,3 +1,4 @@
+pub mod admission;
 pub mod application;
 pub mod configuration;
 pub mod model_discovery;
