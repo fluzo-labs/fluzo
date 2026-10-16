@@ -289,7 +289,9 @@ TUI_PACKAGES = {
     ("indoc", "2.0.7"): set(),
     ("instability", "0.3.14"): set(),
     ("itertools", "0.13.0"): {"default", "use_alloc", "use_std"},
-    ("linux-raw-sys", "0.4.15"): {"elf", "errno", "general", "ioctl", "no_std"},
+    # RUN-03 adds `prctl` for the process-group primitives rustix pulls in
+    # with its `process` feature. Same already-locked package; no new entry.
+    ("linux-raw-sys", "0.4.15"): {"elf", "errno", "general", "ioctl", "no_std", "prctl"},
     ("lock_api", "0.4.14"): {"atomic_usize", "default"},
     ("log", "0.4.34"): set(),
     ("lru", "0.12.5"): {"default", "hashbrown"},
@@ -301,7 +303,11 @@ TUI_PACKAGES = {
     # DAT-02b adds `fs` for the statvfs free-space reserve probe. The
     # crate was already locked transitively via crossterm; no new package
     # or closure entry is introduced.
-    ("rustix", "0.38.44"): {"alloc", "fs", "libc-extra-traits", "std", "stdio", "termios"},
+    # RUN-03 adds `process` for killpg/getpgid and the signal constants
+    # used by the owned-process lifecycle. Owned process groups are the
+    # mechanism by which cancellation reaches only the tree Fluzo
+    # spawned, so this feature is load-bearing for PRD 17.2 and A05.
+    ("rustix", "0.38.44"): {"alloc", "fs", "libc-extra-traits", "process", "std", "stdio", "termios"},
     ("rustversion", "1.0.23"): set(),
     ("ryu", "1.0.23"): set(),
     ("scopeguard", "1.2.0"): set(),

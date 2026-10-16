@@ -634,6 +634,28 @@ fn a_refused_operation_changed_nothing_on_disk() {
     assert_eq!(before, after, "refusals must be inert");
 }
 
+/// A whole-file replacement must not leave the previous tail behind.
+///
+/// `open_write` is a read/write handle, so writing a shorter buffer over a
+/// longer file would otherwise splice rather than replace. The tool layer
+/// relies on this for edit semantics.
+#[test]
+fn replacing_contents_truncates_the_previous_tail() {
+    let root = Root::new("replace");
+    fs::write(root.0.join("file.txt"), b"a much longer original body").expect("fixture");
+    let jail = WorkspaceJail::open(&root.0).expect("jail opens");
+
+    let mut file = jail.open_write("file.txt").expect("open_write");
+    file.replace_all(b"short").expect("replace_all");
+    file.sync_all().expect("sync");
+
+    assert_eq!(
+        fs::read_to_string(root.0.join("file.txt")).expect("read back"),
+        "short",
+        "the old tail must be gone"
+    );
+}
+
 fn snapshot(root: &Path) -> Vec<(String, u64)> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];

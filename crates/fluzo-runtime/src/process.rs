@@ -149,6 +149,24 @@ impl EnvironmentSpec {
         &self.values
     }
 
+    /// The entries beyond the documented baseline.
+    ///
+    /// These are the explicit overrides a caller supplied, and therefore the
+    /// part of the environment an approval has to cover. The baseline is the
+    /// runtime's own doing and carries no operator-visible override.
+    #[must_use]
+    pub fn overrides(&self) -> BTreeMap<String, String> {
+        self.values
+            .iter()
+            .filter(|(key, _)| {
+                !BASELINE_KEYS
+                    .iter()
+                    .any(|base| base.eq_ignore_ascii_case(key))
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
     /// Applies the spec to a command, clearing any inherited environment first.
     fn apply(&self, command: &mut Command) {
         command.env_clear();

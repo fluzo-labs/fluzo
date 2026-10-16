@@ -208,13 +208,13 @@ Risks:
   - If group ownership cannot be verified after spawn, the runtime
     refuses to signal and reports the process as unowned.
 - Actions:
-  - [ ] Implement the process module with group verification.
-  - [ ] Deterministic fixtures: cooperative child, stubborn child,
+  - [x] Implement the process module with group verification.
+  - [x] Deterministic fixtures: cooperative child, stubborn child,
         descendant, escaping descendant, sentinel credential, oversized
         output, unrelated-group refusal.
-  - [ ] Widen the reviewed rustix/linux-raw-sys feature ceilings with a
+  - [x] Widen the reviewed rustix/linux-raw-sys feature ceilings with a
         recorded justification.
-  - [ ] Record verification and stop for review.
+  - [x] Record verification and stop for review.
 - Verification: `cargo test -p fluzo-runtime --lib --locked --offline
   process`.
 - Risks and recovery: additive module; no existing caller changes.
@@ -246,9 +246,9 @@ Risks:
     truncation.
   - Inspection runs in the owned process group with closed stdin.
 - Actions:
-  - [ ] Implement the inspection surface on the P1 path.
-  - [ ] Fixture repository with sentinel helpers that must not run.
-  - [ ] Record verification and stop for review.
+  - [x] Implement the inspection surface on the P1 path.
+  - [x] Fixture repository with sentinel helpers that must not run.
+  - [x] Record verification and stop for review.
 - Verification: `cargo test -p fluzo-runtime --lib --locked --offline
   git_inspect`.
 - Risks and recovery: additive; depends on P1 correctness.
@@ -282,10 +282,10 @@ Risks:
   - YOLO suppresses a prompt but does not suppress a denial, a jail
     refusal or group-ownership refusal.
 - Actions:
-  - [ ] Implement the dispatch seam over the existing ledger and jail.
-  - [ ] Tests for denial-wins, one-grant-per-dispatch, no
+  - [x] Implement the dispatch seam over the existing ledger and jail.
+  - [x] Tests for denial-wins, one-grant-per-dispatch, no
         jail-bypass, no shell fallback after native refusal.
-  - [ ] Record verification and stop for review.
+  - [x] Record verification and stop for review.
 - Verification: `cargo test -p fluzo-runtime --lib --locked --offline
   tools`.
 - Risks and recovery: additive; the seam has no production caller yet.
@@ -294,9 +294,27 @@ Risks:
 
 | Phase | Implementation | Verification | Review | Evidence |
 | --- | --- | --- | --- | --- |
-| P1 | done (process.rs, 880 lines) | 29 passed / 0 failed | pending | `cargo test -p fluzo-runtime --lib --offline process` |
-| P2 | pending | not_run | pending | none yet |
-| P3 | pending | not_run | pending | none yet |
+| P1 | done (`process.rs`) | 29 passed / 0 failed / 6 ignored child roles | pending | `cargo test -p fluzo-runtime --lib --locked --offline process` |
+| P2 | done (`git_inspect.rs`) | 21 passed / 0 failed | pending | `cargo test -p fluzo-runtime --lib --locked --offline git_inspect` |
+| P3 | done (`tools.rs`) | 21 passed / 0 failed | pending | `cargo test -p fluzo-runtime --lib --locked --offline tools` |
+
+Workspace checks run after P3, all passing:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+cargo test --workspace --locked --offline   # 368 runtime / 59 core / 184 tui / 16 cli
+cargo build --workspace --locked --offline
+python3 -B scripts/check_dev_setup.py
+python3 -B -m unittest discover -s scripts -p 'test_*.py'   # 89 passed
+```
+
+One behaviour fix fell out of the P3 write path: `ConfinedFile::open_write`
+is a read/write handle, so replacing a file with a shorter buffer spliced
+over the old contents instead of replacing them. Added
+`ConfinedFile::replace_all` (rewind, `ftruncate`, write, sync) on the
+jail-owned descriptor, used by the file write tool, with a focused
+confinement test.
 
 ## Next step
 

@@ -20,6 +20,7 @@ pub mod telemetry_audit;
 pub mod telemetry_bridge;
 pub mod telemetry_otlp;
 pub mod telemetry_purge;
+pub mod tools;
 pub mod workspace;
 
 #[cfg(test)]
@@ -32,6 +33,10 @@ mod authorization_tests;
 #[cfg(test)]
 #[path = "session_auth_tests.rs"]
 mod session_auth_tests;
+
+#[cfg(test)]
+#[path = "tools_tests.rs"]
+mod tools_tests;
 
 #[cfg(test)]
 #[path = "artifact_tests.rs"]
