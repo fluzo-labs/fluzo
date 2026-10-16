@@ -13,6 +13,7 @@ pub mod process;
 pub mod purge;
 pub mod quota;
 pub mod recovery;
+pub mod resume;
 pub mod scenario;
 pub mod session_auth;
 pub mod store;
@@ -43,6 +44,10 @@ mod tools_tests;
 #[cfg(test)]
 #[path = "recovery_tests.rs"]
 mod recovery_tests;
+
+#[cfg(test)]
+#[path = "resume_tests.rs"]
+mod resume_tests;
 
 #[cfg(test)]
 #[path = "artifact_tests.rs"]

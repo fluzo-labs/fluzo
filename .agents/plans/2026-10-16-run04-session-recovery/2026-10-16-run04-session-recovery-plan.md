@@ -173,7 +173,7 @@ Hypotheses to confirm during implementation, not assumed:
   the new `StoreError::ReadOnly` instead of collapsing into `Io`.
 - Risks and recovery: additive module; no fallback needed.
 
-### P2 — Resume reconciliation with budget carry-forward
+### P2 — Resume reconciliation with budget carry-forward (implemented)
 
 - Outcome: an explicit resume revalidates workspace identity and
   recorded revisions, converts running attempts to `Interrupted`, keeps
@@ -220,6 +220,11 @@ Hypotheses to confirm during implementation, not assumed:
   - [ ] Record verification and stop for review.
 - Verification: `cargo test -p fluzo-runtime --lib --locked --offline
   resume` plus the workspace set.
+- Actual result: 13 passed / 0 failed. `reconcile` runs entirely
+  through the P1 read-only reader and a row-count check proves it wrote
+  nothing; `apply` is the only writer and commits one journal unit.
+- Risks and recovery: idempotency proven by a retry that returns
+  `AlreadyApplied` and leaves exactly three attempts.
 - Risks and recovery: reconciliation must not double-apply; the apply
   step is idempotent per session and re-running it reports the existing
   resume rather than creating a second attempt.
@@ -279,7 +284,7 @@ Hypotheses to confirm during implementation, not assumed:
 | Phase | Implementation | Verification | Review | Evidence |
 | --- | --- | --- | --- | --- |
 | P1 | implemented | passed | pending | `cargo test -p fluzo-runtime --lib --locked --offline recovery`: 12 passed / 0 failed. Full runtime lib: 413 passed / 0 failed / 8 ignored. |
-| P2 | pending | not_run | pending | none yet |
+| P2 | implemented | passed | pending | `cargo test -p fluzo-runtime --lib --locked --offline resume`: 13 passed / 0 failed. |
 | P3 | pending | not_run | pending | none yet |
 
 ## Next step
