@@ -1,6 +1,7 @@
 pub mod admission;
 pub mod artifact;
 pub mod authorization;
+pub mod compaction;
 pub mod config;
 pub mod configuration;
 mod configuration_file;
@@ -47,6 +48,14 @@ mod tools_tests;
 #[cfg(test)]
 #[path = "context_tests.rs"]
 mod context_tests;
+
+#[cfg(test)]
+#[path = "compaction_tests.rs"]
+mod compaction_tests;
+
+#[cfg(test)]
+#[path = "compaction_persist_tests.rs"]
+mod compaction_persist_tests;
 
 #[cfg(test)]
 #[path = "recovery_tests.rs"]
