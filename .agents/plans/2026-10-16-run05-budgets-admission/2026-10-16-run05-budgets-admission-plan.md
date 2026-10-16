@@ -1,6 +1,7 @@
 # T31: RUN-05 task budgets and per-process inference admission — plan
 
-Status: approved-for-execution via task handoff (/tmp/fluzo-task-T31.md).
+Status: implemented and verified; PR https://github.com/fluzo-labs/fluzo/pull/112
+opened with Ref: #19 (human review pending).
 Ref: #19. PRD 43.1/43.2/43.3 and Architecture A04 at fluzo-docs
 revision 60c5b0732fb710cdf705476cee8d9156a5ecd971.
 
