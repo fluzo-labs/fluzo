@@ -165,7 +165,9 @@ this plan until review feedback lands.
 ## Evidence and tracking
 
 - Issue: https://github.com/fluzo-labs/fluzo/issues/22
-- PR: to be created (Ref: #22).
+- PR: https://github.com/fluzo-labs/fluzo/pull/116 (Ref: #22,
+  commit `2c9af90`, base `main`). Awaiting human review; no merge or
+  acceptance claimed.
 
 ### Verification results (2026-10-17, pinned toolchain 1.98.0, `--locked --offline`)
 
