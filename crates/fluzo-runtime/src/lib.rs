@@ -12,6 +12,7 @@ pub mod model_discovery;
 pub mod process;
 pub mod purge;
 pub mod quota;
+pub mod recovery;
 pub mod scenario;
 pub mod session_auth;
 pub mod store;
@@ -38,6 +39,10 @@ mod session_auth_tests;
 #[cfg(test)]
 #[path = "tools_tests.rs"]
 mod tools_tests;
+
+#[cfg(test)]
+#[path = "recovery_tests.rs"]
+mod recovery_tests;
 
 #[cfg(test)]
 #[path = "artifact_tests.rs"]
