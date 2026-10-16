@@ -11,6 +11,7 @@ pub mod history;
 pub mod migrations;
 pub mod model_discovery;
 pub mod process;
+pub mod providers;
 pub mod purge;
 pub mod quota;
 pub mod recovery;

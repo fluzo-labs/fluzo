@@ -112,3 +112,42 @@ No agent loop/harness integration, no compaction caller, no Laya
 `/v1/systemone` client (seeded as separate work), no cross-instance
 coordination, no provider fallback, no real endpoints, no new
 dependencies.
+
+## Verification results (2026-10-17, toolchain 1.98.0, Linux x86_64)
+
+- P1/P2/P3 implemented on top of the WIP checkpoint commit.
+- `cargo test -p fluzo-runtime --lib --locked --offline providers` — 52
+  pure tests pass (16 SSE framing, 15 chat assembly/AC1, 8 gateway unit,
+  plus existing).
+- `cargo test -p fluzo-runtime --test provider_gateway_simulator
+  --locked --offline` — 13 fixture tests pass: normal stream with
+  usage-only final chunk; fragmented tool-call assembly; incomplete
+  tool-call never dispatchable (AC1); 429 with retry budget present
+  produced exactly one request; redirect blocked with a second fixture
+  listener proving zero requests at the target; mid-stream disconnect
+  after deltas -> PartialStream + Uncertain slot + no retry; transient
+  503 -> bounded retry (attempts=2) re-entering admission; transient
+  budget exhausted -> typed error, one request; cancel mid-stream ->
+  Cancelled + Uncertain + no retry + fixture cancelled accounting;
+  first-output timeout typed; admission-full -> zero sockets;
+  consent-denied -> zero sockets; telemetry carries pinned names,
+  purpose and finish reasons with no secret value and no content
+  attributes.
+- `cargo fmt --all -- --check` — clean.
+- `cargo clippy --workspace --all-targets --locked --offline -- -D
+  warnings` — clean.
+- `cargo test --workspace --locked --offline` — all pass (440 runtime
+  lib tests, 184 TUI, simulator suites, CLI).
+- `cargo build --workspace --locked --offline` — ok.
+- `python3 scripts/check_dev_setup.py` — ok.
+- `python3 -B -m unittest discover -s scripts -p 'test_*.py'` — 90 ok.
+- Live inference: `not_run`.
+
+Implementation notes found during verification:
+- The fixture's scripted disconnect can abort before the response head
+  flushes (same documented race as `admission_simulator`); gateway
+  simulator tests insert gates between chunks for deterministic flush
+  ordering.
+- Cancellation after the request body is handed to hyper is treated as
+  dispatched (Uncertain slot): `send_request` failing or being cancelled
+  does not prove the provider never saw the request.

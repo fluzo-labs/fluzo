@@ -68,6 +68,11 @@ impl SseParser {
     /// surfaced as incomplete by returning nothing and letting the
     /// caller's stream-completion check fail loudly.
     pub fn finish(&mut self) -> Result<Vec<SseEvent>, SseError> {
+        if self.done {
+            // Nothing dispatches after the sentinel, including bytes
+            // that were already buffered behind it.
+            return Ok(Vec::new());
+        }
         // A trailing CR held pending may still terminate one line;
         // normalize it and dispatch only if a full blank-line event
         // results (i.e. the stream ended with "\r\n\r" style edge is
@@ -132,27 +137,21 @@ fn find_event_separator(buffer: &[u8], final_pass: bool) -> Option<(usize, usize
 /// `(terminator_index, terminator_length)`. A trailing lone `\r` is
 /// ambiguous mid-stream (it may precede a `\n` in the next chunk)
 /// and yields `None` until resolved.
-fn find_line_terminator(
-    buffer: &[u8],
-    from: usize,
-    final_pass: bool,
-) -> Option<(usize, usize)> {
+fn find_line_terminator(buffer: &[u8], from: usize, final_pass: bool) -> Option<(usize, usize)> {
     let mut index = from;
     while index < buffer.len() {
         match buffer[index] {
             b'\n' => return Some((index, 1)),
-            b'\r' => {
-                match buffer.get(index + 1) {
-                    Some(b'\n') => return Some((index, 2)),
-                    Some(_) => return Some((index, 1)),
-                    None => {
-                        if final_pass {
-                            return Some((index, 1));
-                        }
-                        return None;
+            b'\r' => match buffer.get(index + 1) {
+                Some(b'\n') => return Some((index, 2)),
+                Some(_) => return Some((index, 1)),
+                None => {
+                    if final_pass {
+                        return Some((index, 1));
                     }
+                    return None;
                 }
-            }
+            },
             _ => index += 1,
         }
     }
@@ -220,3 +219,7 @@ fn split_lines(text: &str) -> impl Iterator<Item = &str> {
         Some(line)
     })
 }
+
+#[cfg(test)]
+#[path = "sse_tests.rs"]
+mod sse_tests;

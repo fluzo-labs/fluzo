@@ -46,8 +46,13 @@ pub struct AssembledToolCall {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FeedOutcome {
     TextDelta(String),
-    ToolCallDelta { index: u32 },
-    Usage,
+    ToolCallDelta {
+        index: u32,
+    },
+    /// A usage report was carried by this chunk. The raw report is
+    /// surfaced so the gateway can feed its `UsageNormalizer` (final
+    /// versus retry accounting stays at that layer, not here).
+    Usage(ProviderUsageReport),
     Ignored,
 }
 
@@ -91,15 +96,15 @@ impl ChatStreamAssembler {
     /// Feed one SSE `data:` payload (already de-framed).
     pub fn feed(&mut self, data: &str) -> Result<Vec<FeedOutcome>, ChatError> {
         let frame: Value = serde_json::from_str(data).map_err(|_| ChatError::MalformedFrame)?;
-        if let Some(id) = frame.get("id").and_then(Value::as_str) {
-            if self.id.is_none() {
-                self.id = Some(id.to_owned());
-            }
+        if self.id.is_none()
+            && let Some(id) = frame.get("id").and_then(Value::as_str)
+        {
+            self.id = Some(id.to_owned());
         }
-        if let Some(model) = frame.get("model").and_then(Value::as_str) {
-            if self.model.is_none() {
-                self.model = Some(model.to_owned());
-            }
+        if self.model.is_none()
+            && let Some(model) = frame.get("model").and_then(Value::as_str)
+        {
+            self.model = Some(model.to_owned());
         }
         let mut outcomes = Vec::new();
         let mut touched = false;
@@ -115,22 +120,30 @@ impl ChatStreamAssembler {
                     }
                     if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
                         for call in calls {
-                            let index = call.get("index").and_then(Value::as_u64).unwrap_or(0) as u32;
-                            let builder = self.calls.entry(index).or_default();
+                            let index =
+                                call.get("index").and_then(Value::as_u64).unwrap_or(0) as u32;
                             self.charge(1)?;
-                            if let Some(id) = call.get("id").and_then(Value::as_str) {
-                                builder.id = Some(id.to_owned());
+                            let id = call.get("id").and_then(Value::as_str).map(str::to_owned);
+                            let function = call.get("function");
+                            let name = function
+                                .and_then(|function| function.get("name"))
+                                .and_then(Value::as_str)
+                                .map(str::to_owned);
+                            let fragment = function
+                                .and_then(|function| function.get("arguments"))
+                                .and_then(Value::as_str);
+                            if let Some(fragment) = fragment {
+                                self.charge(fragment.len())?;
                             }
-                            if let Some(function) = call.get("function") {
-                                if let Some(name) = function.get("name").and_then(Value::as_str) {
-                                    builder.name = Some(name.to_owned());
-                                }
-                                if let Some(fragment) =
-                                    function.get("arguments").and_then(Value::as_str)
-                                {
-                                    self.charge(fragment.len())?;
-                                    builder.arguments.push_str(fragment);
-                                }
+                            let builder = self.calls.entry(index).or_default();
+                            if let Some(id) = id {
+                                builder.id = Some(id);
+                            }
+                            if let Some(name) = name {
+                                builder.name = Some(name);
+                            }
+                            if let Some(fragment) = fragment {
+                                builder.arguments.push_str(fragment);
                             }
                             outcomes.push(FeedOutcome::ToolCallDelta { index });
                         }
@@ -142,7 +155,7 @@ impl ChatStreamAssembler {
             }
         }
 
-        if let Some(usage) = frame.get("usage").filter(Value::is_object) {
+        if let Some(usage) = frame.get("usage").filter(|usage| usage.is_object()) {
             // A usage-only final chunk carries no choices; it is
             // honored here and never treated as a stream error or a
             // duplicate of earlier content.
@@ -152,7 +165,7 @@ impl ChatStreamAssembler {
                 Some(previous) => merge_usage(previous, report),
                 None => usage_from_report(report),
             });
-            outcomes.push(FeedOutcome::Usage);
+            outcomes.push(FeedOutcome::Usage(report));
         }
 
         if !touched {
@@ -180,12 +193,11 @@ impl ChatStreamAssembler {
             } else {
                 builder.arguments.clone()
             };
-            let parsed: Value = serde_json::from_str(&arguments).map_err(|error| {
-                ChatError::InvalidToolCall {
+            let parsed: Value =
+                serde_json::from_str(&arguments).map_err(|error| ChatError::InvalidToolCall {
                     index,
                     reason: format!("arguments are not valid JSON: {error}"),
-                }
-            })?;
+                })?;
             if !parsed.is_object() {
                 return Err(ChatError::InvalidToolCall {
                     index,
@@ -212,6 +224,16 @@ impl ChatStreamAssembler {
     /// before the break).
     pub fn usage_so_far(&self) -> Option<GenAiUsage> {
         self.usage
+    }
+
+    /// Text assembled so far, for partial-stream reporting.
+    pub fn text_so_far(&self) -> String {
+        self.text.clone()
+    }
+
+    /// Finish reasons seen so far, for partial-stream reporting.
+    pub fn finish_reasons_so_far(&self) -> Vec<String> {
+        self.finish_reasons.clone()
     }
 
     fn charge(&mut self, bytes: usize) -> Result<(), ChatError> {
@@ -259,8 +281,12 @@ fn merge_usage(previous: GenAiUsage, report: ProviderUsageReport) -> GenAiUsage 
     GenAiUsage {
         input_tokens: previous.input_tokens.or(incoming.input_tokens),
         output_tokens: previous.output_tokens.or(incoming.output_tokens),
-        cache_read_input_tokens: previous.cache_read_input_tokens.or(incoming.cache_read_input_tokens),
-        cache_write_input_tokens: previous.cache_write_input_tokens.or(incoming.cache_write_input_tokens),
+        cache_read_input_tokens: previous
+            .cache_read_input_tokens
+            .or(incoming.cache_read_input_tokens),
+        cache_write_input_tokens: previous
+            .cache_write_input_tokens
+            .or(incoming.cache_write_input_tokens),
         reasoning_output_tokens: previous
             .reasoning_output_tokens
             .or(incoming.reasoning_output_tokens),
@@ -287,3 +313,7 @@ pub fn build_chat_request(
     }
     body
 }
+
+#[cfg(test)]
+#[path = "chat_tests.rs"]
+mod chat_tests;

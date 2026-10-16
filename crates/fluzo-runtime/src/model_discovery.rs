@@ -496,7 +496,10 @@ async fn run_job(transport: &Transport, consent: &Mutex<Consent>, job: &Job) -> 
 
 /// Conservative address classification: any public address, or a mix of loopback
 /// and non-loopback, is reported as public.
-fn classify(addresses: &[SocketAddr]) -> AddressClass {
+///
+/// `pub(crate)` so the AGT-01 provider gateway reuses the exact #110
+/// classification instead of a second copy that could drift.
+pub(crate) fn classify(addresses: &[SocketAddr]) -> AddressClass {
     if addresses.is_empty() {
         return AddressClass::Unresolved;
     }
