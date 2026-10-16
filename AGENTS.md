@@ -143,6 +143,28 @@ fluzo-runtime --test provider_gateway_simulator --locked --offline`; the
 simulator tests use gates between chunks because the fixture's scripted
 disconnect may abort before the response head flushes. The agent loop, CLI
 wiring and settings mapping that call the gateway are still unimplemented.
+AGT-02 adds the context engine: a pure ledger in `fluzo_core::context`
+(typed trust tiers, mandatory provenance, estimates that never impersonate
+provider usage, deterministic assembly that blocks on required content and
+records every omission), deterministic workspace discovery in
+`fluzo_runtime::context` (fixed PRD 16 recipe, tracked-only and
+secret-bearing exclusion enforced against Git's own index, with every
+inclusion, skip and diff redaction recorded), explicit-only skills
+(`ExplicitSkillSelection` is buildable solely from ids, so implicit
+activation is structurally unavailable), and a bounded, observable,
+reversible compaction engine in `fluzo_runtime::compaction` (segment count
+fixed before the first call, a closed blocked-reason set with no `Other`,
+the summary as non-authoritative `ModelText`, required items and runtime
+records never compactable, and an atomic `commit_unit` journal record that
+names what the summary replaced). Compaction rides the AGT-01 gateway as
+`RequestClass::Compaction` and checks cancellation before each call, never
+during. See [CONTEXT.md](CONTEXT.md). Focused checks are `cargo test -p
+fluzo-core --lib --locked --offline context`, `cargo test -p fluzo-runtime
+--lib --locked --offline context` and `cargo test -p fluzo-runtime --lib
+--locked --offline compaction`. The agent loop that calls discovery and
+compaction, the production transport adapter that hands the gateway a live
+`ChatRequest`, and any TUI view of pack composition are still
+unimplemented.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
