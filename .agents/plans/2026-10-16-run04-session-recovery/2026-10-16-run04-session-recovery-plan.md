@@ -313,12 +313,21 @@ Hypotheses to confirm during implementation, not assumed:
 
 ## Next step
 
-Execute P1: the read-only open and replay path is the base both the
-resume phase and the control channel read through, and it is the phase
-that makes "open/replay is read-only" provable rather than asserted.
+All three phases are implemented and verified locally. The plan is
+complete for this dispatch; the remaining movement is human:
+
+- Review `review` -> `accepted` and merge PR #113.
+- `has_completed_all_phases` stays `false` for #18: the issue's
+  acceptance spans RUN-05 admission integration and the TUI session
+  browser, which are separate work. The PR references rather than
+  closes #18.
 
 ## Evidence and tracking
 
+- Pull request: <https://github.com/fluzo-labs/fluzo/pull/113>
+  (`Ref: #18`, base `main`, head `feat/run04-session-recovery`).
+- Commits: `b3b43e4` P1 read-only open and replay, `e780c35` P2 resume
+  reconciliation, `8c0594e` P3 control channel, `9a2739f` docs.
 - Parent issue: <https://github.com/fluzo-labs/fluzo/issues/18>.
 - Ground truth merged: #99 (RUN-01), #104 (RUN-02), #111 (RUN-03),
   #112 (RUN-05).
