@@ -711,7 +711,7 @@ async fn telemetry_records_shadow_span_without_leaking_the_credential() {
         controller(2),
         Arc::new(fluzo_runtime::providers::gateway::LoopbackOnlyConsent),
         Arc::new(ScriptedSecrets(Some(SECRET.to_owned()))),
-        hub,
+        Arc::clone(&hub),
         ResourceIdentity {
             service_name: "fluzo-test".to_owned(),
             service_version: "0".to_owned(),
@@ -720,6 +720,29 @@ async fn telemetry_records_shadow_span_without_leaking_the_credential() {
     let (_tx, rx) = watch::channel(false);
     let record = observer.run(request, rx).await;
     assert_eq!(record.status, ObservationStatus::Completed);
+    // The hub hands records to its background sink worker in
+    // batches, so the capture is only complete once the queue has
+    // drained. Asserting right after run() raced the flush and was
+    // the CI flake; poll the hub's own accounting with a bounded
+    // deadline instead. All records for this observation are
+    // published before run() returns, so drain is the only gap.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let queued: usize = hub
+            .health()
+            .iter()
+            .map(|health| health.queued_records)
+            .sum();
+        let captured = !capture.lines.lock().unwrap().is_empty();
+        if queued == 0 && captured {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "telemetry never drained to the capture: queued={queued}, captured={captured}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     let joined = capture.lines.lock().unwrap().join("\n");
     assert!(
         joined.contains("systemone"),
