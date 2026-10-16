@@ -5,6 +5,7 @@ pub mod config;
 pub mod configuration;
 mod configuration_file;
 pub mod confinement;
+pub mod control;
 pub mod git_inspect;
 pub mod history;
 pub mod migrations;
@@ -12,6 +13,8 @@ pub mod model_discovery;
 pub mod process;
 pub mod purge;
 pub mod quota;
+pub mod recovery;
+pub mod resume;
 pub mod scenario;
 pub mod session_auth;
 pub mod store;
@@ -38,6 +41,18 @@ mod session_auth_tests;
 #[cfg(test)]
 #[path = "tools_tests.rs"]
 mod tools_tests;
+
+#[cfg(test)]
+#[path = "recovery_tests.rs"]
+mod recovery_tests;
+
+#[cfg(test)]
+#[path = "resume_tests.rs"]
+mod resume_tests;
+
+#[cfg(test)]
+#[path = "control_tests.rs"]
+mod control_tests;
 
 #[cfg(test)]
 #[path = "artifact_tests.rs"]

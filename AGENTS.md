@@ -50,7 +50,19 @@ YOLO converts only `AskUser`, is attributed to the mode in audit, has no
 settings key, and is never restored by resume. Headless hosts declare
 their capability up front, so an approval need returns a structured
 outcome instead of waiting; `ApprovalUnavailable` is distinct from
-`Denied`.
+`Denied`. RUN-04 adds session recovery and the private task-control
+channel; see [RECOVERY.md](RECOVERY.md). A read-only open is enforced
+by the driver, not by convention: `Store::open_read_only` cannot
+create, migrate or write, and reading a record is never treated as
+evidence of liveness — a running record reads as `Interrupted` and a
+dispatched record with no confirmed result reads as `Unknown`. Reconcile
+is read-only and apply is the only writer. Budget carries forward from
+every prior attempt rather than resetting, and an unconfirmed
+contribution marks the whole carry-forward uncertain. The control
+channel is a private Unix socket bound only by the writer-lock holder,
+verified per request against the live owner record, with a closed
+request set that has no YOLO, lock-acquisition, resume or dispatch
+variant. An inspection client cannot take the writer lock.
 UI-01 adds an explicit interactive demo shell, composer and palette; see
 [TUI.md](TUI.md). UI-02 part 1 adds themes and reversible session previews.
 The current visual iteration follows Crush-style responsive conversation layout,

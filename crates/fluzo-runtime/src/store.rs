@@ -111,12 +111,24 @@ pub enum StoreError {
     /// The bounded local diagnostic capture contract needs an attached
     /// quota guard; this store was opened without one.
     QuotaNotConfigured,
+    /// RUN-04: there is no store to inspect. A read-only open never
+    /// creates one, so "nothing recorded yet" is reported distinctly
+    /// from "recorded but unreadable" (`Inaccessible`) rather than
+    /// being repaired by creating an empty journal.
+    NotFound,
+    /// SQLITE_READONLY: the connection cannot write. Surfaced distinctly
+    /// because a read-only inspection path that collapses this into the
+    /// generic `Io` class hides the one fact its callers most need to
+    /// distinguish - the refusal is the access mode, not a fault.
+    ReadOnly,
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
             Self::UnsupportedPath => "unsupported store path",
+            Self::NotFound => "no store recorded for this workspace",
+            Self::ReadOnly => "store connection is read-only",
             Self::Inaccessible => "store is inaccessible",
             Self::Conflict => "store path conflicts with a safe owner",
             Self::PragmaNotEnforced => "required durability PRAGMA not enforced",
@@ -243,6 +255,98 @@ impl Store {
             probe,
         )
         .await
+    }
+
+    /// Opens the existing workspace journal for inspection only.
+    ///
+    /// The read-only guarantee is enforced by SQLite rather than by
+    /// convention: the connection is opened with `SQLITE_OPEN_READONLY`,
+    /// so any write statement fails at the driver. That is what makes
+    /// "open/replay is read-only" (PRD 22.1) a property of the
+    /// connection instead of a promise about which methods the caller
+    /// happens to use.
+    ///
+    /// Unlike [`Store::open`] this never creates and never migrates. A
+    /// missing drive, missing database, non-terminal migration record or
+    /// version below the target is refused rather than repaired: an
+    /// inspection client has no authority to change a store it does not
+    /// own, and it must not take the writer lock in order to fix one.
+    pub async fn open_read_only(workspace_root: &Path) -> Result<Self, StoreError> {
+        Self::validate_root(workspace_root)?;
+        let drive_directory = workspace_root.join(DRIVE_DIRECTORY);
+        if !drive_directory.exists() {
+            return Err(StoreError::NotFound);
+        }
+        // `create_if_absent = false`: inspection never materialises the
+        // protected directory it is only reading.
+        let drive_handle = Self::anchor_drive_with(&drive_directory, false)?;
+        let database_path = drive_directory.join(DATABASE_FILE);
+        if !database_path.exists() {
+            return Err(StoreError::NotFound);
+        }
+        Self::verify_database_file(&database_path)?;
+
+        let options = SqliteConnectOptions::new()
+            .filename(&database_path)
+            .create_if_missing(false)
+            .read_only(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Full)
+            .foreign_keys(true)
+            .busy_timeout(Duration::ZERO);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .map_err(|error| match map_error(error) {
+                StoreError::Io => StoreError::Inaccessible,
+                other => other,
+            })?;
+
+        // Every post-connect failure closes deterministically, for the
+        // same reason `open_inner` does: a dropped connection defers the
+        // real close and can leave the WAL index lock held.
+        let mut recorded_version = 0_u32;
+        let outcome = async {
+            Self::verify_pragmas(&mut connection).await?;
+            if migrations::has_table(&mut connection, "migration_run").await?
+                && let Some(record) = migrations::latest_run(&mut connection).await?
+            {
+                match record.state {
+                    MigrationState::Running => return Err(StoreError::MigrationInterrupted),
+                    MigrationState::Failed => return Err(StoreError::MigrationFailed),
+                    MigrationState::Succeeded | MigrationState::Restored => {}
+                }
+            }
+            let recorded = migrations::recorded_version(&mut connection)
+                .await?
+                .ok_or(StoreError::Corrupt)?;
+            if recorded > migrations::TARGET_VERSION {
+                return Err(StoreError::SchemaTooNew);
+            }
+            if recorded < migrations::TARGET_VERSION {
+                // Refuse instead of migrating: repairing a store is the
+                // writer's job under the single-owner rule.
+                return Err(StoreError::MigrationRequired);
+            }
+            recorded_version = recorded;
+            Ok::<(), StoreError>(())
+        }
+        .await;
+        if let Err(error) = outcome {
+            let _ = connection.close().await;
+            return Err(error);
+        }
+
+        Ok(Self {
+            connection,
+            drive_directory,
+            drive_handle,
+            schema_version: recorded_version,
+            // No quota ledger: the ledger admits writes, and this
+            // connection cannot perform one.
+            quota: None,
+            last_admission: None,
+            diagnostics: DiagnosticCounters::default(),
+        })
     }
 
     async fn open_inner(
@@ -853,6 +957,34 @@ impl Store {
     }
 
     /// Journal records with a sequence strictly after `after`, oldest first.
+    /// Lists every state row of one kind, ordered by id.
+    ///
+    /// Read-only and bounded by the caller's `limit`. Recovery needs the
+    /// whole set of a kind to rebuild a session graph; addressing rows
+    /// one id at a time cannot discover ids it was not told about.
+    pub async fn states_of_kind(
+        &mut self,
+        kind: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, String)>, StoreError> {
+        let rows =
+            sqlx::query("SELECT id, payload FROM state WHERE kind = ?1 ORDER BY id ASC LIMIT ?2")
+                .bind(kind)
+                .bind(limit)
+                .fetch_all(&mut self.connection)
+                .await
+                .map_err(map_error)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.try_get("id").unwrap_or_default(),
+                    row.try_get("payload").unwrap_or_default(),
+                )
+            })
+            .collect())
+    }
+
     pub async fn events_after(
         &mut self,
         after: i64,
@@ -1294,6 +1426,7 @@ pub(crate) fn map_error(error: sqlx::Error) -> StoreError {
             .map(|code| code & 0xFF);
         match primary {
             Some(5) | Some(6) => return StoreError::Busy,
+            Some(8) => return StoreError::ReadOnly,
             Some(11) => return StoreError::Corrupt,
             Some(13) => return StoreError::Full,
             Some(19) => return StoreError::Constraint,
