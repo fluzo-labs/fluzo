@@ -18,6 +18,7 @@ pub mod recovery;
 pub mod resume;
 pub mod scenario;
 pub mod session_auth;
+pub mod shadow;
 pub mod store;
 pub mod telemetry;
 pub mod telemetry_archive;

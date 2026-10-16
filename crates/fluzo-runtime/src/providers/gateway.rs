@@ -549,31 +549,10 @@ impl ProviderGateway {
     }
 
     fn authorization(&self) -> Result<Option<HeaderValue>, GatewayError> {
-        let Some(name) = self.config.api_key_env.as_deref() else {
-            return Ok(None);
-        };
-        if name.is_empty()
-            || name.len() > 128
-            || !name.bytes().enumerate().all(|(index, byte)| {
-                byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
-            })
-        {
-            return Err(GatewayError::CredentialInvalid);
-        }
-        let value = self
-            .credentials
-            .resolve(name)
-            .ok_or(GatewayError::CredentialUnavailable)?;
-        if value.is_empty()
-            || value.len() > 4096
-            || value.bytes().any(|byte| byte.is_ascii_control())
-        {
-            return Err(GatewayError::CredentialInvalid);
-        }
-        let mut header = HeaderValue::from_str(&format!("Bearer {value}"))
-            .map_err(|_| GatewayError::CredentialInvalid)?;
-        header.set_sensitive(true);
-        Ok(Some(header))
+        bearer_authorization(
+            self.config.api_key_env.as_deref(),
+            self.credentials.as_ref(),
+        )
     }
 
     /// One physical attempt: connect, send, stream. Never retries;
@@ -1015,7 +994,7 @@ fn purpose_code(purpose: RequestClass) -> &'static str {
     }
 }
 
-fn histogram(
+pub(crate) fn histogram(
     name: &str,
     unit: &str,
     value: f64,
@@ -1063,13 +1042,13 @@ struct ResolvedTarget<'a> {
 /// discovery endpoint: http only, no query, no userinfo, no percent
 /// escapes, non-zero port. The path is fixed to the Chat Completions
 /// resource.
-struct ChatTarget {
-    host: String,
-    port: u16,
-    authority: String,
+pub(crate) struct ChatTarget {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) authority: String,
 }
 
-fn chat_target(value: &str) -> Result<ChatTarget, GatewayError> {
+pub(crate) fn chat_target(value: &str) -> Result<ChatTarget, GatewayError> {
     if value.len() > 2048 || !value.is_ascii() || value.bytes().any(|byte| byte.is_ascii_control())
     {
         return Err(GatewayError::InvalidEndpoint);
@@ -1097,7 +1076,7 @@ fn chat_target(value: &str) -> Result<ChatTarget, GatewayError> {
     })
 }
 
-async fn resolve(target: &ChatTarget) -> Vec<SocketAddr> {
+pub(crate) async fn resolve(target: &ChatTarget) -> Vec<SocketAddr> {
     let mut addresses: Vec<SocketAddr> =
         tokio::net::lookup_host((target.host.as_str(), target.port))
             .await
@@ -1105,6 +1084,37 @@ async fn resolve(target: &ChatTarget) -> Vec<SocketAddr> {
             .unwrap_or_default();
     addresses.sort();
     addresses
+}
+
+/// Shared bearer-header builder for every gated provider path (the
+/// Chat gateway and the AGT-03 shadow adapter). The credential value
+/// is only ever read here, marked sensitive and never echoed into an
+/// error variant.
+pub(crate) fn bearer_authorization(
+    api_key_env: Option<&str>,
+    credentials: &dyn CredentialSource,
+) -> Result<Option<HeaderValue>, GatewayError> {
+    let Some(name) = api_key_env else {
+        return Ok(None);
+    };
+    if name.is_empty()
+        || name.len() > 128
+        || !name.bytes().enumerate().all(|(index, byte)| {
+            byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
+        })
+    {
+        return Err(GatewayError::CredentialInvalid);
+    }
+    let value = credentials
+        .resolve(name)
+        .ok_or(GatewayError::CredentialUnavailable)?;
+    if value.is_empty() || value.len() > 4096 || value.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err(GatewayError::CredentialInvalid);
+    }
+    let mut header = HeaderValue::from_str(&format!("Bearer {value}"))
+        .map_err(|_| GatewayError::CredentialInvalid)?;
+    header.set_sensitive(true);
+    Ok(Some(header))
 }
 
 #[cfg(test)]

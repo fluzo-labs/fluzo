@@ -143,8 +143,25 @@ fluzo-runtime --test provider_gateway_simulator --locked --offline`; the
 simulator tests use gates between chunks because the fixture's scripted
 disconnect may abort before the response head flushes. The agent loop, CLI
 wiring and settings mapping that call the gateway are still unimplemented.
-Agent execution, production task transport, full TUI workflows, providers,
-session persistence and runtime acceptance are not implemented. The
+AGT-03 adds the optional Laya shadow capability in
+`fluzo-runtime::shadow`: a non-blocking, observation-only adapter that
+sends typed `choice`/`noul`/`score` questions to `POST /v1/systemone`
+with strict answer validation, reuses the gateway-owned consent,
+credential-reference and admission gates (skip-not-queue, zero packets on
+skip or consent denial), never retries, and records every outcome
+explicitly as a PRD 44.4 evaluation record. It is disabled by default,
+pauses automatically after consecutive transport/protocol/timeout
+failures (cleared only by explicit `resume`, not by re-enabling) and is
+cleanly detachable: the coordinator depends only on the `DecisionObserver`
+trait, no core or execution path imports Laya, and recommendations can
+never authorize, route or execute anything. A dispatched-then-cancelled or
+timed-out observation leaves its admission slot Uncertain like the chat
+gateway. See [LAYA_SHADOW.md](LAYA_SHADOW.md). Focused checks are `cargo
+test -p fluzo-runtime --lib --locked --offline shadow` and `cargo test -p
+fluzo-runtime --test laya_shadow_simulator --locked --offline`. No agent
+loop submits decision points yet. Agent execution, production task
+transport, full TUI workflows, providers, session persistence and runtime
+acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
 passing foundation checks does not establish MVP behavior or performance.
 

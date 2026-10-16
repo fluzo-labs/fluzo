@@ -429,6 +429,18 @@ impl Fixture {
             .unwrap();
     }
 
+    /// Wait until at least one connection has been accepted. The
+    /// request bytes were handed to the client transport before the
+    /// accept is observable, so a test that cancels after this must
+    /// still yield the parser a moment before cancelling.
+    #[allow(dead_code)]
+    pub async fn wait_for_connection(&mut self) {
+        timeout(DEADLINE, self.active.wait_for(|count| *count >= 1))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
     pub async fn finish(&mut self) -> Report {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
