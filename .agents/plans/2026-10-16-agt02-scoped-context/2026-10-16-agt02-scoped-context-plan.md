@@ -137,4 +137,71 @@ claim, no new dependencies.
 
 ## Progress
 
-- Plan saved. Next eligible phase: P1.
+All four phases implemented and verified. Branch `feat/agt02-scoped-context`.
+
+### P1 - pure context ledger (`fluzo-core`)
+
+- `crates/fluzo-core/src/context.rs`: `TrustTier` (5 levels, only
+  `RuntimeAuthority` can authorize), `SourceKind` (11 variants incl.
+  `RuntimeRecord`), `SourceRef` (kind + identity + observed version),
+  `TokenEstimate` (distinct from `GenAiUsage`, records its own method),
+  `ContextBudget` (+ `validate`), `ContextItem` (+ `truncated_at`),
+  `ContextPack` (included / omitted / estimated_input), `assemble` with a
+  fixed total order, `SkillDescriptor`, `ExplicitSkillSelection`,
+  `resolve_explicit`.
+- 28 tests. Commit `e347cef`.
+
+### P2 - deterministic discovery (`fluzo-runtime`)
+
+- `crates/fluzo-runtime/src/context.rs`: the PRD 16 recipe, tracked-only
+  and secret-bearing exclusion enforced against `git ls-files`, diff and
+  status redaction per file segment, `considered` / `redacted` records,
+  `applicable_instruction_files` root-outward, `budget_from_settings`.
+- 23 tests against a real temporary Git repository. Commit `a59189b`.
+- Bugs caught by tests: NUL-delimited index split; `split_inclusive`
+  attaching the `diff --git ` separator to the *previous* segment, which
+  put each header at the end of the wrong block and discarded every body.
+
+### P3 - compaction engine (`fluzo-runtime`)
+
+- `crates/fluzo-runtime/src/compaction.rs`: `threshold_reached`, `plan`,
+  `segment_budget`, `is_compactable`, `CompactionTransport` (dyn-compatible,
+  boxed future, no new dependency), `run`, `commit`, `reverse`,
+  `CompactionArtifact` with the audit payload, closed `CompactionBlocked`.
+- 25 tests (19 trigger/planning/running, 6 reversibility + durable commit
+  against the real SQLite journal). Commit `19ed8a2`.
+- Dead branch removed during the work: a pre-flight "preserved items alone
+  fill the window" check is unreachable, because if anything is eligible to
+  summarize then `assemble` already proved the preserved items fit
+  alongside it. The real fit failure is caught afterwards by
+  `SummaryTooLarge`; the zero-capacity case keeps its own variant.
+
+### P4 - documentation
+
+- `CONTEXT.md` (contract, trust model, discovery recipe, exclusion rules,
+  budget arithmetic, compaction semantics, blocked-reason table, verified
+  commands, gaps).
+- `AGENTS.md` AGT-02 paragraph added after the AGT-01 gateway paragraph.
+
+### Verification record
+
+- `cargo fmt --all -- --check` - clean.
+- `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` - clean.
+- `cargo test --workspace --locked --offline` - 881 passed, 0 failed, 10 ignored.
+- `cargo build --workspace --locked --offline` - clean.
+- `python3 -B -m unittest discover -s scripts -p 'test_*.py'` - 90 passed, OK.
+- `python3 scripts/check_dev_setup.py` - pass (foundation graph, toolchain,
+  LSP config, 12 skills).
+- Live inference: `not_run`. No provider contacted by any test in this
+  increment; the compaction transport is exercised through the scripted
+  seam.
+
+### Not done here (tracked as gaps in `CONTEXT.md`)
+
+- Production `CompactionTransport` adapter over `ProviderGateway` (the
+  wiring that hands it a live `ChatRequest` / cancel pair) ships with the
+  agent loop.
+- No caller triggers compaction automatically yet; the engine is invoked
+  explicitly.
+- TUI/CLI surface for pack composition, omissions and compaction.
+- Skill discovery, installation and updates.
