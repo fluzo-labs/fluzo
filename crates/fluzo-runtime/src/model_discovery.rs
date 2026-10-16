@@ -18,8 +18,23 @@ const DEADLINE: Duration = Duration::from_secs(5);
 /// ever written to `.fluzo` or any other file, so every run starts unaccepted.
 #[derive(Default)]
 struct Consent {
-    probed: BTreeMap<String, AddressClass>,
+    /// Endpoint -> (class seen at probe time, credential reference attached).
+    probed: BTreeMap<String, (AddressClass, bool)>,
     accepted: BTreeSet<(String, AddressClass)>,
+}
+
+/// Sink for redacted consent diagnostics. The recorder is called with
+/// [`ConsentDiagnostic`] values that carry no endpoint, host or credential
+/// reference name, so implementations may persist or forward them without
+/// widening secret exposure. The default recorder discards events.
+pub trait ConsentRecorder: Send + Sync {
+    fn record(&self, diagnostic: ConsentDiagnostic);
+}
+
+pub struct NoopConsentRecorder;
+
+impl ConsentRecorder for NoopConsentRecorder {
+    fn record(&self, _: ConsentDiagnostic) {}
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +69,7 @@ pub struct ModelDiscoveryService {
     cancellation: watch::Sender<u64>,
     worker: Option<JoinHandle<()>>,
     consent: Arc<Mutex<Consent>>,
+    recorder: Arc<dyn ConsentRecorder>,
     current: Option<(Job, Status)>,
     last_id: u64,
     attempts: usize,
@@ -61,15 +77,27 @@ pub struct ModelDiscoveryService {
 
 impl ModelDiscoveryService {
     pub fn start() -> Result<Self, Error> {
-        Self::spawn(Transport::System)
+        Self::start_with_recorder(Arc::new(NoopConsentRecorder))
+    }
+
+    pub fn start_with_recorder(recorder: Arc<dyn ConsentRecorder>) -> Result<Self, Error> {
+        Self::spawn(Transport::System, recorder)
     }
 
     #[cfg(test)]
     fn scripted(fixture: Arc<Fixture>) -> Result<Self, Error> {
-        Self::spawn(Transport::Scripted(fixture))
+        Self::scripted_with_recorder(fixture, Arc::new(NoopConsentRecorder))
     }
 
-    fn spawn(transport: Transport) -> Result<Self, Error> {
+    #[cfg(test)]
+    fn scripted_with_recorder(
+        fixture: Arc<Fixture>,
+        recorder: Arc<dyn ConsentRecorder>,
+    ) -> Result<Self, Error> {
+        Self::spawn(Transport::Scripted(fixture), recorder)
+    }
+
+    fn spawn(transport: Transport, recorder: Arc<dyn ConsentRecorder>) -> Result<Self, Error> {
         let (sender, requests) = mpsc::sync_channel::<Job>(1);
         let (results, receiver) = mpsc::sync_channel(1);
         let (cancellation, mut cancelled) = watch::channel(0);
@@ -103,6 +131,7 @@ impl ModelDiscoveryService {
             cancellation,
             worker: Some(worker),
             consent,
+            recorder,
             current: None,
             last_id: 0,
             attempts: 0,
@@ -124,7 +153,7 @@ impl ModelDiscoveryService {
     /// queued, so no socket can be attempted for the request.
     fn consent_gate(&self, value: &str) -> Result<(), Error> {
         let consent = self.consent.lock().map_err(|_| Error::Unavailable)?;
-        let Some(class) = consent.probed.get(value).copied() else {
+        let Some((class, _)) = consent.probed.get(value).copied() else {
             return Ok(());
         };
         if class == AddressClass::Loopback || consent.accepted.contains(&(value.to_owned(), class))
@@ -185,11 +214,41 @@ impl ModelDiscoveryPort for ModelDiscoveryService {
         if class == AddressClass::Unresolved {
             return Err(Error::InvalidEndpoint);
         }
+        let credential_attached = self
+            .consent
+            .lock()
+            .map_err(|_| Error::Unavailable)?
+            .probed
+            .get(value)
+            .is_some_and(|(_, credential)| *credential);
         self.consent
             .lock()
             .map_err(|_| Error::Unavailable)?
             .accepted
             .insert((value.to_owned(), class));
+        self.recorder.record(ConsentDiagnostic {
+            event: ConsentEvent::Accepted,
+            class,
+            credential_attached,
+        });
+        Ok(())
+    }
+
+    fn decline(&mut self, value: &str) -> Result<(), Error> {
+        endpoint(value)?;
+        let (class, credential_attached) = self
+            .consent
+            .lock()
+            .map_err(|_| Error::Unavailable)?
+            .probed
+            .get(value)
+            .copied()
+            .unwrap_or((AddressClass::Unresolved, false));
+        self.recorder.record(ConsentDiagnostic {
+            event: ConsentEvent::Declined,
+            class,
+            credential_attached,
+        });
         Ok(())
     }
 
@@ -367,7 +426,16 @@ async fn run_job(transport: &Transport, consent: &Mutex<Consent>, job: &Job) -> 
     let recorded = consent
         .lock()
         .map(|mut consent| {
-            consent.probed.insert(job.endpoint().to_owned(), class);
+            let credential_attached = match job {
+                Job::Probe {
+                    credential_attached,
+                    ..
+                } => *credential_attached,
+                Job::Discover(request) => request.authorization_env.is_some(),
+            };
+            consent
+                .probed
+                .insert(job.endpoint().to_owned(), (class, credential_attached));
         })
         .is_ok();
     if !recorded {
@@ -1187,6 +1255,103 @@ mod tests {
         assert!(!rendered.contains(PRIVATE_ENDPOINT));
         assert!(!rendered.contains("192.168.222.33"));
         assert!(!rendered.contains(AUTH_REFERENCE));
+    }
+
+    #[derive(Default)]
+    struct RecordingRecorder {
+        events: Mutex<Vec<ConsentDiagnostic>>,
+    }
+
+    impl ConsentRecorder for RecordingRecorder {
+        fn record(&self, diagnostic: ConsentDiagnostic) {
+            self.events.lock().unwrap().push(diagnostic);
+        }
+    }
+
+    impl RecordingRecorder {
+        fn events(&self) -> Vec<ConsentDiagnostic> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    #[test]
+    fn accepted_and_declined_consent_emit_redacted_diagnostics() {
+        let recorder = Arc::new(RecordingRecorder::default());
+        let fixture = Fixture::new(vec![ip("192.168.222.33")], None);
+        let sink: Arc<dyn ConsentRecorder> = recorder.clone();
+        let mut service =
+            ModelDiscoveryService::scripted_with_recorder(Arc::clone(&fixture), sink).unwrap();
+        service
+            .probe(probe(1, PRIVATE_ENDPOINT, Some(AUTH_REFERENCE)))
+            .unwrap();
+        assert!(matches!(wait(&mut service, 1), Status::Notice(_)));
+        service
+            .accept(PRIVATE_ENDPOINT, AddressClass::Private)
+            .unwrap();
+        service.decline(PRIVATE_ENDPOINT).unwrap();
+        assert_eq!(
+            recorder.events(),
+            vec![
+                ConsentDiagnostic {
+                    event: ConsentEvent::Accepted,
+                    class: AddressClass::Private,
+                    credential_attached: true,
+                },
+                ConsentDiagnostic {
+                    event: ConsentEvent::Declined,
+                    class: AddressClass::Private,
+                    credential_attached: true,
+                },
+            ]
+        );
+        // The diagnostic must not widen what diagnostics know: no endpoint,
+        // no resolved address, no credential reference name.
+        let rendered = format!("{:?}", recorder.events());
+        assert!(!rendered.contains(PRIVATE_ENDPOINT));
+        assert!(!rendered.contains("192.168.222.33"));
+        assert!(!rendered.contains(AUTH_REFERENCE));
+        assert!(fixture.connects().is_empty());
+    }
+
+    #[test]
+    fn accepted_diagnostic_without_credential_reads_not_attached() {
+        let recorder = Arc::new(RecordingRecorder::default());
+        let fixture = Fixture::new(vec![ip("192.168.222.33")], None);
+        let sink: Arc<dyn ConsentRecorder> = recorder.clone();
+        let mut service =
+            ModelDiscoveryService::scripted_with_recorder(Arc::clone(&fixture), sink).unwrap();
+        service.probe(probe(1, PRIVATE_ENDPOINT, None)).unwrap();
+        assert!(matches!(wait(&mut service, 1), Status::Notice(_)));
+        service
+            .accept(PRIVATE_ENDPOINT, AddressClass::Private)
+            .unwrap();
+        assert_eq!(
+            recorder.events(),
+            vec![ConsentDiagnostic {
+                event: ConsentEvent::Accepted,
+                class: AddressClass::Private,
+                credential_attached: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn decline_without_a_prior_probe_records_unresolved() {
+        let recorder = Arc::new(RecordingRecorder::default());
+        let fixture = Fixture::new(vec![ip("192.168.222.33")], None);
+        let sink: Arc<dyn ConsentRecorder> = recorder.clone();
+        let mut service =
+            ModelDiscoveryService::scripted_with_recorder(Arc::clone(&fixture), sink).unwrap();
+        service.decline(PRIVATE_ENDPOINT).unwrap();
+        assert_eq!(
+            recorder.events(),
+            vec![ConsentDiagnostic {
+                event: ConsentEvent::Declined,
+                class: AddressClass::Unresolved,
+                credential_attached: false,
+            }]
+        );
+        assert!(fixture.connects().is_empty());
     }
 
     #[test]

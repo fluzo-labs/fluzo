@@ -111,9 +111,32 @@ pub trait ModelDiscoveryPort {
     /// Record that the operator accepted `endpoint` as class `class` for this run
     /// only. Acceptance is never persisted and never transfers to another endpoint.
     fn accept(&mut self, endpoint: &str, class: AddressClass) -> Result<(), Error>;
+    /// Record that the operator declined the cleartext warning for `endpoint`.
+    /// No request is sent either way; the runtime uses this only to emit a
+    /// redacted [`ConsentDiagnostic`] for the declined attempt.
+    fn decline(&mut self, endpoint: &str) -> Result<(), Error>;
     fn submit(&mut self, request: Request) -> Result<(), Error>;
     fn status(&mut self, id: u64) -> Status;
     fn cancel(&mut self, id: u64);
+}
+
+/// Which operator decision a consent diagnostic describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsentEvent {
+    Accepted,
+    Declined,
+}
+
+/// Redacted consent diagnostic. It carries the address class and whether a
+/// credential reference was attached, and deliberately carries no endpoint
+/// string, host, resolved address or credential reference name, so the event
+/// can be recorded without widening what the diagnostics path knows about the
+/// operator's endpoints or secrets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConsentDiagnostic {
+    pub event: ConsentEvent,
+    pub class: AddressClass,
+    pub credential_attached: bool,
 }
 
 pub struct Unavailable;
@@ -123,6 +146,9 @@ impl ModelDiscoveryPort for Unavailable {
         Err(Error::Unavailable)
     }
     fn accept(&mut self, _: &str, _: AddressClass) -> Result<(), Error> {
+        Err(Error::Unavailable)
+    }
+    fn decline(&mut self, _: &str) -> Result<(), Error> {
         Err(Error::Unavailable)
     }
     fn submit(&mut self, _: Request) -> Result<(), Error> {
