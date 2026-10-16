@@ -22,6 +22,27 @@ use super::*;
 
 const GRACE: Duration = Duration::from_millis(400);
 const ESCALATION: Duration = Duration::from_millis(800);
+/// Grace used where a test asserts that a *cooperating* child is ended
+/// by `SIGTERM`.
+///
+/// This was 400 ms, which is far tighter than any real caller gets: the
+/// production default is [`DEFAULT_GRACE_PERIOD`] (5 s). A cooperating
+/// child needs CPU twice over before the parent can confirm it — the
+/// shell must wake from its wait on `sleep`, run the `TERM` trap and
+/// exit, and the parent's reaper thread must observe that exit and hand
+/// it across the channel. On a loaded runner those two scheduling
+/// events do not reliably fit inside 400 ms, so `cancel` escalated to
+/// `SIGKILL` and reported `TerminatedByKill` for a child that had in
+/// fact cooperated.
+///
+/// Asserting against the production window removes the scheduling
+/// dependency and tests the contract a caller actually relies on. Do
+/// not shrink this back to hundreds of milliseconds: it would re-add a
+/// dependency on how busy the machine happens to be.
+const COOP_GRACE: Duration = DEFAULT_GRACE_PERIOD;
+/// Escalation window paired with [`COOP_GRACE`], again the production
+/// value rather than a test-invented one.
+const COOP_ESCALATION: Duration = DEFAULT_ESCALATION_WINDOW;
 const WAIT: Duration = Duration::from_secs(20);
 const POLL: Duration = Duration::from_millis(5);
 /// Every line a child role emits deliberately is prefixed, so libtest's own stdout
@@ -457,10 +478,14 @@ fn cancellation_terminates_a_cooperative_child_within_the_grace_period() {
         "trap 'exit 0' TERM; echo ready > {}; sleep 30",
         ready.display()
     ));
+    // The marker is written after the trap is installed, so the signal
+    // can never arrive before the child is able to cooperate. That is
+    // what makes the assertion below about the lifecycle rather than
+    // about spawn ordering.
     expect_ready(&ready);
 
     let mode = process
-        .cancel(GRACE, ESCALATION)
+        .cancel(COOP_GRACE, COOP_ESCALATION)
         .expect("group is signallable");
     assert_eq!(mode, TerminationMode::TerminatedByTerm, "got {mode:?}");
     // The handler exited cleanly, so the raw status still shows the cooperation.
