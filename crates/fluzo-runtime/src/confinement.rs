@@ -570,6 +570,22 @@ impl ConfinedFile {
         self.file.write_all(bytes).map_err(|_| ConfinementError::Io)
     }
 
+    /// Replaces the whole contents: rewind, truncate, then write.
+    ///
+    /// A tool that writes a complete file must not leave the tail of the
+    /// previous contents behind, which a plain `write_all` on a
+    /// read/write handle does. Both the truncation and the write go through
+    /// the descriptor the jail opened, so neither can be redirected onto a
+    /// different inode after the fact.
+    pub fn replace_all(&mut self, bytes: &[u8]) -> Result<(), ConfinementError> {
+        use std::io::{Seek, SeekFrom, Write};
+        self.file
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| ConfinementError::Io)?;
+        self.file.set_len(0).map_err(|_| ConfinementError::Io)?;
+        self.file.write_all(bytes).map_err(|_| ConfinementError::Io)
+    }
+
     pub fn read_to_string(&mut self) -> Result<String, ConfinementError> {
         use std::io::Read;
         let mut text = String::new();
