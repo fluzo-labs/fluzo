@@ -1,0 +1,33 @@
+# OBS-02 Tempo: trace store/query. 72h trace retention (PRD 44.7).
+# Schema note: Tempo 2.9 moved retention under compactor.compaction.
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  max_block_duration: 5m
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+compactor:
+  compaction:
+    block_retention: 72h
+    compaction_cycle: 1m
+    retention_concurrency: 2
+# metrics_generator (span-metrics/service-graph) intentionally not
+# enabled: OBS-02 acceptance needs traces, logs and OTLP metrics via
+# the Collector only, and the generator's ring join made readiness
+# non-deterministic in single-binary mode.
