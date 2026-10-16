@@ -1,0 +1,107 @@
+{
+  "uid": "fluzo-obs02",
+  "title": "Fluzo Observability (OBS-02)",
+  "tags": ["fluzo", "obs02"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "GenAI token usage (rate / 5m)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+          "expr": "sum by (__name__) (rate({__name__=~\"gen_ai_client_token_usage_(sum|count)\", job=\"fluzo-collector\"}[5m]))",
+          "legendFormat": "{{__name__}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Model operation duration p95 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_operation_duration_milliseconds_bucket[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Collector export failures / queue",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+          "expr": "sum by (__name__) (rate(otelcol_exporter_send_failed_[a-z]+[5m]))",
+          "legendFormat": "{{__name__}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+          "expr": "sum by (queue_name) (otelcol_exporter_queue_size)",
+          "legendFormat": "queue {{queue_name}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Fluzo structured logs (Loki)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "loki", "uid": "fluzo-loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "fluzo-loki" },
+          "expr": "sum(count_over_time({service_name=\"fluzo\"}[1m]))",
+          "legendFormat": "log lines/min"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Collector uptime / accepted records",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "fluzo-prometheus" },
+          "expr": "sum(otelcol_receiver_accepted_metric_points) + sum(otelcol_receiver_accepted_log_records) + sum(otelcol_receiver_accepted_spans)",
+          "legendFormat": "accepted total"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "Fluzo log stream (trace-linked via Loki derived fields)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "loki", "uid": "fluzo-loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "fluzo-loki" },
+          "expr": "{service_name=\"fluzo\"}",
+          "logLabels": []
+        }
+      ]
+    }
+  ]
+}

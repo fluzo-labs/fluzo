@@ -1,0 +1,16 @@
+# OBS-02 Prometheus: scrapes the Collector's application-metrics
+# endpoint (PRD 44.7 signal flow). Retention 7d; the 1 GiB size target
+# is a planning target, not an enforced quota (documented in README).
+global:
+  scrape_interval: 5s
+  external_labels:
+    stack: fluzo-observability
+
+scrape_configs:
+  - job_name: fluzo-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

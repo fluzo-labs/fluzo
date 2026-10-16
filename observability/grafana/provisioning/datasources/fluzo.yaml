@@ -1,0 +1,36 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: fluzo-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    uid: fluzo-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        # OTLP structured metadata carries the trace id; link to Tempo.
+        - name: TraceID
+          matcherType: label
+          matcher: trace_id
+          matcherRegex: "([a-f0-9]{32})"
+          url: "$${__value.raw}"
+          datasourceUid: fluzo-tempo
+
+  - name: Tempo
+    uid: fluzo-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: fluzo-loki
+        variant: loki
+        filterByTraceID: true
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"

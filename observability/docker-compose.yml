@@ -1,0 +1,127 @@
+name: fluzo-observability
+
+# OBS-02 local reference stack (PRD 44.7 / Architecture A09).
+# - Loopback-only published ports (Grafana + Collector ingestion).
+# - Pinned image digests; no :latest.
+# - Named volumes for backend data; configs mounted read-only.
+# - No source-workspace, SQLite, credential or Docker-socket mounts.
+# - Application export stays an explicit opt-in even while this runs.
+
+x-container-logging: &container-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib@sha256:faf125d656fa47cea568b2f3b4494efd2525083bc75c1e96038bc23f05cd68fd
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "127.0.0.1:${OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${OTLP_HTTP_PORT:-4318}:4318"
+    volumes:
+      - ./collector/config.yaml:/etc/otelcol/config.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *container-logging
+    # No container healthcheck: the contrib image is distroless (no shell).
+    # Readiness is proven from the host by scripts/observability_smoke.py
+    # probing the OTLP HTTP ingestion endpoint, per PRD 44.7 (do not
+    # assume curl inside minimal containers).
+
+  tempo:
+    image: grafana/tempo@sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    healthcheck:
+      # The tempo image ships busybox at /busybox and has no /bin/sh,
+      # so CMD-SHELL cannot be used here.
+      test: ["CMD", "/busybox/wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3200/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *container-logging
+
+  prometheus:
+    image: prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *container-logging
+
+  loki:
+    image: grafana/loki@sha256:4c431d2e6b9b38718694b31c5d56be7c80dc69c513215fde1aeb5b02cd4e2665
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3100/ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *container-logging
+
+  grafana:
+    image: grafana/grafana@sha256:70d9599b186ce287be0d2c5ba9a78acb2e86c1a68c9c41449454d0fc3eeb84e8
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set in observability/.env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in observability/.env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 18
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *container-logging
+
+volumes:
+  tempo-data:
+  prometheus-data:
+  loki-data:
+  grafana-data:
