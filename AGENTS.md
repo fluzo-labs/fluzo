@@ -126,7 +126,23 @@ fluzo-core --locked --offline admission`, `cargo test -p fluzo-runtime --lib
 --locked --offline admission` and `cargo test -p fluzo-runtime --test
 admission_simulator --locked --offline` (strict loopback fixture: 429 without
 retry, redirect never followed, timed-out waits sending nothing). The agent
-execution loop that calls the controller is still unimplemented.
+execution loop that calls the controller is still unimplemented. AGT-01 adds
+the generative provider gateway in `fluzo-runtime::providers`: a pure SSE
+framing parser, a Chat Completions assembler that JSON-validates streamed
+tool-call argument buffers before any call is dispatchable, and
+`ProviderGateway` composing consent, admission, bounded non-quota transient
+retries, cancellation and pinned GenAI telemetry over a hyper streaming
+client. Redirects are blocked with zero traffic to the Location target, 429
+never retries, a break after any surfaced delta is `partial_stream` that is
+never retried and leaves the admission slot Uncertain, and cancellation after
+dispatch is likewise Uncertain until explicit reconciliation. Credentials are
+env references only and never reach telemetry or errors. See
+[PROVIDER_GATEWAY.md](PROVIDER_GATEWAY.md). Focused checks are `cargo test -p
+fluzo-runtime --lib --locked --offline providers` and `cargo test -p
+fluzo-runtime --test provider_gateway_simulator --locked --offline`; the
+simulator tests use gates between chunks because the fixture's scripted
+disconnect may abort before the response head flushes. The agent loop, CLI
+wiring and settings mapping that call the gateway are still unimplemented.
 Agent execution, production task transport, full TUI workflows, providers,
 session persistence and runtime acceptance are not implemented. The
 architecture and test pyramid below describe requirements beyond this bootstrap;
